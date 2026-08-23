@@ -6,6 +6,16 @@ ATLAS OS 1.0 es la primera imagen pública del sistema utilizado por ATLAS A1. E
 
 Esta versión se publica inicialmente como prerelease. La estructura de disco, los filesystems y el contenido se han validado offline, pero la imagen reconstruida todavía debe grabarse y arrancarse en una microSD de prueba antes de considerarse validada en hardware.
 
+## Artefacto
+
+| Campo | Valor |
+| --- | --- |
+| Archivo | `ATLAS-OS-1.0.img.xz` |
+| Tamaño comprimido | 1.752.161.740 bytes (1.671 MiB) |
+| Tamaño descomprimido | 9.910.091.776 bytes (9,23 GiB) |
+| Compresión | XZ, preset `-9e`, check interno SHA-256 |
+| SHA-256 del archivo comprimido | `d3ae844f2f48b4ffeec59905b8f831362788c21df8ffd79a24d86fe2360be376` |
+
 ## Contenido
 
 - Identidad `ATLAS OS 1.0 (Debian 13)`.
