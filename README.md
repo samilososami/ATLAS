@@ -80,6 +80,7 @@ La carpeta [`atlas-commands`](atlas-commands) contiene los comandos `atlas-*` ut
 ATLAS/
 ├── assets/                 Recursos visuales y capturas
 ├── atlas-commands/         Comandos de administración de ATLAS A1
+├── docs/                   Notas de versiones y documentación técnica
 ├── openclaw/workspace/     Identidad pública y templates de OpenClaw
 ├── README.md               Presentación del proyecto
 └── SECURITY.md             Política de publicación segura
@@ -101,6 +102,8 @@ Las funciones de voz, pantalla táctil, audio integrado, detección de periféri
 ## Releases
 
 Las imágenes saneadas de ATLAS OS y sus notas de versión se publican en [GitHub Releases](../../releases). Se distribuyen comprimidas como `.img.xz`; ATLAS Imager podrá descargarlas y preparar cada instalación con la configuración elegida por su propietario. Una imagen pública nunca debe contener redes Wi-Fi, tokens, API keys, cookies, sesiones, claves SSH ni datos personales de la instalación original.
+
+Consulta las [notas de ATLAS OS 1.0](docs/ATLAS-OS-1.0.md) para conocer el contenido, los requisitos, el proceso de primer arranque y las comprobaciones de seguridad.
 
 ## Donaciones
 
