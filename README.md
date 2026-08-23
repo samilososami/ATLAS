@@ -91,9 +91,16 @@ ATLAS se encuentra en desarrollo activo. La versión 1.0 establece la identidad 
 
 Las funciones de voz, pantalla táctil, audio integrado, detección de periféricos y ATLAS Roles se ampliarán y evaluarán en versiones posteriores.
 
+### Roadmap
+
+- Desarrollar **ATLAS Imager** para Windows y Linux.
+- Descargar, verificar, descomprimir y grabar automáticamente la imagen oficial de ATLAS OS.
+- Permitir el provisioning previo de Wi-Fi, hostname, usuario, contraseña y claves SSH sin incluir estos datos en la imagen pública.
+- Definir un formato de configuración versionado para que ATLAS Imager y ATLAS OS sean compatibles entre versiones.
+
 ## Releases
 
-Las imágenes saneadas de ATLAS OS y sus notas de versión se publican en [GitHub Releases](../../releases). Una imagen pública nunca debe contener redes Wi-Fi, tokens, API keys, cookies, sesiones, claves SSH ni datos personales de la instalación original.
+Las imágenes saneadas de ATLAS OS y sus notas de versión se publican en [GitHub Releases](../../releases). Se distribuyen comprimidas como `.img.xz`; ATLAS Imager podrá descargarlas y preparar cada instalación con la configuración elegida por su propietario. Una imagen pública nunca debe contener redes Wi-Fi, tokens, API keys, cookies, sesiones, claves SSH ni datos personales de la instalación original.
 
 ## Donaciones
 
