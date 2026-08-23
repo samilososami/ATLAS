@@ -1,0 +1,739 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="/home/atlas/.atlas/atlas-desktop"
+SERVICE="atlas-desktop.service"
+DISPLAY_ID=":1"
+WIDTH=1920
+HEIGHT=1080
+WALLPAPER_DIR="/home/atlas/.atlas/atlas-wallpapers"
+ACTIVE_WALLPAPER="$ROOT/wallpapers/atlas-wallpaper.png"
+LATEST_SCREENSHOT="$ROOT/screenshots/latest.png"
+
+if [ -t 1 ]; then
+  BOLD="$(tput bold 2>/dev/null || true)"
+  RESET="$(tput sgr0 2>/dev/null || true)"
+  BLUE="$(tput setaf 6 2>/dev/null || true)"
+  RED="$(tput setaf 1 2>/dev/null || true)"
+else
+  BOLD=""; RESET=""; BLUE=""; RED=""
+fi
+
+usage() {
+  cat <<USAGE
+atlas-desktop <command>
+
+Service:
+  enable                         enable and start the ATLAS desktop service
+  disable                        stop and disable the ATLAS desktop service
+  start                          start the ATLAS desktop service
+  stop                           stop the ATLAS desktop service
+  restart                        restart the ATLAS desktop service
+  status                         show desktop status
+  logs [lines]                   show recent service logs
+
+Open:
+  open-url <url>                 open a URL in Chromium fullscreen
+  open-file <path>               open a local file in Chromium fullscreen
+
+Vision:
+  screenshot [path|latest]       capture the desktop to a PNG
+  observe                        capture latest screenshot and print its path
+
+Input:
+  click <x> <y>                  left click at desktop coordinates
+  lclick <x> <y>                 same as click
+  rclick <x> <y>                 right click at desktop coordinates
+  mclick <x> <y>                 middle click at desktop coordinates
+  dblclick <x> <y>               double left click
+  mouse-pos                      show current pointer coordinates
+  move <x> <y>                   move pointer
+  drag <x1> <y1> <x2> <y2>      drag from one point to another
+  scroll <up|down> [amount]      scroll at current pointer position
+  type <text>                    type text
+  key <key-combo> [...]          press key or key combo, e.g. ctrl+l Return
+
+Browser:
+  address <url>                  focus address bar and open URL/search
+  search <text>                  search from the address bar
+  new-tab [url]                  open a new browser tab, optionally with URL
+  close-tab                      close current browser tab
+  next-tab                       switch to next browser tab
+  prev-tab                       switch to previous browser tab
+  reload                         reload current tab
+  back                           browser back
+  forward                        browser forward
+  zoom-in                        increase browser zoom
+  zoom-out                       decrease browser zoom
+  zoom-reset                     reset browser zoom
+
+Windows:
+  windows                        list windows
+  active-window                  show active window id and title
+  focus-window <id|active>       focus a window
+  raise-window [id|active]       focus and raise a window
+  minimize-window [id|active]    minimize a window
+  maximize-window [id|active]    maximize a window
+  unmaximize-window [id|active]  remove maximized state
+  restore-window [id|active]     remove fullscreen/maximized state
+  move-window <x> <y> [id]       move a window
+  resize-window <w> <h> [id]     resize a window
+  place-window <x> <y> <w> <h> [id]
+                                 move and resize a window
+  tile <layout> [id]             place a window using a named layout
+  grid <cols> <rows> <col> <row> [colspan] [rowspan] [id]
+                                 place a window in a screen grid
+  close-window <id|active>       close a window
+  fullscreen [id|active|all]     fullscreen a window/all windows
+  nuke                           close all ATLAS desktop windows/tabs
+
+Layouts:
+  full, fullscreen, center, center-large
+  left, right, top, bottom
+  top-left, top-right, bottom-left, bottom-right
+  q1, q2, q3, q4
+  left-third, middle-third, right-third
+  left-two-thirds, right-two-thirds
+  upper-left, upper-right, lower-left, lower-right
+
+Wallpaper:
+  wallpaper                      show current wallpaper target
+  wallpaper list                 list available ATLAS wallpapers
+  wallpaper set <name|path>      set wallpaper
+  wallpaper toggle               switch to the other available wallpaper
+USAGE
+}
+
+sudo_systemctl() {
+  sudo -n systemctl "$@"
+}
+
+as_atlas() {
+  if [ "$(id -un)" = "atlas" ]; then
+    env DISPLAY="$DISPLAY_ID" HOME=/home/atlas XDG_RUNTIME_DIR="$ROOT/runtime/xdg" "$@"
+  else
+    sudo -n runuser -u atlas -- env DISPLAY="$DISPLAY_ID" HOME=/home/atlas XDG_RUNTIME_DIR="$ROOT/runtime/xdg" "$@"
+  fi
+}
+
+ensure_running() {
+  if ! systemctl is-active --quiet "$SERVICE"; then
+    sudo_systemctl start "$SERVICE"
+    sleep 1
+  fi
+}
+
+color_state() {
+  local word="$1"
+  case "$word" in
+    active|enabled|running|ready) printf '%s%s%s' "$BLUE" "$word" "$RESET" ;;
+    inactive|disabled|failed|stopped|unavailable) printf '%s%s%s' "$RED" "$word" "$RESET" ;;
+    *) printf '%s' "$word" ;;
+  esac
+}
+
+require_xy() {
+  [ "$#" -eq 2 ] || { echo "usage: atlas-desktop $cmd <x> <y>" >&2; exit 2; }
+  [[ "$1" =~ ^[0-9]+$ && "$2" =~ ^[0-9]+$ ]] || { echo "x and y must be non-negative integers" >&2; exit 2; }
+}
+
+active_window_id() {
+  as_atlas xdotool getactivewindow 2>/dev/null || true
+}
+
+resolve_window_id() {
+  local target="${1:-active}"
+  if [ "$target" = "active" ]; then
+    active_window_id
+  else
+    printf '%s\n' "$target"
+  fi
+}
+
+is_uint() {
+  [[ "${1:-}" =~ ^[0-9]+$ ]]
+}
+
+require_uint() {
+  local name="$1"
+  local value="$2"
+  if ! is_uint "$value"; then
+    echo "$name must be a non-negative integer" >&2
+    exit 2
+  fi
+}
+
+require_positive_uint() {
+  local name="$1"
+  local value="$2"
+  if ! is_uint "$value" || [ "$value" -lt 1 ]; then
+    echo "$name must be a positive integer" >&2
+    exit 2
+  fi
+}
+
+window_or_die() {
+  local target="${1:-active}"
+  local id
+  id="$(resolve_window_id "$target")"
+  [ -n "$id" ] || { echo 'no active window' >&2; exit 1; }
+  printf '%s\n' "$id"
+}
+
+restore_window_state() {
+  local id="$1"
+  as_atlas wmctrl -ir "$id" -b remove,fullscreen >/dev/null 2>&1 || true
+  as_atlas wmctrl -ir "$id" -b remove,maximized_vert,maximized_horz >/dev/null 2>&1 || true
+}
+
+place_window_geometry() {
+  local id="$1" x="$2" y="$3" w="$4" h="$5"
+  require_uint x "$x"
+  require_uint y "$y"
+  require_positive_uint width "$w"
+  require_positive_uint height "$h"
+  restore_window_state "$id"
+  as_atlas wmctrl -ia "$id" >/dev/null 2>&1 || true
+  as_atlas wmctrl -ir "$id" -e "0,${x},${y},${w},${h}" >/dev/null 2>&1 || true
+  as_atlas xdotool windowmove "$id" "$x" "$y" windowsize "$id" "$w" "$h" >/dev/null 2>&1 || true
+}
+
+tile_geometry() {
+  local layout="$1"
+  local half_w=$((WIDTH / 2))
+  local half_h=$((HEIGHT / 2))
+  local third_w=$((WIDTH / 3))
+  local two_third_w=$((third_w * 2))
+  local center_w=$((WIDTH * 70 / 100))
+  local center_h=$((HEIGHT * 70 / 100))
+  local center_large_w=$((WIDTH * 85 / 100))
+  local center_large_h=$((HEIGHT * 85 / 100))
+
+  case "$layout" in
+    full)
+      printf '0 0 %s %s\n' "$WIDTH" "$HEIGHT" ;;
+    fullscreen)
+      printf 'fullscreen\n' ;;
+    center)
+      printf '%s %s %s %s\n' "$(((WIDTH - center_w) / 2))" "$(((HEIGHT - center_h) / 2))" "$center_w" "$center_h" ;;
+    center-large|large-center)
+      printf '%s %s %s %s\n' "$(((WIDTH - center_large_w) / 2))" "$(((HEIGHT - center_large_h) / 2))" "$center_large_w" "$center_large_h" ;;
+    left|left-half)
+      printf '0 0 %s %s\n' "$half_w" "$HEIGHT" ;;
+    right|right-half)
+      printf '%s 0 %s %s\n' "$half_w" "$((WIDTH - half_w))" "$HEIGHT" ;;
+    top|upper|top-half)
+      printf '0 0 %s %s\n' "$WIDTH" "$half_h" ;;
+    bottom|lower|bottom-half)
+      printf '0 %s %s %s\n' "$half_h" "$WIDTH" "$((HEIGHT - half_h))" ;;
+    top-left|upper-left|q1|quarter-1)
+      printf '0 0 %s %s\n' "$half_w" "$half_h" ;;
+    top-right|upper-right|q2|quarter-2)
+      printf '%s 0 %s %s\n' "$half_w" "$((WIDTH - half_w))" "$half_h" ;;
+    bottom-left|lower-left|q3|quarter-3)
+      printf '0 %s %s %s\n' "$half_h" "$half_w" "$((HEIGHT - half_h))" ;;
+    bottom-right|lower-right|q4|quarter-4)
+      printf '%s %s %s %s\n' "$half_w" "$half_h" "$((WIDTH - half_w))" "$((HEIGHT - half_h))" ;;
+    left-third|third-left)
+      printf '0 0 %s %s\n' "$third_w" "$HEIGHT" ;;
+    middle-third|center-third|third-middle)
+      printf '%s 0 %s %s\n' "$third_w" "$third_w" "$HEIGHT" ;;
+    right-third|third-right)
+      printf '%s 0 %s %s\n' "$two_third_w" "$((WIDTH - two_third_w))" "$HEIGHT" ;;
+    left-two-thirds|two-thirds-left)
+      printf '0 0 %s %s\n' "$two_third_w" "$HEIGHT" ;;
+    right-two-thirds|two-thirds-right)
+      printf '%s 0 %s %s\n' "$third_w" "$((WIDTH - third_w))" "$HEIGHT" ;;
+    *)
+      echo "unknown layout: $layout" >&2
+      exit 2 ;;
+  esac
+}
+
+browser_key() {
+  ensure_running
+  as_atlas xdotool key --clearmodifiers "$@"
+}
+
+browser_address() {
+  [ "$#" -ge 1 ] || { echo "usage: atlas-desktop $cmd <url-or-search>" >&2; exit 2; }
+  ensure_running
+  as_atlas xdotool key --clearmodifiers ctrl+l
+  as_atlas xdotool type --clearmodifiers --delay 0 "$*"
+  as_atlas xdotool key --clearmodifiers Return
+}
+
+apply_wallpaper() {
+  local path="$1"
+  mkdir -p "$ROOT/wallpapers" "$WALLPAPER_DIR"
+  if [ ! -f "$path" ]; then
+    echo "wallpaper not found: $path" >&2
+    exit 1
+  fi
+  rm -f "$ACTIVE_WALLPAPER"
+  ln -s "$path" "$ACTIVE_WALLPAPER"
+  chown -h atlas:atlas "$ACTIVE_WALLPAPER" 2>/dev/null || true
+  if systemctl is-active --quiet "$SERVICE"; then
+    as_atlas feh --no-fehbg --bg-fill "$ACTIVE_WALLPAPER" >/dev/null 2>&1 || true
+  fi
+  printf '%s\n' "$path"
+}
+
+wallpaper_target() {
+  if [ -L "$ACTIVE_WALLPAPER" ]; then
+    readlink -f "$ACTIVE_WALLPAPER"
+  elif [ -e "$ACTIVE_WALLPAPER" ]; then
+    printf '%s\n' "$ACTIVE_WALLPAPER"
+  else
+    printf '%s\n' ""
+  fi
+}
+
+resolve_wallpaper_name() {
+  local name="$1"
+  case "$name" in
+    atlas_wallpaper1|atlas_wallpaper1.png|wallpaper1|1)
+      printf '%s\n' "$WALLPAPER_DIR/atlas_wallpaper1.png" ;;
+    atlas_wallpaper2|atlas_wallpaper2.png|wallpaper2|2)
+      printf '%s\n' "$WALLPAPER_DIR/atlas_wallpaper2.png" ;;
+    *)
+      if [ -f "$name" ]; then printf '%s\n' "$(realpath "$name")"; else printf '%s\n' "$WALLPAPER_DIR/$name"; fi ;;
+  esac
+}
+
+wallpaper_toggle() {
+  local current one two next
+  current="$(wallpaper_target)"
+  one="$WALLPAPER_DIR/atlas_wallpaper1.png"
+  two="$WALLPAPER_DIR/atlas_wallpaper2.png"
+  if [ ! -f "$one" ] && [ ! -f "$two" ]; then
+    echo "no ATLAS wallpapers found in $WALLPAPER_DIR" >&2
+    exit 1
+  fi
+  if [ "$current" = "$one" ] && [ -f "$two" ]; then
+    next="$two"
+  elif [ "$current" = "$two" ] && [ -f "$one" ]; then
+    next="$one"
+  elif [ -f "$one" ]; then
+    next="$one"
+  else
+    next="$two"
+  fi
+  apply_wallpaper "$next"
+}
+
+nuke_desktop() {
+  if ! systemctl is-active --quiet "$SERVICE"; then
+    echo "ATLAS desktop is not running"
+    return 0
+  fi
+
+  local ids id count
+  ids="$(as_atlas wmctrl -l 2>/dev/null | awk '{ print $1 }' || true)"
+  count=0
+  for id in $ids; do
+    as_atlas wmctrl -ic "$id" >/dev/null 2>&1 || true
+    count=$((count + 1))
+  done
+
+  sleep 1
+  sudo -n pkill -TERM -u atlas -x chromium >/dev/null 2>&1 || true
+  sudo -n pkill -TERM -u atlas -x chrome_crashpad_handler >/dev/null 2>&1 || true
+  sudo -n pkill -TERM -u atlas -f "$ROOT/chromium-profile" >/dev/null 2>&1 || true
+  sleep 0.6
+  sudo -n pkill -KILL -u atlas -x chromium >/dev/null 2>&1 || true
+  sudo -n pkill -KILL -u atlas -f "$ROOT/chromium-profile" >/dev/null 2>&1 || true
+
+  if [ -e "$ACTIVE_WALLPAPER" ]; then
+    as_atlas feh --no-fehbg --bg-fill "$ACTIVE_WALLPAPER" >/dev/null 2>&1 || true
+  fi
+
+  printf 'Closed %s ATLAS desktop window(s) and killed Chromium leftovers.\n' "$count"
+}
+
+capture_screenshot() {
+  local out="${1:-$LATEST_SCREENSHOT}"
+  if [ "$out" = "latest" ]; then out="$LATEST_SCREENSHOT"; fi
+  ensure_running
+  mkdir -p "$(dirname "$out")"
+  as_atlas ffmpeg -hide_banner -loglevel error -y -f x11grab -video_size "${WIDTH}x${HEIGHT}" -i "$DISPLAY_ID" -frames:v 1 "$out"
+  chown atlas:atlas "$out" 2>/dev/null || true
+  printf '%s\n' "$out"
+}
+
+cmd="${1:-status}"
+shift || true
+
+case "$cmd" in
+  enable)
+    sudo_systemctl enable --now "$SERVICE"
+    atlas-desktop status
+    ;;
+  disable)
+    sudo_systemctl disable --now "$SERVICE"
+    atlas-desktop status
+    ;;
+  start)
+    sudo_systemctl start "$SERVICE"
+    atlas-desktop status
+    ;;
+  stop)
+    sudo_systemctl stop "$SERVICE"
+    sudo_systemctl reset-failed "$SERVICE" >/dev/null 2>&1 || true
+    atlas-desktop status
+    ;;
+  restart)
+    sudo_systemctl restart "$SERVICE"
+    sleep 1
+    atlas-desktop status
+    ;;
+  status)
+    active="$(systemctl is-active "$SERVICE" 2>/dev/null || true)"
+    enabled="$(systemctl is-enabled "$SERVICE" 2>/dev/null || true)"
+    printf '%s\n' 'atlas-desktop status'
+    printf '%sService:%s %s / %s\n' "$BOLD" "$RESET" "$(color_state "${active:-unknown}")" "$(color_state "${enabled:-unknown}")"
+    printf '%sRoot:%s %s\n' "$BOLD" "$RESET" "$ROOT"
+    printf '%sDisplay:%s %s\n' "$BOLD" "$RESET" "$DISPLAY_ID"
+    printf '%sWallpaper:%s %s\n' "$BOLD" "$RESET" "$(wallpaper_target)"
+    if [ "$active" = "active" ]; then
+      dims="$(as_atlas xdpyinfo -display "$DISPLAY_ID" 2>/dev/null | awk '/dimensions:/ {print $2; exit}' || true)"
+      printf '%sResolution:%s %s\n' "$BOLD" "$RESET" "${dims:-unknown}"
+      printf '%sWindows:%s\n' "$BOLD" "$RESET"
+      windows="$(as_atlas wmctrl -l 2>/dev/null | sed 's/^[^ ]* *[^ ]* *[^ ]* *//' || true)"
+      if [ -n "$windows" ]; then
+        printf '%s\n' "$windows" | sed 's/^/  - /'
+      else
+        printf '  none\n'
+      fi
+    fi
+    ;;
+  open-url)
+    [ "$#" -ge 1 ] || { echo 'missing URL' >&2; exit 2; }
+    ensure_running
+    as_atlas "$ROOT/bin/open-chromium" "$@" >/dev/null
+    ;;
+  open-file)
+    [ "$#" -eq 1 ] || { echo 'usage: atlas-desktop open-file <path>' >&2; exit 2; }
+    path="$1"
+    if [ ! -e "$path" ]; then
+      echo "file not found: $path" >&2
+      exit 1
+    fi
+    ensure_running
+    abs="$(realpath "$path")"
+    uri="file://${abs// /%20}"
+    as_atlas "$ROOT/bin/open-chromium" "$uri" >/dev/null
+    ;;
+  screenshot)
+    capture_screenshot "${1:-$LATEST_SCREENSHOT}"
+    ;;
+  observe)
+    out="$(capture_screenshot "$LATEST_SCREENSHOT")"
+    printf 'Screenshot: %s\n' "$out"
+    printf 'Resolution: %sx%s\n' "$WIDTH" "$HEIGHT"
+    ;;
+  click|lclick)
+    require_xy "$@"
+    ensure_running
+    as_atlas xdotool mousemove --sync "$1" "$2" click 1
+    ;;
+  rclick)
+    require_xy "$@"
+    ensure_running
+    as_atlas xdotool mousemove --sync "$1" "$2" click 3
+    ;;
+  mclick)
+    require_xy "$@"
+    ensure_running
+    as_atlas xdotool mousemove --sync "$1" "$2" click 2
+    ;;
+  dblclick)
+    require_xy "$@"
+    ensure_running
+    as_atlas xdotool mousemove --sync "$1" "$2" click --repeat 2 --delay 80 1
+    ;;
+  mouse-pos)
+    [ "$#" -eq 0 ] || { echo 'usage: atlas-desktop mouse-pos' >&2; exit 2; }
+    ensure_running
+    as_atlas xdotool getmouselocation --shell
+    ;;
+  move)
+    require_xy "$@"
+    ensure_running
+    as_atlas xdotool mousemove --sync "$1" "$2"
+    ;;
+  drag)
+    [ "$#" -eq 4 ] || { echo 'usage: atlas-desktop drag <x1> <y1> <x2> <y2>' >&2; exit 2; }
+    ensure_running
+    as_atlas xdotool mousemove --sync "$1" "$2" mousedown 1 mousemove --sync "$3" "$4" mouseup 1
+    ;;
+  scroll)
+    [ "$#" -ge 1 ] || { echo 'usage: atlas-desktop scroll <up|down> [amount]' >&2; exit 2; }
+    amount="${2:-5}"
+    [[ "$amount" =~ ^[0-9]+$ ]] || { echo 'amount must be an integer' >&2; exit 2; }
+    ensure_running
+    case "$1" in
+      up) button=4 ;;
+      down) button=5 ;;
+      *) echo 'direction must be up or down' >&2; exit 2 ;;
+    esac
+    as_atlas xdotool click --repeat "$amount" --delay 25 "$button"
+    ;;
+  type)
+    [ "$#" -ge 1 ] || { echo 'usage: atlas-desktop type <text>' >&2; exit 2; }
+    ensure_running
+    as_atlas xdotool type --clearmodifiers --delay 0 "$*"
+    ;;
+  key)
+    [ "$#" -ge 1 ] || { echo 'usage: atlas-desktop key <key-combo> [...]' >&2; exit 2; }
+    ensure_running
+    for key in "$@"; do
+      as_atlas xdotool key --clearmodifiers "$key"
+    done
+    ;;
+  address|search)
+    browser_address "$@"
+    ;;
+  new-tab)
+    [ "$#" -le 1 ] || { echo 'usage: atlas-desktop new-tab [url]' >&2; exit 2; }
+    ensure_running
+    as_atlas xdotool key --clearmodifiers ctrl+t
+    if [ "$#" -eq 1 ]; then
+      as_atlas xdotool type --clearmodifiers --delay 0 "$1"
+      as_atlas xdotool key --clearmodifiers Return
+    fi
+    ;;
+  close-tab)
+    [ "$#" -eq 0 ] || { echo 'usage: atlas-desktop close-tab' >&2; exit 2; }
+    browser_key ctrl+w
+    ;;
+  next-tab)
+    [ "$#" -eq 0 ] || { echo 'usage: atlas-desktop next-tab' >&2; exit 2; }
+    browser_key ctrl+Tab
+    ;;
+  prev-tab)
+    [ "$#" -eq 0 ] || { echo 'usage: atlas-desktop prev-tab' >&2; exit 2; }
+    browser_key ctrl+shift+Tab
+    ;;
+  reload)
+    [ "$#" -eq 0 ] || { echo 'usage: atlas-desktop reload' >&2; exit 2; }
+    browser_key ctrl+r
+    ;;
+  back)
+    [ "$#" -eq 0 ] || { echo 'usage: atlas-desktop back' >&2; exit 2; }
+    browser_key alt+Left
+    ;;
+  forward)
+    [ "$#" -eq 0 ] || { echo 'usage: atlas-desktop forward' >&2; exit 2; }
+    browser_key alt+Right
+    ;;
+  zoom-in)
+    [ "$#" -eq 0 ] || { echo 'usage: atlas-desktop zoom-in' >&2; exit 2; }
+    browser_key ctrl+plus
+    ;;
+  zoom-out)
+    [ "$#" -eq 0 ] || { echo 'usage: atlas-desktop zoom-out' >&2; exit 2; }
+    browser_key ctrl+minus
+    ;;
+  zoom-reset)
+    [ "$#" -eq 0 ] || { echo 'usage: atlas-desktop zoom-reset' >&2; exit 2; }
+    browser_key ctrl+0
+    ;;
+  windows)
+    ensure_running
+    as_atlas wmctrl -lG -x || true
+    ;;
+  active-window)
+    [ "$#" -eq 0 ] || { echo 'usage: atlas-desktop active-window' >&2; exit 2; }
+    ensure_running
+    id="$(active_window_id)"
+    [ -n "$id" ] || { echo 'no active window' >&2; exit 1; }
+    title="$(as_atlas xdotool getwindowname "$id" 2>/dev/null || true)"
+    printf 'id=%s\n' "$id"
+    printf 'title=%s\n' "$title"
+    ;;
+  focus-window)
+    [ "$#" -eq 1 ] || { echo 'usage: atlas-desktop focus-window <id|active>' >&2; exit 2; }
+    ensure_running
+    id="$(window_or_die "$1")"
+    as_atlas wmctrl -ia "$id"
+    ;;
+  raise-window)
+    [ "$#" -le 1 ] || { echo 'usage: atlas-desktop raise-window [id|active]' >&2; exit 2; }
+    ensure_running
+    id="$(window_or_die "${1:-active}")"
+    as_atlas wmctrl -ia "$id" >/dev/null 2>&1 || true
+    as_atlas xdotool windowraise "$id" >/dev/null 2>&1 || true
+    ;;
+  minimize-window)
+    [ "$#" -le 1 ] || { echo 'usage: atlas-desktop minimize-window [id|active]' >&2; exit 2; }
+    ensure_running
+    id="$(window_or_die "${1:-active}")"
+    as_atlas xdotool windowminimize "$id"
+    ;;
+  maximize-window)
+    [ "$#" -le 1 ] || { echo 'usage: atlas-desktop maximize-window [id|active]' >&2; exit 2; }
+    ensure_running
+    id="$(window_or_die "${1:-active}")"
+    restore_window_state "$id"
+    as_atlas wmctrl -ir "$id" -b add,maximized_vert,maximized_horz
+    ;;
+  unmaximize-window)
+    [ "$#" -le 1 ] || { echo 'usage: atlas-desktop unmaximize-window [id|active]' >&2; exit 2; }
+    ensure_running
+    id="$(window_or_die "${1:-active}")"
+    as_atlas wmctrl -ir "$id" -b remove,maximized_vert,maximized_horz
+    ;;
+  restore-window)
+    [ "$#" -le 1 ] || { echo 'usage: atlas-desktop restore-window [id|active]' >&2; exit 2; }
+    ensure_running
+    id="$(window_or_die "${1:-active}")"
+    restore_window_state "$id"
+    ;;
+  move-window)
+    [ "$#" -ge 2 ] && [ "$#" -le 3 ] || { echo 'usage: atlas-desktop move-window <x> <y> [id|active]' >&2; exit 2; }
+    ensure_running
+    require_uint x "$1"
+    require_uint y "$2"
+    id="$(window_or_die "${3:-active}")"
+    restore_window_state "$id"
+    as_atlas xdotool windowmove "$id" "$1" "$2" >/dev/null 2>&1 || true
+    ;;
+  resize-window)
+    [ "$#" -ge 2 ] && [ "$#" -le 3 ] || { echo 'usage: atlas-desktop resize-window <w> <h> [id|active]' >&2; exit 2; }
+    ensure_running
+    require_positive_uint width "$1"
+    require_positive_uint height "$2"
+    id="$(window_or_die "${3:-active}")"
+    restore_window_state "$id"
+    as_atlas xdotool windowsize "$id" "$1" "$2" >/dev/null 2>&1 || true
+    ;;
+  place-window)
+    [ "$#" -ge 4 ] && [ "$#" -le 5 ] || { echo 'usage: atlas-desktop place-window <x> <y> <w> <h> [id|active]' >&2; exit 2; }
+    ensure_running
+    id="$(window_or_die "${5:-active}")"
+    place_window_geometry "$id" "$1" "$2" "$3" "$4"
+    ;;
+  tile)
+    [ "$#" -ge 1 ] && [ "$#" -le 2 ] || { echo 'usage: atlas-desktop tile <layout> [id|active]' >&2; exit 2; }
+    ensure_running
+    id="$(window_or_die "${2:-active}")"
+    geom="$(tile_geometry "$1")"
+    if [ "$geom" = "fullscreen" ]; then
+      as_atlas wmctrl -ir "$id" -b add,fullscreen >/dev/null 2>&1 || true
+      as_atlas wmctrl -ir "$id" -e "0,0,0,${WIDTH},${HEIGHT}" >/dev/null 2>&1 || true
+    else
+      read -r x y w h <<< "$geom"
+      place_window_geometry "$id" "$x" "$y" "$w" "$h"
+    fi
+    ;;
+  grid)
+    [ "$#" -ge 4 ] && [ "$#" -le 7 ] || { echo 'usage: atlas-desktop grid <cols> <rows> <col> <row> [colspan] [rowspan] [id|active]' >&2; exit 2; }
+    ensure_running
+    cols="$1"; rows="$2"; col="$3"; row="$4"; shift 4
+    require_positive_uint cols "$cols"
+    require_positive_uint rows "$rows"
+    require_positive_uint col "$col"
+    require_positive_uint row "$row"
+    [ "$col" -le "$cols" ] || { echo 'col is outside the grid' >&2; exit 2; }
+    [ "$row" -le "$rows" ] || { echo 'row is outside the grid' >&2; exit 2; }
+    colspan=1
+    rowspan=1
+    target="active"
+    if [ "$#" -gt 0 ]; then
+      if is_uint "$1"; then colspan="$1"; shift; else target="$1"; shift; fi
+    fi
+    if [ "$#" -gt 0 ]; then
+      if is_uint "$1"; then rowspan="$1"; shift; else target="$1"; shift; fi
+    fi
+    if [ "$#" -gt 0 ]; then
+      target="$1"
+      shift
+    fi
+    [ "$#" -eq 0 ] || { echo 'too many arguments for grid' >&2; exit 2; }
+    require_positive_uint colspan "$colspan"
+    require_positive_uint rowspan "$rowspan"
+    [ $((col + colspan - 1)) -le "$cols" ] || { echo 'colspan is outside the grid' >&2; exit 2; }
+    [ $((row + rowspan - 1)) -le "$rows" ] || { echo 'rowspan is outside the grid' >&2; exit 2; }
+    cell_w=$((WIDTH / cols))
+    cell_h=$((HEIGHT / rows))
+    x=$(((col - 1) * cell_w))
+    y=$(((row - 1) * cell_h))
+    if [ $((col + colspan - 1)) -eq "$cols" ]; then
+      w=$((WIDTH - x))
+    else
+      w=$((cell_w * colspan))
+    fi
+    if [ $((row + rowspan - 1)) -eq "$rows" ]; then
+      h=$((HEIGHT - y))
+    else
+      h=$((cell_h * rowspan))
+    fi
+    id="$(window_or_die "$target")"
+    place_window_geometry "$id" "$x" "$y" "$w" "$h"
+    ;;
+  close-window)
+    [ "$#" -le 1 ] || { echo 'usage: atlas-desktop close-window [id|active]' >&2; exit 2; }
+    ensure_running
+    id="$(resolve_window_id "${1:-active}")"
+    [ -n "$id" ] || { echo 'no active window' >&2; exit 1; }
+    as_atlas wmctrl -ic "$id"
+    ;;
+  fullscreen)
+    [ "$#" -le 1 ] || { echo 'usage: atlas-desktop fullscreen [id|active|all]' >&2; exit 2; }
+    ensure_running
+    target="${1:-active}"
+    if [ "$target" = "all" ]; then
+      ids="$(as_atlas wmctrl -l | awk '{print $1}' || true)"
+      for id in $ids; do
+        as_atlas wmctrl -ir "$id" -b add,fullscreen >/dev/null 2>&1 || true
+        as_atlas wmctrl -ir "$id" -e "0,0,0,${WIDTH},${HEIGHT}" >/dev/null 2>&1 || true
+      done
+    else
+      id="$(resolve_window_id "$target")"
+      [ -n "$id" ] || { echo 'no active window' >&2; exit 1; }
+      as_atlas wmctrl -ir "$id" -b add,fullscreen >/dev/null 2>&1 || true
+      as_atlas wmctrl -ir "$id" -e "0,0,0,${WIDTH},${HEIGHT}" >/dev/null 2>&1 || true
+    fi
+    ;;
+  wallpaper)
+    sub="${1:-current}"
+    case "$sub" in
+      current)
+        wallpaper_target
+        ;;
+      list)
+        mkdir -p "$WALLPAPER_DIR"
+        find "$WALLPAPER_DIR" -maxdepth 1 -type f -name 'atlas_wallpaper*.png' -printf '%f\t%p\n' | sort
+        ;;
+      set)
+        [ "$#" -eq 2 ] || { echo 'usage: atlas-desktop wallpaper set <name|path>' >&2; exit 2; }
+        apply_wallpaper "$(resolve_wallpaper_name "$2")"
+        ;;
+      toggle|next)
+        wallpaper_toggle
+        ;;
+      *)
+        if [ "$#" -eq 1 ]; then
+          apply_wallpaper "$(resolve_wallpaper_name "$1")"
+        else
+          echo 'usage: atlas-desktop wallpaper [list|current|set <name|path>|toggle]' >&2
+          exit 2
+        fi
+        ;;
+    esac
+    ;;
+  nuke)
+    nuke_desktop
+    ;;
+  logs)
+    journalctl -u "$SERVICE" -n "${1:-80}" --no-pager
+    ;;
+  -h|--help|help)
+    usage
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac

@@ -1,0 +1,6 @@
+.staging/
+*.img
+*.img.xz
+*.iso
+*.part-*
+*.log

@@ -1,0 +1,621 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="/home/atlas/.atlas/atlas-desktop"
+SERVICE="atlas-desktop.service"
+DISPLAY_ID=":1"
+PIDFILE="$ROOT/runtime/cast.pid"
+DEVICEFILE="$ROOT/runtime/cast.device"
+PROFILEFILE="$ROOT/runtime/cast.profile"
+QUALITYFILE="$ROOT/runtime/cast.quality"
+REASONFILE="$ROOT/runtime/cast.reason"
+LOGFILE="$ROOT/logs/cast.log"
+CONFIG_FILE="$ROOT/cast/config.env"
+DEVICES_CACHE="$ROOT/cast/devices.tsv"
+
+if [ -t 1 ]; then
+  BOLD="$(tput bold 2>/dev/null || true)"
+  RESET="$(tput sgr0 2>/dev/null || true)"
+  BLUE="$(tput setaf 6 2>/dev/null || true)"
+  RED="$(tput setaf 1 2>/dev/null || true)"
+else
+  BOLD=""; RESET=""; BLUE=""; RED=""
+fi
+
+ensure_config() {
+  mkdir -p "$ROOT/cast" "$ROOT/logs" "$ROOT/runtime"
+  if [ ! -f "$CONFIG_FILE" ]; then
+    {
+      printf '%s\n' '# ATLAS Cast configuration'
+      printf '%s\n' '# Resolution profile: auto, 1080p, 720p, 540p, 480p, 360p'
+      printf '%s\n' 'ATLAS_CAST_PROFILE=auto'
+      printf '%s\n' '# In auto mode, 720p is the normal ceiling because it is the best quality/speed balance on the Pi.'
+      printf '%s\n' '# Set this to 1080p if you want auto mode to try full HD when the Pi and Wi-Fi are relaxed.'
+      printf '%s\n' 'ATLAS_CAST_AUTO_MAX_PROFILE=720p'
+      printf '%s\n' 'ATLAS_CAST_PORT=5010'
+      printf '%s\n' 'ATLAS_CAST_AUTO_CPU_HIGH=78'
+      printf '%s\n' 'ATLAS_CAST_AUTO_RAM_HIGH=82'
+      printf '%s\n' 'ATLAS_CAST_AUTO_WIFI_WEAK_DBM=-68'
+      printf '%s\n' 'ATLAS_CAST_AUTO_WIFI_BAD_DBM=-75'
+      printf '%s\n' '# Advanced overrides. Leave empty unless you want a custom stream.'
+      printf '%s\n' '# ATLAS_CAST_WIDTH='
+      printf '%s\n' '# ATLAS_CAST_HEIGHT='
+      printf '%s\n' '# ATLAS_CAST_FPS='
+      printf '%s\n' '# ATLAS_CAST_BITRATE='
+    } > "$CONFIG_FILE"
+    chown atlas:atlas "$CONFIG_FILE" 2>/dev/null || true
+  fi
+}
+
+load_config() {
+  ensure_config
+  # shellcheck disable=SC1090
+  . "$CONFIG_FILE"
+  ATLAS_CAST_PROFILE="${ATLAS_CAST_PROFILE:-auto}"
+  ATLAS_CAST_AUTO_MAX_PROFILE="${ATLAS_CAST_AUTO_MAX_PROFILE:-720p}"
+  ATLAS_CAST_PORT="${ATLAS_CAST_PORT:-5010}"
+  ATLAS_CAST_CAPTURE_WIDTH="${ATLAS_CAST_CAPTURE_WIDTH:-1920}"
+  ATLAS_CAST_CAPTURE_HEIGHT="${ATLAS_CAST_CAPTURE_HEIGHT:-1080}"
+  ATLAS_CAST_AUTO_CPU_HIGH="${ATLAS_CAST_AUTO_CPU_HIGH:-78}"
+  ATLAS_CAST_AUTO_RAM_HIGH="${ATLAS_CAST_AUTO_RAM_HIGH:-82}"
+  ATLAS_CAST_AUTO_WIFI_WEAK_DBM="${ATLAS_CAST_AUTO_WIFI_WEAK_DBM:--68}"
+  ATLAS_CAST_AUTO_WIFI_BAD_DBM="${ATLAS_CAST_AUTO_WIFI_BAD_DBM:--75}"
+}
+
+usage() {
+  cat <<USAGE
+atlas-cast <command>
+
+Commands:
+  list                       discover Chromecast devices on the local network
+  start <device name>        cast the ATLAS desktop to a Chromecast
+  stop                       stop current cast process
+  restart [device name]      restart cast, reusing the last device when omitted
+  status                     show cast status
+  config                     show cast config file
+  profile <auto|1080p|720p|540p|480p|360p>
+                             set resolution profile in the config
+  logs [lines]               show recent cast logs
+USAGE
+}
+
+load_config
+
+trim_spaces() {
+  python3 - "$1" <<'PY'
+import sys
+print(" ".join(sys.argv[1].strip().split()))
+PY
+}
+
+is_running() {
+  [ -f "$PIDFILE" ] || return 1
+  pid="$(cat "$PIDFILE" 2>/dev/null || true)"
+  [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null
+}
+
+host_ip() {
+  hostname -I | awk '{print $1}'
+}
+
+as_atlas() {
+  if [ "$(id -un)" = "atlas" ]; then
+    env DISPLAY="$DISPLAY_ID" HOME=/home/atlas XDG_RUNTIME_DIR="$ROOT/runtime/xdg" "$@"
+  else
+    sudo -n runuser -u atlas -- env DISPLAY="$DISPLAY_ID" HOME=/home/atlas XDG_RUNTIME_DIR="$ROOT/runtime/xdg" "$@"
+  fi
+}
+
+start_desktop_if_needed() {
+  if ! systemctl is-active --quiet "$SERVICE"; then
+    sudo -n systemctl start "$SERVICE"
+    sleep 1
+  fi
+}
+
+valid_profile() {
+  case "$1" in
+    auto|1080p|720p|540p|480p|360p) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+cpu_percent() {
+  local t1 i1 t2 i2 dt di
+  read -r t1 i1 < <(awk '/^cpu / {idle=$5; total=0; for (i=2; i<=NF; i++) total+=$i; print total, idle; exit}' /proc/stat)
+  sleep 0.35
+  read -r t2 i2 < <(awk '/^cpu / {idle=$5; total=0; for (i=2; i<=NF; i++) total+=$i; print total, idle; exit}' /proc/stat)
+  dt=$((t2 - t1))
+  di=$((i2 - i1))
+  if [ "$dt" -le 0 ]; then
+    printf '0'
+  else
+    awk -v dt="$dt" -v di="$di" 'BEGIN { printf "%.0f", (100 * (dt - di) / dt) }'
+  fi
+}
+
+ram_percent() {
+  free | awk '/^Mem:/ { printf "%.0f", ($3 * 100 / $2) }'
+}
+
+wifi_signal_dbm() {
+  local iw_cmd=""
+  if command -v iw >/dev/null 2>&1; then
+    iw_cmd="$(command -v iw)"
+  elif [ -x /usr/sbin/iw ]; then
+    iw_cmd="/usr/sbin/iw"
+  fi
+  if [ -n "$iw_cmd" ]; then
+    "$iw_cmd" dev wlan0 link 2>/dev/null | awk '/signal:/ { print int($2); exit }'
+    return 0
+  fi
+  if command -v nmcli >/dev/null 2>&1; then
+    nmcli -t -f ACTIVE,SIGNAL dev wifi 2>/dev/null | awk -F: '$1 == "yes" { quality=$2; dbm=-90 + (quality * 0.6); print int(dbm); exit }'
+    return 0
+  fi
+  awk '/wlan0:/ { print int($4); exit }' /proc/net/wireless 2>/dev/null || true
+}
+
+validate_cast_device() {
+  local requested="$1"
+  local timeout="${ATLAS_CAST_START_DISCOVERY_TIMEOUT:-5.0}"
+  requested="$(trim_spaces "$requested")"
+  [ -n "$requested" ] || { echo "empty cast device name" >&2; exit 2; }
+
+  ATLAS_CAST_REQUESTED_DEVICE="$requested" ATLAS_CAST_START_DISCOVERY_TIMEOUT_VALUE="$timeout" python3 - <<'PYCASTVERIFY'
+import os
+import sys
+import pychromecast
+
+requested = os.environ["ATLAS_CAST_REQUESTED_DEVICE"]
+timeout = float(os.environ.get("ATLAS_CAST_START_DISCOVERY_TIMEOUT_VALUE", "5.0"))
+
+def norm(value):
+    return " ".join(str(value).strip().split()).casefold()
+
+browser = None
+try:
+    chromecasts, browser = pychromecast.get_chromecasts(timeout=timeout, blocking=True)
+    devices = []
+    for cc in chromecasts:
+        dev = getattr(cc, "device", None)
+        name = getattr(cc, "name", None) or getattr(dev, "friendly_name", "")
+        cast_type = getattr(dev, "cast_type", "")
+        model = getattr(dev, "model_name", "unknown model")
+        maker = getattr(dev, "manufacturer", "unknown maker")
+        if name:
+            devices.append((cc, name, cast_type, maker, model))
+
+    if not devices:
+        print("no Chromecast devices found on the local network", file=sys.stderr)
+        sys.exit(1)
+
+    video_devices = [item for item in devices if item[2] in ("cast", "group")]
+    exact = [item for item in video_devices if norm(item[1]) == norm(requested)]
+    if not exact:
+        partial = [item for item in video_devices if norm(requested) in norm(item[1])]
+        if len(partial) == 1:
+            exact = partial
+
+    if not exact:
+        print(f'cast device not found or not video-capable: "{requested}"', file=sys.stderr)
+        print("available video Chromecast devices:", file=sys.stderr)
+        for _, name, cast_type, maker, model in video_devices:
+            print(f"  - {name} ({maker} {model}, {cast_type})", file=sys.stderr)
+        audio_only = [item for item in devices if item[2] not in ("cast", "group")]
+        if audio_only:
+            print("audio-only devices ignored for desktop casting:", file=sys.stderr)
+            for _, name, cast_type, maker, model in audio_only:
+                print(f"  - {name} ({maker} {model}, {cast_type})", file=sys.stderr)
+        sys.exit(1)
+
+    if len(exact) > 1:
+        print(f'ambiguous cast device name: "{requested}"', file=sys.stderr)
+        for _, name, cast_type, maker, model in exact:
+            print(f"  - {name} ({maker} {model}, {cast_type})", file=sys.stderr)
+        sys.exit(1)
+
+    cc, name, cast_type, maker, model = exact[0]
+    try:
+        cc.wait(timeout=min(4.0, timeout))
+    except Exception as exc:
+        print(f'found "{name}" but could not establish Chromecast connection: {exc}', file=sys.stderr)
+        sys.exit(1)
+    finally:
+        try:
+            cc.disconnect()
+        except Exception:
+            pass
+
+    print(name)
+finally:
+    if browser is not None:
+        try:
+            pychromecast.discovery.stop_discovery(browser)
+        except Exception:
+            pass
+PYCASTVERIFY
+}
+
+verify_cast_process_started() {
+  local pid
+  sleep "${ATLAS_CAST_START_VERIFY_DELAY:-2}"
+  if ! is_running; then
+    echo "cast process did not stay running" >&2
+    if [ -f "$LOGFILE" ]; then
+      echo "recent cast log:" >&2
+      tail -n 80 "$LOGFILE" >&2 || true
+    fi
+    rm -f "$PIDFILE" "$DEVICEFILE" "$PROFILEFILE" "$QUALITYFILE" "$REASONFILE"
+    exit 1
+  fi
+  pid="$(cat "$PIDFILE" 2>/dev/null || true)"
+  if [ -f "$LOGFILE" ] && grep -Eiq 'Traceback|No Chromecasts|Chromecast not found|AttributeError|Connection refused|Exception' "$LOGFILE"; then
+    echo "cast process reported an error while starting" >&2
+    tail -n 100 "$LOGFILE" >&2 || true
+    if [ -n "$pid" ]; then
+      pkill -TERM -P "$pid" 2>/dev/null || true
+      kill "$pid" 2>/dev/null || true
+    fi
+    rm -f "$PIDFILE" "$DEVICEFILE" "$PROFILEFILE" "$QUALITYFILE" "$REASONFILE"
+    exit 1
+  fi
+}
+
+profile_quality() {
+  local profile="$1"
+  case "$profile" in
+    1080p)
+      PROFILE_WIDTH=1920; PROFILE_HEIGHT=1080; PROFILE_FPS=15; PROFILE_BITRATE=3000k; PROFILE_LEVEL=4.0; PROFILE_BUFSIZE=6000k ;;
+    720p)
+      PROFILE_WIDTH=1280; PROFILE_HEIGHT=720; PROFILE_FPS=12; PROFILE_BITRATE=1800k; PROFILE_LEVEL=3.1; PROFILE_BUFSIZE=3600k ;;
+    540p)
+      PROFILE_WIDTH=960; PROFILE_HEIGHT=540; PROFILE_FPS=10; PROFILE_BITRATE=1100k; PROFILE_LEVEL=3.1; PROFILE_BUFSIZE=2200k ;;
+    480p)
+      PROFILE_WIDTH=854; PROFILE_HEIGHT=480; PROFILE_FPS=10; PROFILE_BITRATE=800k; PROFILE_LEVEL=3.0; PROFILE_BUFSIZE=1600k ;;
+    360p)
+      PROFILE_WIDTH=640; PROFILE_HEIGHT=360; PROFILE_FPS=8; PROFILE_BITRATE=500k; PROFILE_LEVEL=3.0; PROFILE_BUFSIZE=1000k ;;
+    *)
+      echo "unknown cast profile: $profile" >&2
+      exit 2
+      ;;
+  esac
+}
+
+auto_profile() {
+  local cpu ram wifi profile reason
+  cpu="$(cpu_percent)"
+  ram="$(ram_percent)"
+  wifi="$(wifi_signal_dbm || true)"
+  profile="720p"
+  reason="balanced: cpu=${cpu}%, ram=${ram}%"
+  if [ -n "$wifi" ]; then
+    reason="${reason}, wifi=${wifi}dBm"
+  else
+    reason="${reason}, wifi=unknown"
+  fi
+
+  if [ "$cpu" -ge "$ATLAS_CAST_AUTO_CPU_HIGH" ] || [ "$ram" -ge "$ATLAS_CAST_AUTO_RAM_HIGH" ]; then
+    profile="540p"
+    reason="pressure: cpu=${cpu}%, ram=${ram}%"
+  fi
+
+  if [ -n "$wifi" ] && [ "$wifi" -le "$ATLAS_CAST_AUTO_WIFI_WEAK_DBM" ]; then
+    profile="540p"
+    reason="weak wifi: ${wifi}dBm"
+  fi
+
+  if [ "$cpu" -ge 88 ] || [ "$ram" -ge 90 ]; then
+    profile="480p"
+    reason="high pressure: cpu=${cpu}%, ram=${ram}%"
+  fi
+
+  if [ -n "$wifi" ] && [ "$wifi" -le "$ATLAS_CAST_AUTO_WIFI_BAD_DBM" ]; then
+    profile="480p"
+    reason="bad wifi: ${wifi}dBm"
+  fi
+
+  if [ "$profile" = "720p" ] && [ "$ATLAS_CAST_AUTO_MAX_PROFILE" = "1080p" ]; then
+    if [ "$cpu" -lt 35 ] && [ "$ram" -lt 70 ]; then
+      if [ -z "$wifi" ] || [ "$wifi" -ge -60 ]; then
+        profile="1080p"
+        reason="good headroom: cpu=${cpu}%, ram=${ram}%, wifi=${wifi:-unknown}"
+      fi
+    fi
+  fi
+
+  ACTIVE_PROFILE="$profile"
+  AUTO_REASON="$reason"
+}
+
+resolve_stream_settings() {
+  if ! valid_profile "$ATLAS_CAST_PROFILE"; then
+    echo "invalid ATLAS_CAST_PROFILE in $CONFIG_FILE: $ATLAS_CAST_PROFILE" >&2
+    exit 2
+  fi
+
+  if [ "$ATLAS_CAST_PROFILE" = "auto" ]; then
+    auto_profile
+  else
+    ACTIVE_PROFILE="$ATLAS_CAST_PROFILE"
+    AUTO_REASON="manual profile from config"
+  fi
+
+  profile_quality "$ACTIVE_PROFILE"
+  CAST_PORT="$ATLAS_CAST_PORT"
+  CAST_CAPTURE_WIDTH="$ATLAS_CAST_CAPTURE_WIDTH"
+  CAST_CAPTURE_HEIGHT="$ATLAS_CAST_CAPTURE_HEIGHT"
+  CAST_WIDTH="${ATLAS_CAST_WIDTH:-$PROFILE_WIDTH}"
+  CAST_HEIGHT="${ATLAS_CAST_HEIGHT:-$PROFILE_HEIGHT}"
+  CAST_FPS="${ATLAS_CAST_FPS:-$PROFILE_FPS}"
+  CAST_BITRATE="${ATLAS_CAST_BITRATE:-$PROFILE_BITRATE}"
+  CAST_LEVEL="$PROFILE_LEVEL"
+  CAST_BUFSIZE="$PROFILE_BUFSIZE"
+}
+
+write_runtime_quality() {
+  printf '%s\n' "$ACTIVE_PROFILE" > "$PROFILEFILE"
+  printf '%sx%s @ %sfps, %s' "$CAST_WIDTH" "$CAST_HEIGHT" "$CAST_FPS" "$CAST_BITRATE" > "$QUALITYFILE"
+  printf '%s\n' "$AUTO_REASON" > "$REASONFILE"
+  chown atlas:atlas "$PROFILEFILE" "$QUALITYFILE" "$REASONFILE" 2>/dev/null || true
+}
+
+run_cast() {
+  local device="$1"
+  local ip="$2"
+  local cmdline
+  local ffmpeg_cmd
+  resolve_stream_settings
+  ffmpeg_cmd="ffmpeg -hide_banner -loglevel warning -re -f x11grab -framerate ${CAST_FPS} -video_size ${CAST_CAPTURE_WIDTH}x${CAST_CAPTURE_HEIGHT} -i ${DISPLAY_ID} -f lavfi -i anullsrc=channel_layout=stereo:sample_rate=44100 -map 0:v:0 -map 1:a:0 -vf scale=${CAST_WIDTH}:${CAST_HEIGHT},format=yuv420p -vcodec libx264 -preset ultrafast -tune zerolatency -profile:v baseline -level ${CAST_LEVEL} -r ${CAST_FPS} -g $((CAST_FPS * 2)) -b:v ${CAST_BITRATE} -maxrate ${CAST_BITRATE} -bufsize ${CAST_BUFSIZE} -c:a aac -b:a 96k -ar 44100 -ac 2 -f mp4 -movflags frag_keyframe+empty_moov+default_base_moof pipe:1"
+  local cmd=(mkchromecast --video --encoder-backend ffmpeg --command "$ffmpeg_cmd" --host "$ip" -p "$CAST_PORT" -n "$device" --hijack)
+  printf -v cmdline '%q ' "${cmd[@]}"
+  : > "$LOGFILE"
+  if [ "$(id -un)" = "atlas" ]; then
+    bash -lc "cd '$ROOT'; nohup $cmdline > '$LOGFILE' 2>&1 & echo \$!" > "$PIDFILE"
+  else
+    sudo -n runuser -u atlas -- bash -lc "cd '$ROOT'; nohup $cmdline > '$LOGFILE' 2>&1 & echo \$!" | sudo -n tee "$PIDFILE" >/dev/null
+    sudo -n chown atlas:atlas "$PIDFILE" "$LOGFILE" 2>/dev/null || true
+  fi
+  printf '%s\n' "$device" > "$DEVICEFILE"
+  write_runtime_quality
+}
+
+set_profile_config() {
+  local profile="$1"
+  if ! valid_profile "$profile"; then
+    echo "invalid profile: $profile" >&2
+    echo "valid profiles: auto, 1080p, 720p, 540p, 480p, 360p" >&2
+    exit 2
+  fi
+  ensure_config
+  local tmp
+  tmp="$(mktemp)"
+  awk -v profile="$profile" '
+    BEGIN { done=0 }
+    /^ATLAS_CAST_PROFILE=/ { print "ATLAS_CAST_PROFILE=" profile; done=1; next }
+    { print }
+    END { if (!done) print "ATLAS_CAST_PROFILE=" profile }
+  ' "$CONFIG_FILE" > "$tmp"
+  install -m 644 "$tmp" "$CONFIG_FILE"
+  rm -f "$tmp"
+  chown atlas:atlas "$CONFIG_FILE" 2>/dev/null || true
+  printf 'ATLAS_CAST_PROFILE=%s\n' "$profile"
+}
+
+cmd="${1:-status}"
+shift || true
+
+case "$cmd" in
+  list)
+    mode="${1:-auto}"
+    timeout_s="${ATLAS_CAST_DISCOVERY_TIMEOUT:-2.0}"
+    cache_max_age="${ATLAS_CAST_CACHE_MAX_AGE:-45}"
+    mkdir -p "$ROOT/cast"
+    if [ "$mode" = "--cached" ] || [ "$mode" = "cached" ]; then
+      if [ -s "$DEVICES_CACHE" ]; then
+        awk -F '\t' '{print $1 " — " $2 " — " $3 " " $4 " (cached)"}' "$DEVICES_CACHE"
+      else
+        echo "no cached Chromecast devices"
+      fi
+      exit 0
+    fi
+    if [ "$mode" != "--fresh" ] && [ "$mode" != "fresh" ] && [ -s "$DEVICES_CACHE" ]; then
+      now="$(date +%s)"
+      mtime="$(stat -c %Y "$DEVICES_CACHE" 2>/dev/null || echo 0)"
+      age=$((now - mtime))
+      if [ "$age" -le "$cache_max_age" ]; then
+        awk -F '\t' '{print $1 " — " $2 " — " $3 " " $4 " (cached " age "s)"}' age="$age" "$DEVICES_CACHE"
+        exit 0
+      fi
+    fi
+    ATLAS_CAST_DEVICES_CACHE="$DEVICES_CACHE" ATLAS_CAST_DISCOVERY_TIMEOUT_VALUE="$timeout_s" python3 - <<'PYCAST'
+import os
+import re
+import subprocess
+import pychromecast
+
+cache = os.environ.get("ATLAS_CAST_DEVICES_CACHE")
+timeout = float(os.environ.get("ATLAS_CAST_DISCOVERY_TIMEOUT_VALUE", "2.0"))
+rows = []
+
+def emit(rows, cached=False):
+    suffix = " (cached)" if cached else ""
+    for name, ctype, maker, model in rows:
+        print(f"{name} — {ctype} — {maker} {model}{suffix}")
+
+def save(rows):
+    if cache and rows:
+        with open(cache, "w", encoding="utf-8") as f:
+            for row in rows:
+                f.write("\t".join(row) + "\n")
+
+def load_cache():
+    cached = []
+    if cache and os.path.exists(cache) and os.path.getsize(cache) > 0:
+        with open(cache, encoding="utf-8") as f:
+            for line in f:
+                parts = line.rstrip("\n").split("\t", 3)
+                if len(parts) == 4:
+                    cached.append(tuple(parts))
+    return cached
+
+def cast_type_for(name, model):
+    text = f"{name} {model}".lower()
+    if "speaker" in text or "audio" in text:
+        return "audio"
+    return "cast"
+
+def discover_avahi():
+    if not os.path.exists("/usr/bin/avahi-browse"):
+        return []
+    try:
+        proc = subprocess.run(
+            ["timeout", f"{timeout:.1f}", "avahi-browse", "-rt", "_googlecast._tcp"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            timeout=timeout + 0.8,
+            check=False,
+        )
+    except Exception:
+        return []
+    found = {}
+    current = None
+    for raw in proc.stdout.splitlines():
+        line = raw.strip()
+        if line.startswith("=") and " IPv4 " in line and "_googlecast._tcp" in line:
+            current = {"name": None, "model": None}
+        elif current is not None and line.startswith("txt ="):
+            fn = re.search(r'"fn=([^"\\]*(?:\\.[^"\\]*)*)"', line)
+            md = re.search(r'"md=([^"\\]*(?:\\.[^"\\]*)*)"', line)
+            if fn:
+                current["name"] = fn.group(1)
+            if md:
+                current["model"] = md.group(1)
+            if current.get("name"):
+                name = current["name"]
+                model = current.get("model") or "Google Cast device"
+                found[name] = (name, cast_type_for(name, model), "Google Cast", model)
+            current = None
+    return sorted(found.values(), key=lambda row: row[0].lower())
+
+def discover_pychromecast():
+    browser = None
+    out = []
+    try:
+        chromecasts, browser = pychromecast.get_chromecasts(timeout=timeout, blocking=True)
+        for cc in chromecasts:
+            dev = getattr(cc, "device", None)
+            name = getattr(cc, "name", None) or getattr(dev, "friendly_name", "unknown")
+            model = getattr(dev, "model_name", "unknown model")
+            maker = getattr(dev, "manufacturer", "unknown maker")
+            ctype = getattr(dev, "cast_type", "unknown")
+            out.append((name, ctype, maker, model))
+    except Exception:
+        pass
+    finally:
+        if browser:
+            pychromecast.discovery.stop_discovery(browser)
+    return sorted(out, key=lambda row: row[0].lower())
+
+rows = discover_avahi()
+if not rows:
+    rows = discover_pychromecast()
+if rows:
+    save(rows)
+    emit(rows)
+else:
+    cached = load_cache()
+    if cached:
+        emit(cached, cached=True)
+    else:
+        print("no Chromecast devices found")
+PYCAST
+    ;;
+  start)
+    [ "$#" -ge 1 ] || { echo 'usage: atlas-cast start <device name>' >&2; exit 2; }
+    requested_device="$*"
+    device="$(validate_cast_device "$requested_device")"
+    if is_running; then
+      echo "atlas-cast is already running for $(cat "$DEVICEFILE" 2>/dev/null || echo unknown)"
+      exit 0
+    fi
+    start_desktop_if_needed
+    ip="$(host_ip)"
+    run_cast "$device" "$ip"
+    verify_cast_process_started
+    atlas-cast status
+    ;;
+  restart)
+    if [ "$#" -ge 1 ]; then
+      device="$*"
+    elif [ -f "$DEVICEFILE" ]; then
+      device="$(cat "$DEVICEFILE")"
+    else
+      echo 'usage: atlas-cast restart <device name>' >&2
+      exit 2
+    fi
+    atlas-cast stop >/dev/null || true
+    atlas-cast start "$device"
+    ;;
+  stop)
+    if is_running; then
+      pid="$(cat "$PIDFILE")"
+      pkill -TERM -P "$pid" 2>/dev/null || true
+      kill "$pid" 2>/dev/null || true
+      sleep 1
+      pkill -KILL -P "$pid" 2>/dev/null || true
+      kill -KILL "$pid" 2>/dev/null || true
+    fi
+    rm -f "$PIDFILE" "$DEVICEFILE" "$PROFILEFILE" "$QUALITYFILE" "$REASONFILE"
+    atlas-cast status
+    ;;
+  status)
+    printf '%s\n' 'atlas-cast status'
+    if is_running; then
+      printf '%sState:%s %srunning%s\n' "$BOLD" "$RESET" "$BLUE" "$RESET"
+      printf '%sDevice:%s %s\n' "$BOLD" "$RESET" "$(cat "$DEVICEFILE" 2>/dev/null || echo unknown)"
+      printf '%sPID:%s %s\n' "$BOLD" "$RESET" "$(cat "$PIDFILE")"
+      active_profile="$(cat "$PROFILEFILE" 2>/dev/null || echo unknown)"
+      active_quality="$(cat "$QUALITYFILE" 2>/dev/null || echo unknown)"
+      active_reason="$(cat "$REASONFILE" 2>/dev/null || echo unknown)"
+    else
+      printf '%sState:%s %sstopped%s\n' "$BOLD" "$RESET" "$RED" "$RESET"
+      resolve_stream_settings
+      active_profile="$ACTIVE_PROFILE"
+      active_quality="${CAST_WIDTH}x${CAST_HEIGHT} @ ${CAST_FPS}fps, ${CAST_BITRATE}"
+      active_reason="$AUTO_REASON"
+    fi
+    printf '%sConfig profile:%s %s\n' "$BOLD" "$RESET" "$ATLAS_CAST_PROFILE"
+    printf '%sActive profile:%s %s\n' "$BOLD" "$RESET" "$active_profile"
+    printf '%sDisplay:%s %s\n' "$BOLD" "$RESET" "$DISPLAY_ID"
+    printf '%sStream port:%s %s\n' "$BOLD" "$RESET" "$ATLAS_CAST_PORT"
+    printf '%sStream format:%s %s\n' "$BOLD" "$RESET" "$active_quality"
+    printf '%sAuto reason:%s %s\n' "$BOLD" "$RESET" "$active_reason"
+    printf '%sConfig:%s %s\n' "$BOLD" "$RESET" "$CONFIG_FILE"
+    printf '%sLog:%s %s\n' "$BOLD" "$RESET" "$LOGFILE"
+    ;;
+  config)
+    printf '%s\n' "$CONFIG_FILE"
+    sed -n '1,180p' "$CONFIG_FILE"
+    ;;
+  profile)
+    [ "$#" -eq 1 ] || { echo 'usage: atlas-cast profile <auto|1080p|720p|540p|480p|360p>' >&2; exit 2; }
+    set_profile_config "$1"
+    ;;
+  logs)
+    lines="${1:-80}"
+    if [ -f "$LOGFILE" ]; then
+      tail -n "$lines" "$LOGFILE"
+    else
+      echo 'no cast log yet'
+    fi
+    ;;
+  -h|--help|help)
+    usage
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac

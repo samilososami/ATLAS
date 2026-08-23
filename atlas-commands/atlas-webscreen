@@ -1,0 +1,187 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SERVICE="atlas-webscreen.service"
+UNIT="/etc/systemd/system/${SERVICE}"
+PROJECT="/home/atlas/.openclaw/workspace/atlas-webscreen"
+START_SCRIPT="${PROJECT}/start.sh"
+PORT="5000"
+PROTOCOL="https"
+
+if [ -t 1 ] && [ "${ATLAS_NO_COLOR:-0}" != "1" ]; then
+  BOLD=$'\033[1m'
+  RESET=$'\033[0m'
+  CYAN=$'\033[1;36m'
+  GREEN=$'\033[1;32m'
+  RED=$'\033[1;31m'
+  YELLOW=$'\033[1;33m'
+else
+  BOLD=""
+  RESET=""
+  CYAN=""
+  GREEN=""
+  RED=""
+  YELLOW=""
+fi
+
+status_color() {
+  case "$1" in
+    active|enabled|ready) printf "%s" "$GREEN" ;;
+    inactive|disabled|failed|unavailable|not*) printf "%s" "$RED" ;;
+    *) printf "%s" "$YELLOW" ;;
+  esac
+}
+
+paint_status() {
+  local value color
+  value="$1"
+  color="$(status_color "$value")"
+  printf "%s%s%s" "$color" "$value" "$RESET"
+}
+
+as_root() {
+  if [ "$(id -u)" -eq 0 ]; then
+    "$@"
+  else
+    sudo "$@"
+  fi
+}
+
+ensure_project() {
+  if [ ! -x "$START_SCRIPT" ]; then
+    echo "error: ${START_SCRIPT} was not found or is not executable" >&2
+    exit 1
+  fi
+}
+
+ensure_unit() {
+  ensure_project
+  local tmp
+  tmp=$(mktemp)
+  cat >"$tmp" <<UNIT
+[Unit]
+Description=ATLAS WebScreen local web interface
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=atlas
+Group=atlas
+WorkingDirectory=${PROJECT}
+Environment=ATLAS_WEBSCREEN_HOST=0.0.0.0
+Environment=ATLAS_WEBSCREEN_HTTPS=1
+Environment=PYTHONUNBUFFERED=1
+ExecStart=${START_SCRIPT}
+Restart=on-failure
+RestartSec=3
+KillSignal=SIGTERM
+TimeoutStopSec=10
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+  as_root install -m 0644 "$tmp" "$UNIT"
+  rm -f "$tmp"
+  as_root systemctl daemon-reload
+}
+
+main_pid() {
+  systemctl show -p MainPID --value "$SERVICE" 2>/dev/null || printf '0\n'
+}
+
+kill_stray_servers() {
+  local unit_pid pids pid
+  unit_pid="$(main_pid)"
+  pids="$(pgrep -f "${PROJECT}/server.py" 2>/dev/null || true)"
+  [ -n "$pids" ] || return 0
+  for pid in $pids; do
+    if [ "$pid" != "$unit_pid" ] && [ "$pid" != "0" ]; then
+      kill "$pid" 2>/dev/null || as_root kill "$pid" 2>/dev/null || true
+    fi
+  done
+}
+
+wait_for_health() {
+  local attempt
+  if ! command -v curl >/dev/null 2>&1; then
+    return 0
+  fi
+
+  for attempt in $(seq 1 30); do
+    if curl -k --max-time 1 -fsS "${PROTOCOL}://127.0.0.1:${PORT}/api/health" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+}
+
+enable_webscreen() {
+  ensure_unit
+  kill_stray_servers
+  as_root systemctl enable "$SERVICE" >/dev/null 2>&1 || true
+  as_root systemctl restart "$SERVICE"
+  wait_for_health
+  status_webscreen
+}
+
+disable_webscreen() {
+  if systemctl list-unit-files "$SERVICE" >/dev/null 2>&1; then
+    as_root systemctl disable --now "$SERVICE" >/dev/null 2>&1 || true
+  fi
+  kill_stray_servers
+  as_root systemctl daemon-reload
+  status_webscreen
+}
+
+status_webscreen() {
+  local enabled active pid addresses health
+  enabled="disabled"
+  if systemctl is-enabled --quiet "$SERVICE" 2>/dev/null; then
+    enabled="enabled"
+  fi
+  active="inactive"
+  if systemctl is-active --quiet "$SERVICE" 2>/dev/null; then
+    active="active"
+  fi
+  pid="$(main_pid)"
+  addresses="$(hostname -I 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sed "s#^#${PROTOCOL}://#;s#\$#:${PORT}#" | paste -sd ' ' -)"
+
+  printf "%satlas-webscreen status%s\n" "$BOLD" "$RESET"
+  printf "%sService:%s %s / %s\n" "$BOLD" "$RESET" "$(paint_status "$active")" "$(paint_status "$enabled")"
+  printf "%sMain PID:%s %s\n" "$BOLD" "$RESET" "$pid"
+  printf "%sLocal URL:%s %s://localhost:%s\n" "$BOLD" "$RESET" "$PROTOCOL" "$PORT"
+  printf "%sNetwork URLs:%s %s %s://atlas.local:%s\n" "$BOLD" "$RESET" "${addresses:-unknown}" "$PROTOCOL" "$PORT"
+
+  if command -v ss >/dev/null 2>&1; then
+    printf "%sListener:%s\n" "$BOLD" "$RESET"
+    ss -ltnp 2>/dev/null | grep ":${PORT}" || echo "  none"
+  fi
+
+  if command -v curl >/dev/null 2>&1; then
+    health="$(curl -k --max-time 2 -fsS "${PROTOCOL}://127.0.0.1:${PORT}/api/health" 2>/dev/null || true)"
+    if [ -n "$health" ]; then
+      printf "%sHealth:%s %s\n" "$BOLD" "$RESET" "$health"
+    else
+      printf "%sHealth:%s %s%s%s\n" "$BOLD" "$RESET" "$RED" "unavailable" "$RESET"
+    fi
+  fi
+}
+
+usage() {
+  cat <<USAGE
+usage: atlas-webscreen <enable|disable|status>
+
+  enable   install/update the systemd service and start ATLAS WebScreen on HTTPS :5000
+  disable  stop ATLAS WebScreen and disable automatic startup
+  status   show systemd state, listener, and health
+USAGE
+}
+
+case "${1:-}" in
+  enable) enable_webscreen ;;
+  disable) disable_webscreen ;;
+  status) status_webscreen ;;
+  -h|--help|help) usage ;;
+  *) usage; exit 2 ;;
+esac

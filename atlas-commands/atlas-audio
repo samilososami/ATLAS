@@ -1,0 +1,658 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+TMP_DIR="/home/atlas/.openclaw/workspaces/tmp"
+
+if [ -t 1 ]; then
+  BOLD="$(tput bold 2>/dev/null || true)"
+  RESET="$(tput sgr0 2>/dev/null || true)"
+  BLUE="$(tput setaf 6 2>/dev/null || true)"
+  RED="$(tput setaf 1 2>/dev/null || true)"
+  GREEN="$(tput setaf 2 2>/dev/null || true)"
+else
+  BOLD=""; RESET=""; BLUE=""; RED=""; GREEN=""
+fi
+
+usage() {
+  cat <<USAGE
+atlas-audio <command>
+
+Commands:
+  status                         show default output, volume, mute, Bluetooth state
+  outputs                        list audio output sinks
+  scan [seconds] [--all]         scan nearby Bluetooth devices, prioritizing useful names
+  devices [--all]                list known Bluetooth devices
+  pair <name|mac>                pair, trust, and connect a Bluetooth speaker
+  connect <name|mac>             connect a Bluetooth speaker and set it as default
+  disconnect [name|mac]          disconnect a Bluetooth device, default current/known speaker
+  default <sink|name|mac>        set default audio output
+  volume <0-150>                 set default output volume percentage
+  mute                           mute default output
+  unmute                         unmute default output
+  toggle-mute                    toggle mute on default output
+  test                           play a short test tone through default output
+  restart                        restart user PulseAudio
+  help                           show this help
+USAGE
+}
+
+ensure_tmp() {
+  install -d -m 700 -o atlas -g atlas "$TMP_DIR" 2>/dev/null || mkdir -p "$TMP_DIR"
+}
+
+ensure_audio_server() {
+  if ! pactl info >/dev/null 2>&1; then
+    pulseaudio --start >/dev/null 2>&1 || pulseaudio --daemonize=yes >/dev/null 2>&1 || true
+    sleep 1
+  fi
+  pactl info >/dev/null 2>&1 || {
+    pkill -KILL -u "$(id -un)" -x pulseaudio >/dev/null 2>&1 || true
+    rm -rf "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/pulse" >/dev/null 2>&1 || true
+    pulseaudio --daemonize=yes >/dev/null 2>&1 || true
+    sleep 1
+    pactl info >/dev/null 2>&1 || {
+      echo "PulseAudio is not available for this user session" >&2
+      exit 1
+    }
+  }
+}
+
+restart_audio_stack() {
+  systemctl --user reset-failed pulseaudio.socket pulseaudio.service >/dev/null 2>&1 || true
+  systemctl --user stop pulseaudio.socket pulseaudio.service >/dev/null 2>&1 || true
+  pkill -KILL -u "$(id -un)" -x pulseaudio >/dev/null 2>&1 || true
+  rm -rf "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/pulse" >/dev/null 2>&1 || true
+  pulseaudio --daemonize=yes >/dev/null 2>&1 || pulseaudio --start >/dev/null 2>&1 || true
+  sleep 1
+  ensure_audio_server
+}
+
+ensure_bluetooth_audio_support() {
+  ensure_audio_server
+  if ! dpkg -s pulseaudio-module-bluetooth >/dev/null 2>&1; then
+    echo "Installing PulseAudio Bluetooth audio module..."
+    sudo -n apt-get update >/dev/null
+    sudo -n apt-get install -y pulseaudio-module-bluetooth
+    restart_audio_stack
+    sudo -n systemctl restart bluetooth
+    sleep 1
+  fi
+  if ! pactl list short modules 2>/dev/null | grep -q 'module-bluetooth-discover'; then
+    pactl load-module module-bluetooth-discover >/dev/null 2>&1 || true
+  fi
+  if ! pactl list short modules 2>/dev/null | grep -q 'module-bluez5-discover'; then
+    restart_audio_stack
+    pactl load-module module-bluetooth-discover >/dev/null 2>&1 || true
+  fi
+}
+
+default_sink() {
+  pactl get-default-sink 2>/dev/null || pactl info | awk -F': ' '/Default Sink:/ {print $2; exit}'
+}
+
+sink_line() {
+  local sink="$1"
+  pactl list short sinks | awk -v s="$sink" '$1 == s || $2 == s {print; exit}'
+}
+
+sink_description() {
+  local sink="$1"
+  pactl list sinks | awk -v sink="$sink" '
+    /^Sink #/ { current=substr($2,2); name=""; desc="" }
+    /^[[:space:]]*Name:/ { name=$2 }
+    /^[[:space:]]*Description:/ { sub(/^[[:space:]]*Description:[[:space:]]*/, ""); desc=$0 }
+    name == sink && desc { print desc; exit }
+    current == sink && desc { print desc; exit }
+  '
+}
+
+normalize() {
+  python3 - "$1" <<'PY'
+import sys
+print(" ".join(sys.argv[1].strip().split()).casefold())
+PY
+}
+
+bt_power_on() {
+  bluetoothctl power on >/dev/null 2>&1 || true
+  bluetoothctl agent on >/dev/null 2>&1 || true
+  bluetoothctl default-agent >/dev/null 2>&1 || true
+}
+
+discover_bt_for_query() {
+  local query="$1"
+  local seconds="${ATLAS_AUDIO_AUTODISCOVER_SECONDS:-12}"
+  echo "Bluetooth device not in cache. Scanning for \"$query\" for ${seconds}s..." >&2
+  bt_power_on
+  QUERY="$query" SECONDS="$seconds" python3 - <<'PY'
+import os
+import re
+import subprocess
+import sys
+import time
+
+query = " ".join(os.environ["QUERY"].strip().split()).casefold()
+seconds = int(os.environ.get("SECONDS", "12"))
+mac_re = re.compile(r"([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}")
+
+def norm(value):
+    return " ".join(value.strip().split()).casefold()
+
+proc = subprocess.Popen(
+    ["bluetoothctl", "scan", "on"],
+    stdout=subprocess.PIPE,
+    stderr=subprocess.STDOUT,
+    text=True,
+    bufsize=1,
+)
+found = None
+deadline = time.time() + seconds
+try:
+    while time.time() < deadline:
+        line = proc.stdout.readline() if proc.stdout else ""
+        if not line:
+            time.sleep(0.1)
+            continue
+        clean = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
+        match = re.search(r"Device\s+(([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})\s+(.+)$", clean)
+        if not match:
+            continue
+        mac = match.group(1)
+        name = match.group(3).strip()
+        if norm(name) == query or query in norm(name):
+            found = mac
+            break
+finally:
+    try:
+        subprocess.run(["bluetoothctl", "scan", "off"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3)
+    except Exception:
+        pass
+    try:
+        proc.terminate()
+        proc.wait(timeout=2)
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+if found:
+    print(found)
+    sys.exit(0)
+sys.exit(1)
+PY
+}
+
+render_bt_devices() {
+  local show_all="${1:-0}"
+  SHOW_ALL="$show_all" python3 - <<'PY'
+import os
+import re
+import subprocess
+import sys
+
+show_all = os.environ.get("SHOW_ALL") == "1"
+mac_name_re = re.compile(r"^[0-9A-F]{2}([-:][0-9A-F]{2}){5}$", re.I)
+
+def run(cmd, timeout=4):
+    try:
+        return subprocess.run(cmd, text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=timeout).stdout
+    except Exception:
+        return ""
+
+def parse_bool(value):
+    value = (value or "").strip().lower()
+    if value in ("yes", "true"):
+        return "yes"
+    if value in ("no", "false"):
+        return "no"
+    return "?"
+
+def info_for(mac):
+    out = run(["bluetoothctl", "info", mac])
+    info = {
+        "mac": mac,
+        "name": "",
+        "alias": "",
+        "paired": "?",
+        "trusted": "?",
+        "connected": "?",
+        "rssi": "",
+        "uuids": [],
+        "type": "unknown",
+    }
+    for raw in out.splitlines():
+        line = raw.strip()
+        if line.startswith("Name:"):
+            info["name"] = line.split(":", 1)[1].strip()
+        elif line.startswith("Alias:"):
+            info["alias"] = line.split(":", 1)[1].strip()
+        elif line.startswith("Paired:"):
+            info["paired"] = parse_bool(line.split(":", 1)[1])
+        elif line.startswith("Trusted:"):
+            info["trusted"] = parse_bool(line.split(":", 1)[1])
+        elif line.startswith("Connected:"):
+            info["connected"] = parse_bool(line.split(":", 1)[1])
+        elif line.startswith("RSSI:"):
+            info["rssi"] = line.split(":", 1)[1].strip()
+        elif line.startswith("UUID:"):
+            info["uuids"].append(line)
+    return info
+
+def best_name(item):
+    for key in ("name", "alias"):
+        value = " ".join((item.get(key) or "").strip().split())
+        if value and not mac_name_re.match(value):
+            return value
+    value = " ".join((item.get("alias") or "").strip().split())
+    return value or item["mac"]
+
+def classify(item):
+    text = " ".join([item.get("name",""), item.get("alias",""), " ".join(item.get("uuids", []))]).casefold()
+    if any(word in text for word in ["audio sink", "advanced audio", "speaker", "headphones", "headset", "soundbar", "sound bar", "jbl", "marshall", "bose", "anker", "soundcore", "beats", "ht-ct", "ht-s", "srs-"]):
+        return "audio"
+    if any(word in text for word in ["tv", "webos", "bravia", "chromecast", "shield", "audio source"]):
+        return "tv/media"
+    if any(word in text for word in ["govee", "h6052", "h618c", "light", "lamp"]):
+        return "iot"
+    if item.get("name") or (item.get("alias") and not mac_name_re.match(item["alias"])):
+        return "named"
+    return "unknown"
+
+def score(item):
+    s = 0
+    typ = item["type"]
+    if item["connected"] == "yes": s += 100
+    if item["paired"] == "yes": s += 50
+    if typ == "audio": s += 40
+    elif typ == "tv/media": s += 30
+    elif typ == "named": s += 15
+    elif typ == "iot": s += 5
+    if best_name(item) == item["mac"] or mac_name_re.match(best_name(item)): s -= 25
+    try:
+        s += max(-20, min(10, (int(item.get("rssi") or -90) + 70) // 2))
+    except Exception:
+        pass
+    return s
+
+raw = run(["bluetoothctl", "devices"])
+rows = []
+seen = set()
+for line in raw.splitlines():
+    parts = line.strip().split(" ", 2)
+    if len(parts) >= 2 and parts[0] == "Device":
+        mac = parts[1]
+        if mac not in seen:
+            seen.add(mac)
+            item = info_for(mac)
+            if len(parts) >= 3 and not item["alias"]:
+                item["alias"] = parts[2]
+            item["display"] = best_name(item)
+            item["type"] = classify(item)
+            item["score"] = score(item)
+            rows.append(item)
+
+visible = rows if show_all else [r for r in rows if r["type"] != "unknown" or r["paired"] == "yes" or r["connected"] == "yes"]
+visible.sort(key=lambda r: (-r["score"], r["display"].casefold(), r["mac"]))
+
+if not rows:
+    print("no Bluetooth devices found")
+    sys.exit(0)
+if not visible:
+    print("no named/audio Bluetooth devices found")
+    print("tip: run atlas-audio scan 10 --all to show anonymous BLE devices")
+    sys.exit(0)
+
+print(f"{'NAME':32} {'TYPE':9} {'MAC':17} {'RSSI':>5} {'PAIR':>4} {'CONN':>4}")
+print("-" * 80)
+for r in visible:
+    name = r["display"]
+    if len(name) > 32:
+        name = name[:29] + "..."
+    print(f"{name:32} {r['type'][:9]:9} {r['mac']:17} {str(r.get('rssi') or '-'):>5} {r['paired']:>4} {r['connected']:>4}")
+
+hidden = len(rows) - len(visible)
+if hidden > 0:
+    print(f"\nHidden anonymous BLE devices: {hidden}. Use --all to show them.")
+PY
+}
+
+resolve_bt_device() {
+  local query="${1:-}"
+  local allow_discover="${2:-1}"
+  [ -n "$query" ] || return 1
+  if [[ "$query" =~ ^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$ ]]; then
+    printf '%s\n' "$query"
+    return 0
+  fi
+  resolved="$(bluetoothctl devices | QUERY="$query" python3 - <<'PY'
+import os, sys
+q = " ".join(os.environ["QUERY"].strip().split()).casefold()
+rows = []
+for line in sys.stdin:
+    parts = line.strip().split(" ", 2)
+    if len(parts) >= 3 and parts[0] == "Device":
+        mac, name = parts[1], parts[2]
+        rows.append((mac, name))
+exact = [r for r in rows if " ".join(r[1].strip().split()).casefold() == q]
+partial = [r for r in rows if q in " ".join(r[1].strip().split()).casefold()]
+match = exact or (partial if len(partial) == 1 else [])
+if len(match) == 1:
+    print(match[0][0])
+    sys.exit(0)
+if partial:
+    print("ambiguous Bluetooth device name. Matches:", file=sys.stderr)
+    for mac, name in partial:
+        print(f"  - {mac} {name}", file=sys.stderr)
+sys.exit(1)
+PY
+)" && { printf '%s\n' "$resolved"; return 0; }
+  if [ "$allow_discover" = "1" ]; then
+    if discovered="$(discover_bt_for_query "$query")"; then
+      printf '%s\n' "$discovered"
+      return 0
+    fi
+  fi
+  echo "Bluetooth device not found by name: \"$query\"" >&2
+  echo "Make sure it is powered on and in pairing/connectable mode, or use its MAC address directly." >&2
+  echo "You can inspect visible devices with: atlas-audio scan 10 --all" >&2
+  return 1
+}
+
+sink_for_bt_mac() {
+  local mac="$1"
+  local underscored="${mac//:/_}"
+  pactl list short sinks | awk -v m="$underscored" 'index($2, m) { print $2; exit }'
+}
+
+wait_for_bt_sink() {
+  local mac="$1"
+  local sink=""
+  for _ in $(seq 1 16); do
+    sink="$(sink_for_bt_mac "$mac")"
+    if [ -n "$sink" ]; then
+      printf '%s\n' "$sink"
+      return 0
+    fi
+    sleep 0.5
+  done
+  return 1
+}
+
+explain_connect_failure() {
+  local output="$1"
+  local mac="$2"
+  if printf '%s' "$output" | grep -q 'br-connection-profile-unavailable'; then
+    cat >&2 <<EOF
+Bluetooth connected, but no audio profile was available.
+I installed/loaded the PulseAudio Bluetooth module and retried. If it still fails, restart the headset/speaker pairing mode and try again:
+  atlas-audio connect $mac
+EOF
+  elif printf '%s' "$output" | grep -q 'br-connection-page-timeout'; then
+    cat >&2 <<EOF
+The Bluetooth device exists, but it did not answer the connection request.
+Put the speaker/headset in Bluetooth pairing/connectable mode, keep it close to the Pi, then run:
+  atlas-audio scan 10
+  atlas-audio connect $mac
+EOF
+  elif printf '%s' "$output" | grep -q 'Authentication'; then
+    cat >&2 <<EOF
+Bluetooth authentication failed. Put the device in pairing mode and run:
+  atlas-audio pair $mac
+EOF
+  else
+    printf '%s\n' "$output" >&2
+  fi
+}
+
+connect_bt_device() {
+  local mac="$1"
+  local output=""
+  local rc=1
+  ensure_bluetooth_audio_support
+  bluetoothctl trust "$mac" >/dev/null 2>&1 || true
+  for attempt in 1 2 3; do
+    output="$(bluetoothctl connect "$mac" 2>&1)" && rc=0 || rc=$?
+    printf '%s\n' "$output"
+    if [ "$rc" -eq 0 ]; then
+      return 0
+    fi
+    if printf '%s' "$output" | grep -q 'br-connection-profile-unavailable'; then
+      restart_audio_stack
+      sudo -n systemctl restart bluetooth
+      sleep 1
+      ensure_bluetooth_audio_support
+    elif printf '%s' "$output" | grep -q 'br-connection-page-timeout'; then
+      break
+    else
+      sleep 1
+    fi
+  done
+  explain_connect_failure "$output" "$mac"
+  return "$rc"
+}
+
+resolve_sink() {
+  local query="${1:-}"
+  [ -n "$query" ] || return 1
+  if pactl list short sinks | awk -v q="$query" '$1 == q || $2 == q {found=1} END {exit !found}'; then
+    pactl list short sinks | awk -v q="$query" '$1 == q || $2 == q {print $2; exit}'
+    return 0
+  fi
+  if mac="$(resolve_bt_device "$query" 0 2>/dev/null)"; then
+    sink="$(sink_for_bt_mac "$mac")"
+    [ -n "$sink" ] && { printf '%s\n' "$sink"; return 0; }
+  fi
+  pactl list sinks | QUERY="$query" python3 - <<'PY'
+import os, sys
+q = " ".join(os.environ["QUERY"].strip().split()).casefold()
+items = []
+current = {"index": None, "name": None, "description": None}
+for line in sys.stdin:
+    stripped = line.strip()
+    if stripped.startswith("Sink #"):
+        if current["name"]:
+            items.append(current)
+        current = {"index": stripped.split("#",1)[1], "name": None, "description": None}
+    elif stripped.startswith("Name:"):
+        current["name"] = stripped.split(":",1)[1].strip()
+    elif stripped.startswith("Description:"):
+        current["description"] = stripped.split(":",1)[1].strip()
+if current["name"]:
+    items.append(current)
+matches = [i for i in items if q in (i.get("name") or "").casefold() or q in (i.get("description") or "").casefold()]
+if len(matches) == 1:
+    print(matches[0]["name"])
+    sys.exit(0)
+if matches:
+    print("ambiguous output name. Matches:", file=sys.stderr)
+    for i in matches:
+        print(f'  - {i["name"]} ({i.get("description") or "no description"})', file=sys.stderr)
+else:
+    print(f'audio output not found: "{os.environ["QUERY"]}"', file=sys.stderr)
+sys.exit(1)
+PY
+}
+
+set_default_sink() {
+  local sink="$1"
+  pactl set-default-sink "$sink"
+  # Move currently playing streams to the new output when possible.
+  pactl list short sink-inputs | awk '{print $1}' | while read -r input; do
+    [ -n "$input" ] && pactl move-sink-input "$input" "$sink" >/dev/null 2>&1 || true
+  done
+}
+
+cmd="${1:-status}"
+shift || true
+
+case "$cmd" in
+  status)
+    ensure_audio_server
+    ds="$(default_sink)"
+    printf '%s\n' 'atlas-audio status'
+    printf '%sDefault output:%s %s\n' "$BOLD" "$RESET" "${ds:-unknown}"
+    if [ -n "${ds:-}" ]; then
+      desc="$(sink_description "$ds" || true)"
+      [ -n "$desc" ] && printf '%sDescription:%s %s\n' "$BOLD" "$RESET" "$desc"
+      vol="$(pactl get-sink-volume "$ds" 2>/dev/null | awk -F/ 'NR==1 {gsub(/ /,"",$2); print $2; exit}' || true)"
+      mute="$(pactl get-sink-mute "$ds" 2>/dev/null | awk '{print $2; exit}' || true)"
+      printf '%sVolume:%s %s\n' "$BOLD" "$RESET" "${vol:-unknown}"
+      printf '%sMuted:%s %s\n' "$BOLD" "$RESET" "${mute:-unknown}"
+    fi
+    printf '%sBluetooth controller:%s ' "$BOLD" "$RESET"
+    if bluetoothctl show >/dev/null 2>&1; then
+      powered="$(bluetoothctl show | awk -F': ' '/Powered:/ {print $2; exit}')"
+      discovering="$(bluetoothctl show | awk -F': ' '/Discovering:/ {print $2; exit}')"
+      printf '%spowered=%s discovering=%s%s\n' "$GREEN" "${powered:-unknown}" "${discovering:-unknown}" "$RESET"
+    else
+      printf '%sunavailable%s\n' "$RED" "$RESET"
+    fi
+    connected="$(bluetoothctl devices Connected 2>/dev/null | sed 's/^Device /  - /' || true)"
+    printf '%sConnected Bluetooth:%s\n' "$BOLD" "$RESET"
+    [ -n "$connected" ] && printf '%s\n' "$connected" || printf '  none\n'
+    ;;
+  outputs)
+    ensure_audio_server
+    printf '%s\n' 'atlas-audio outputs'
+    pactl list short sinks | awk '{print $1 "\t" $2 "\t" $4 "\t" $5}'
+    ;;
+  scan)
+    secs="8"
+    show_all="0"
+    for arg in "$@"; do
+      case "$arg" in
+        --all|-a) show_all="1" ;;
+        '' ) ;;
+        * )
+          if [[ "$arg" =~ ^[0-9]+$ ]]; then
+            secs="$arg"
+          else
+            echo 'usage: atlas-audio scan [seconds] [--all]' >&2
+            exit 2
+          fi
+          ;;
+      esac
+    done
+    bt_power_on
+    echo "Scanning Bluetooth devices for ${secs}s..."
+    scan_log="$(mktemp)"
+    bluetoothctl --timeout "$secs" scan on >"$scan_log" 2>&1 || true
+    bluetoothctl scan off >/dev/null 2>&1 || true
+    render_bt_devices "$show_all"
+    rm -f "$scan_log"
+    ;;
+  devices)
+    show_all="0"
+    for arg in "$@"; do
+      case "$arg" in
+        --all|-a) show_all="1" ;;
+        * ) echo 'usage: atlas-audio devices [--all]' >&2; exit 2 ;;
+      esac
+    done
+    bt_power_on
+    render_bt_devices "$show_all"
+    ;;
+  pair)
+    [ "$#" -ge 1 ] || { echo 'usage: atlas-audio pair <name|mac>' >&2; exit 2; }
+    bt_power_on
+    mac="$(resolve_bt_device "$*")"
+    ensure_bluetooth_audio_support
+    bluetoothctl pairable on >/dev/null 2>&1 || true
+    bluetoothctl pair "$mac"
+    bluetoothctl trust "$mac" >/dev/null 2>&1 || true
+    connect_bt_device "$mac"
+    if sink="$(wait_for_bt_sink "$mac")"; then
+      set_default_sink "$sink"
+      printf 'Default output: %s\n' "$sink"
+    else
+      echo "paired/connected, but no PulseAudio output appeared yet" >&2
+      exit 1
+    fi
+    ;;
+  connect)
+    [ "$#" -ge 1 ] || { echo 'usage: atlas-audio connect <name|mac>' >&2; exit 2; }
+    bt_power_on
+    mac="$(resolve_bt_device "$*")"
+    connect_bt_device "$mac"
+    sink="$(wait_for_bt_sink "$mac" || true)"
+    [ -n "$sink" ] || { echo "connected, but no PulseAudio sink appeared for $mac" >&2; exit 1; }
+    set_default_sink "$sink"
+    atlas-audio status
+    ;;
+  disconnect)
+    bt_power_on
+    if [ "$#" -ge 1 ]; then
+      mac="$(resolve_bt_device "$*")"
+      bluetoothctl disconnect "$mac"
+    else
+      bluetoothctl devices Connected | awk '{print $2}' | while read -r mac; do
+        [ -n "$mac" ] && bluetoothctl disconnect "$mac" || true
+      done
+    fi
+    ;;
+  default)
+    [ "$#" -ge 1 ] || { echo 'usage: atlas-audio default <sink|name|mac>' >&2; exit 2; }
+    ensure_audio_server
+    sink="$(resolve_sink "$*")"
+    set_default_sink "$sink"
+    atlas-audio status
+    ;;
+  volume)
+    [ "$#" -eq 1 ] || { echo 'usage: atlas-audio volume <0-150>' >&2; exit 2; }
+    [[ "$1" =~ ^[0-9]+$ ]] || { echo 'volume must be an integer percentage' >&2; exit 2; }
+    [ "$1" -le 150 ] || { echo 'refusing volume above 150%' >&2; exit 2; }
+    ensure_audio_server
+    pactl set-sink-volume @DEFAULT_SINK@ "$1%"
+    atlas-audio status
+    ;;
+  mute)
+    ensure_audio_server
+    pactl set-sink-mute @DEFAULT_SINK@ 1
+    atlas-audio status
+    ;;
+  unmute)
+    ensure_audio_server
+    pactl set-sink-mute @DEFAULT_SINK@ 0
+    atlas-audio status
+    ;;
+  toggle-mute)
+    ensure_audio_server
+    pactl set-sink-mute @DEFAULT_SINK@ toggle
+    atlas-audio status
+    ;;
+  test)
+    ensure_audio_server
+    ensure_tmp
+    out="$TMP_DIR/atlas-audio-test.wav"
+    python3 - "$out" <<'PY'
+import math, struct, sys, wave
+path = sys.argv[1]
+rate = 44100
+duration = 0.65
+freq = 660
+amp = 0.25
+with wave.open(path, "wb") as w:
+    w.setnchannels(1)
+    w.setsampwidth(2)
+    w.setframerate(rate)
+    for i in range(int(rate * duration)):
+        val = int(32767 * amp * math.sin(2 * math.pi * freq * i / rate))
+        w.writeframes(struct.pack("<h", val))
+PY
+    paplay "$out"
+    echo "played test tone through default output"
+    ;;
+  restart)
+    restart_audio_stack
+    ensure_bluetooth_audio_support
+    atlas-audio status
+    ;;
+  -h|--help|help)
+    usage
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac

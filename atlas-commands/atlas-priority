@@ -1,0 +1,367 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+STATE_DIR="/home/atlas/.atlas/focus"
+STATE_FILE="$STATE_DIR/state.env"
+LOCK_FILE="$STATE_DIR/lock"
+LOG_FILE="$STATE_DIR/focus.log"
+RESTORE_UNIT="atlas-priority-restore"
+BOOT_SERVICE="atlas-priority-boot.service"
+ATLAS_USER="atlas"
+USER_UID="$(id -u "$ATLAS_USER" 2>/dev/null || echo 1000)"
+
+if [ -t 1 ]; then
+  BOLD="$(tput bold 2>/dev/null || true)"
+  RESET="$(tput sgr0 2>/dev/null || true)"
+  BLUE="$(tput setaf 6 2>/dev/null || true)"
+  RED="$(tput setaf 1 2>/dev/null || true)"
+  YELLOW="$(tput setaf 3 2>/dev/null || true)"
+else
+  BOLD=""; RESET=""; BLUE=""; RED=""; YELLOW=""
+fi
+
+mkdir -p "$STATE_DIR"
+touch "$LOG_FILE" 2>/dev/null || true
+chown -R "$ATLAS_USER:$ATLAS_USER" "$STATE_DIR" 2>/dev/null || true
+
+log() {
+  printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOG_FILE" 2>/dev/null || true
+}
+
+usage() {
+  cat <<USAGE
+atlas-priority <minutes|command>
+
+Commands:
+  atlas-priority 10          free CPU/RAM for 10 minutes, then restore previous state
+  atlas-priority 0           free CPU/RAM indefinitely; restore manually later
+  atlas-priority status      show current priority state
+  atlas-priority restore     restore the previous state now
+  atlas-priority cancel      same as restore
+  atlas-priority boot-check  internal boot recovery check
+  atlas-priority logs        show recent logs
+
+Alias:
+  atlas-taskfocus         compatibility alias for atlas-priority
+USAGE
+}
+
+run_root() {
+  if [ "$(id -u)" -eq 0 ]; then
+    "$@"
+  else
+    sudo -n "$@"
+  fi
+}
+
+user_systemctl() {
+  local runtime="/run/user/$USER_UID"
+  if [ ! -d "$runtime" ]; then
+    run_root loginctl enable-linger "$ATLAS_USER" >/dev/null 2>&1 || true
+    run_root install -d -m 700 -o "$ATLAS_USER" -g "$ATLAS_USER" "$runtime" >/dev/null 2>&1 || true
+  fi
+  if [ "$(id -un)" = "$ATLAS_USER" ]; then
+    XDG_RUNTIME_DIR="$runtime" DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime/bus" systemctl --user "$@"
+  else
+    run_root runuser -u "$ATLAS_USER" -- env XDG_RUNTIME_DIR="$runtime" DBUS_SESSION_BUS_ADDRESS="unix:path=$runtime/bus" systemctl --user "$@"
+  fi
+}
+
+svc_active() {
+  systemctl is-active "$1" 2>/dev/null || true
+}
+
+svc_enabled() {
+  systemctl is-enabled "$1" 2>/dev/null || true
+}
+
+user_svc_active() {
+  user_systemctl is-active "$1" 2>/dev/null || true
+}
+
+user_svc_enabled() {
+  user_systemctl is-enabled "$1" 2>/dev/null || true
+}
+
+quote_value() {
+  printf '%q' "$1"
+}
+
+load_state() {
+  if [ -f "$STATE_FILE" ]; then
+    # shellcheck disable=SC1090
+    . "$STATE_FILE"
+    return 0
+  fi
+  return 1
+}
+
+state_exists() {
+  [ -f "$STATE_FILE" ]
+}
+
+cast_running() {
+  atlas-cast status 2>/dev/null | awk -F': ' '/^State:/ {print $2; exit}' | grep -q '^running$'
+}
+
+cast_device() {
+  atlas-cast status 2>/dev/null | awk -F': ' '/^Device:/ {print $2; exit}' || true
+}
+
+write_state() {
+  local duration_min="$1"
+  local now end cast_was_running cast_dev
+  now="$(date +%s)"
+  if [ "$duration_min" = "0" ]; then
+    end="0"
+  else
+    end=$((now + duration_min * 60))
+  fi
+
+  cast_was_running="0"
+  cast_dev=""
+  if cast_running; then
+    cast_was_running="1"
+    cast_dev="$(cast_device)"
+  fi
+
+  {
+    printf 'FOCUS_ACTIVE=1\n'
+    printf 'START_EPOCH=%s\n' "$now"
+    printf 'END_EPOCH=%s\n' "$end"
+    printf 'DURATION_MIN=%s\n' "$duration_min"
+    printf 'CAST_WAS_RUNNING=%s\n' "$cast_was_running"
+    printf 'CAST_DEVICE=%s\n' "$(quote_value "$cast_dev")"
+    printf 'DESKTOP_ACTIVE=%s\n' "$(quote_value "$(svc_active atlas-desktop.service)")"
+    printf 'DESKTOP_ENABLED=%s\n' "$(quote_value "$(svc_enabled atlas-desktop.service)")"
+    printf 'WEBSCREEN_ACTIVE=%s\n' "$(quote_value "$(svc_active atlas-webscreen.service)")"
+    printf 'WEBSCREEN_ENABLED=%s\n' "$(quote_value "$(svc_enabled atlas-webscreen.service)")"
+    printf 'GATEWAY_ACTIVE=%s\n' "$(quote_value "$(user_svc_active openclaw-gateway.service)")"
+    printf 'GATEWAY_ENABLED=%s\n' "$(quote_value "$(user_svc_enabled openclaw-gateway.service)")"
+  } > "$STATE_FILE"
+  chown "$ATLAS_USER:$ATLAS_USER" "$STATE_FILE" 2>/dev/null || true
+}
+
+cancel_timer() {
+  run_root systemctl stop "$RESTORE_UNIT.timer" "$RESTORE_UNIT.service" >/dev/null 2>&1 || true
+  run_root systemctl reset-failed "$RESTORE_UNIT.timer" "$RESTORE_UNIT.service" >/dev/null 2>&1 || true
+}
+
+schedule_restore() {
+  local seconds="$1"
+  cancel_timer
+  [ "$seconds" -gt 0 ] || return 0
+  run_root systemd-run \
+    --unit="$RESTORE_UNIT" \
+    --description="Restore ATLAS services after priority window" \
+    --on-active="${seconds}s" \
+    --timer-property=AccuracySec=20s \
+    /usr/local/bin/atlas-priority restore >/dev/null
+}
+
+apply_focus_stop() {
+  log "Stopping ATLAS non-essential services for priority mode"
+  atlas-cast stop >/dev/null 2>&1 || true
+  run_root systemctl disable --now atlas-desktop.service >/dev/null 2>&1 || true
+  run_root systemctl disable --now atlas-webscreen.service >/dev/null 2>&1 || true
+  run_root systemctl reset-failed atlas-desktop.service atlas-webscreen.service >/dev/null 2>&1 || true
+  user_systemctl disable --now openclaw-gateway.service >/dev/null 2>&1 || true
+  user_systemctl reset-failed openclaw-gateway.service >/dev/null 2>&1 || true
+}
+
+restore_system_service() {
+  local service="$1"
+  local was_active="$2"
+  local was_enabled="$3"
+
+  case "$was_enabled" in
+    enabled|enabled-runtime|linked|linked-runtime|alias)
+      run_root systemctl enable "$service" >/dev/null 2>&1 || true
+      ;;
+    disabled|static|indirect|masked|generated|transient|"")
+      run_root systemctl disable "$service" >/dev/null 2>&1 || true
+      ;;
+    *)
+      run_root systemctl disable "$service" >/dev/null 2>&1 || true
+      ;;
+  esac
+
+  if [ "$was_active" = "active" ]; then
+    run_root systemctl start "$service" >/dev/null 2>&1 || true
+  else
+    run_root systemctl stop "$service" >/dev/null 2>&1 || true
+  fi
+}
+
+restore_user_service() {
+  local service="$1"
+  local was_active="$2"
+  local was_enabled="$3"
+
+  case "$was_enabled" in
+    enabled|enabled-runtime|linked|linked-runtime|alias)
+      user_systemctl enable "$service" >/dev/null 2>&1 || true
+      ;;
+    disabled|static|indirect|masked|generated|transient|"")
+      user_systemctl disable "$service" >/dev/null 2>&1 || true
+      ;;
+    *)
+      user_systemctl disable "$service" >/dev/null 2>&1 || true
+      ;;
+  esac
+
+  if [ "$was_active" = "active" ]; then
+    user_systemctl start "$service" >/dev/null 2>&1 || true
+  else
+    user_systemctl stop "$service" >/dev/null 2>&1 || true
+  fi
+}
+
+restore_previous_state() {
+  if ! load_state; then
+    echo "No pending ATLAS priority state."
+    return 0
+  fi
+
+  log "Restoring previous ATLAS service state"
+  cancel_timer
+
+  restore_user_service openclaw-gateway.service "${GATEWAY_ACTIVE:-inactive}" "${GATEWAY_ENABLED:-disabled}"
+  restore_system_service atlas-webscreen.service "${WEBSCREEN_ACTIVE:-inactive}" "${WEBSCREEN_ENABLED:-disabled}"
+  restore_system_service atlas-desktop.service "${DESKTOP_ACTIVE:-inactive}" "${DESKTOP_ENABLED:-disabled}"
+
+  if [ "${CAST_WAS_RUNNING:-0}" = "1" ] && [ -n "${CAST_DEVICE:-}" ]; then
+    if [ "${DESKTOP_ACTIVE:-inactive}" = "active" ]; then
+      atlas-cast start "$CAST_DEVICE" >/dev/null 2>&1 || true
+    fi
+  fi
+
+  rm -f "$STATE_FILE"
+  log "ATLAS priority restore complete"
+  echo "ATLAS priority restored previous state."
+}
+
+format_remaining() {
+  local now end remaining
+  end="${END_EPOCH:-0}"
+  if [ "$end" = "0" ]; then
+    printf 'indefinite'
+    return 0
+  fi
+  now="$(date +%s)"
+  remaining=$((end - now))
+  if [ "$remaining" -le 0 ]; then
+    printf 'due now'
+  else
+    printf '%dm %02ds' $((remaining / 60)) $((remaining % 60))
+  fi
+}
+
+show_status() {
+  printf '%s\n' 'atlas-priority status'
+  if load_state; then
+    printf '%sState:%s %sactive%s\n' "$BOLD" "$RESET" "$BLUE" "$RESET"
+    printf '%sStarted:%s %s\n' "$BOLD" "$RESET" "$(date -d "@${START_EPOCH:-0}" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo unknown)"
+    if [ "${END_EPOCH:-0}" = "0" ]; then
+      printf '%sRestore:%s manual only\n' "$BOLD" "$RESET"
+    else
+      printf '%sRestore at:%s %s\n' "$BOLD" "$RESET" "$(date -d "@${END_EPOCH:-0}" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo unknown)"
+    fi
+    printf '%sRemaining:%s %s\n' "$BOLD" "$RESET" "$(format_remaining)"
+    printf '%sCast restore:%s %s %s\n' "$BOLD" "$RESET" "${CAST_WAS_RUNNING:-0}" "${CAST_DEVICE:-}"
+    printf '%sDesktop:%s %s / %s\n' "$BOLD" "$RESET" "${DESKTOP_ACTIVE:-unknown}" "${DESKTOP_ENABLED:-unknown}"
+    printf '%sWebScreen:%s %s / %s\n' "$BOLD" "$RESET" "${WEBSCREEN_ACTIVE:-unknown}" "${WEBSCREEN_ENABLED:-unknown}"
+    printf '%sGateway:%s %s / %s\n' "$BOLD" "$RESET" "${GATEWAY_ACTIVE:-unknown}" "${GATEWAY_ENABLED:-unknown}"
+  else
+    printf '%sState:%s %sinactive%s\n' "$BOLD" "$RESET" "$RED" "$RESET"
+  fi
+}
+
+start_focus() {
+  local minutes="$1"
+  if ! [[ "$minutes" =~ ^[0-9]+$ ]]; then
+    echo "minutes must be a non-negative integer" >&2
+    exit 2
+  fi
+
+  exec 9>"$LOCK_FILE"
+  flock 9
+
+  if state_exists; then
+    echo "ATLAS priority is already active. Use 'atlas-priority status' or 'atlas-priority restore'." >&2
+    exit 1
+  fi
+
+  write_state "$minutes"
+  apply_focus_stop
+
+  if [ "$minutes" = "0" ]; then
+    log "Priority mode started indefinitely"
+    echo "ATLAS priority enabled indefinitely. Restore with: atlas-priority restore"
+  else
+    schedule_restore $((minutes * 60))
+    log "Priority mode started for ${minutes} minute(s)"
+    echo "ATLAS priority enabled for ${minutes} minute(s). Previous state will be restored automatically."
+  fi
+  show_status
+}
+
+boot_check() {
+  if ! load_state; then
+    exit 0
+  fi
+
+  exec 9>"$LOCK_FILE"
+  flock 9
+
+  if ! load_state; then
+    exit 0
+  fi
+
+  local now remaining
+  now="$(date +%s)"
+  if [ "${END_EPOCH:-0}" = "0" ]; then
+    log "Boot check: indefinite priority still active; ensuring services stay stopped"
+    apply_focus_stop
+    exit 0
+  fi
+
+  remaining=$((END_EPOCH - now))
+  if [ "$remaining" -le 0 ]; then
+    log "Boot check: priority window expired; restoring now"
+    restore_previous_state
+  else
+    log "Boot check: priority still active for ${remaining}s; reapplying stops and scheduling restore"
+    apply_focus_stop
+    schedule_restore "$remaining"
+  fi
+}
+
+cmd="${1:-status}"
+case "$cmd" in
+  -h|--help|help)
+    usage
+    ;;
+  status)
+    show_status
+    ;;
+  restore|cancel)
+    exec 9>"$LOCK_FILE"
+    flock 9
+    restore_previous_state
+    ;;
+  boot-check|--boot-check)
+    boot_check
+    ;;
+  logs)
+    tail -n "${2:-120}" "$LOG_FILE"
+    ;;
+  *)
+    if [[ "$cmd" =~ ^[0-9]+$ ]]; then
+      start_focus "$cmd"
+    else
+      usage >&2
+      exit 2
+    fi
+    ;;
+esac

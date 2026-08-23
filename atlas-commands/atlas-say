@@ -1,0 +1,226 @@
+#!/usr/bin/env python3
+import argparse
+import datetime as dt
+import json
+import os
+import pathlib
+import subprocess
+import sys
+
+import requests
+
+CONFIG_PATH = pathlib.Path("/home/atlas/.openclaw/openclaw.json")
+TMP_DIR = pathlib.Path("/home/atlas/.openclaw/workspaces/tmp")
+KOKORO_ROOT = pathlib.Path("/home/atlas/.atlas/tts/kokoro")
+KOKORO_PYTHON = KOKORO_ROOT / "venv/bin/python"
+KOKORO_SYNTH = KOKORO_ROOT / "synthesize.py"
+KOKORO_VOICES = KOKORO_ROOT / "voices.json"
+
+
+def die(message: str, code: int = 1) -> None:
+    print(message, file=sys.stderr)
+    raise SystemExit(code)
+
+
+def load_config() -> dict:
+    try:
+        return json.loads(CONFIG_PATH.read_text())
+    except FileNotFoundError:
+        die(f"OpenClaw config not found: {CONFIG_PATH}")
+    except json.JSONDecodeError as exc:
+        die(f"OpenClaw config is not valid JSON: {exc}")
+
+
+def config_get(data: dict, path: str):
+    cur = data
+    for part in path.split("."):
+        if not isinstance(cur, dict) or part not in cur:
+            return None
+        cur = cur[part]
+    return cur
+
+
+def resolve_elevenlabs_config(data: dict, voice_id_override: str | None = None) -> tuple[str, str]:
+    api_key = (
+        os.environ.get("ELEVENLABS_API_KEY")
+        or config_get(data, "skills.entries.sag.apiKey")
+        or config_get(data, "plugins.entries.elevenlabs.config.apiKey")
+        or config_get(data, "plugins.entries.elevenlabs.apiKey")
+    )
+    voice_id = (
+        voice_id_override
+        or os.environ.get("ELEVENLABS_VOICE_ID")
+        or config_get(data, "skills.entries.sag.env.ELEVENLABS_VOICE_ID")
+        or config_get(data, "skills.entries.sag.env.SAG_VOICE_ID")
+        or config_get(data, "plugins.entries.elevenlabs.config.voiceId")
+        or config_get(data, "plugins.entries.elevenlabs.voiceId")
+    )
+    if isinstance(api_key, dict):
+        die("ElevenLabs API key is a SecretRef/object. atlas-say currently expects a resolved key or ELEVENLABS_API_KEY.")
+    if not api_key:
+        die("ElevenLabs API key not found. Configure sag/ElevenLabs or set ELEVENLABS_API_KEY.")
+    if not voice_id:
+        die("ElevenLabs voice ID not found. Configure sag env ELEVENLABS_VOICE_ID or set ELEVENLABS_VOICE_ID.")
+    return str(api_key), str(voice_id)
+
+
+def build_text(parts: list[str]) -> str:
+    text = " ".join(parts).strip()
+    if not text and not sys.stdin.isatty():
+        text = sys.stdin.read().strip()
+    if not text:
+        die('usage: atlas-say --tts local --voice 1 "text to speak"', 2)
+    return text
+
+
+def load_local_voices() -> dict:
+    try:
+        return json.loads(KOKORO_VOICES.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        die(f"Local TTS voices not found: {KOKORO_VOICES}")
+    except json.JSONDecodeError as exc:
+        die(f"Local TTS voice catalog is not valid JSON: {exc}")
+
+
+def list_local_voices() -> None:
+    catalog = load_local_voices()
+    print("Local TTS voices:")
+    for voice in catalog.get("voices", []):
+        default = " default" if str(voice.get("id")) == str(catalog.get("default", "1")) else ""
+        print(
+            f"  {voice.get('id')}: {voice.get('key')} "
+            f"({voice.get('name')}, {voice.get('lang')}, {voice.get('profile')}){default}"
+        )
+
+
+def resolve_local_voice(voice_ref: str | None) -> dict:
+    catalog = load_local_voices()
+    voice_ref = str(voice_ref or catalog.get("default", "1"))
+    voice_ref_norm = voice_ref.lower()
+    voices = catalog.get("voices", [])
+    for voice in voices:
+        if voice_ref_norm in {str(voice.get("id")).lower(), str(voice.get("key")).lower(), str(voice.get("name")).lower()}:
+            return voice
+    valid = ", ".join(str(voice.get("id")) for voice in voices)
+    die(f"unknown local voice: {voice_ref}. Valid voice numbers: {valid}", 2)
+
+
+def synthesize_local(text: str, voice_ref: str | None) -> pathlib.Path:
+    if not KOKORO_PYTHON.exists():
+        die(f"Kokoro local TTS Python not found: {KOKORO_PYTHON}")
+    if not KOKORO_SYNTH.exists():
+        die(f"Kokoro local TTS helper not found: {KOKORO_SYNTH}")
+    voice = resolve_local_voice(voice_ref)
+    key = voice["key"]
+    TMP_DIR.mkdir(parents=True, exist_ok=True)
+    ts = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+    out = TMP_DIR / f"atlas-say-local-kokoro-{key}-{ts}.wav"
+    env = os.environ.copy()
+    # Keep ONNX Runtime quiet on the headless Pi.
+    env.setdefault("ORT_LOG_SEVERITY_LEVEL", "3")
+    cmd = [
+        str(KOKORO_PYTHON),
+        str(KOKORO_SYNTH),
+        "--voice",
+        key,
+        "--lang",
+        str(voice.get("phoneme_lang", "es")),
+        "--speed",
+        str(voice.get("speed", "1.0")),
+        "--output",
+        str(out),
+    ]
+    result = subprocess.run(cmd, input=text + "\n", text=True, capture_output=True, env=env)
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout).strip()
+        die(f"Kokoro local TTS failed for voice {voice['id']} ({key}): {detail}")
+    try:
+        os.chown(out, 1000, 1000)
+    except PermissionError:
+        pass
+    return out
+
+
+def synthesize_elevenlabs(text: str, api_key: str, voice_id: str) -> pathlib.Path:
+    TMP_DIR.mkdir(parents=True, exist_ok=True)
+    ts = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+    out = TMP_DIR / f"atlas-say-{ts}.mp3"
+    model_id = os.environ.get("ATLAS_SAY_ELEVENLABS_MODEL", "eleven_multilingual_v2")
+    url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+    params = {"output_format": os.environ.get("ATLAS_SAY_OUTPUT_FORMAT", "mp3_44100_128")}
+    payload = {
+        "text": text,
+        "model_id": model_id,
+        "voice_settings": {
+            "stability": float(os.environ.get("ATLAS_SAY_STABILITY", "0.45")),
+            "similarity_boost": float(os.environ.get("ATLAS_SAY_SIMILARITY_BOOST", "0.8")),
+        },
+    }
+    headers = {
+        "xi-api-key": api_key,
+        "Content-Type": "application/json",
+        "Accept": "audio/mpeg",
+    }
+    try:
+        response = requests.post(url, params=params, headers=headers, json=payload, timeout=60)
+    except requests.RequestException as exc:
+        die(f"ElevenLabs request failed: {exc}")
+    if response.status_code >= 400:
+        detail = response.text[:500].replace(api_key, "<redacted>")
+        die(f"ElevenLabs returned HTTP {response.status_code}: {detail}")
+    out.write_bytes(response.content)
+    try:
+        os.chown(out, 1000, 1000)
+    except PermissionError:
+        pass
+    return out
+
+
+def play_audio(path: pathlib.Path) -> None:
+    players = [
+        ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", str(path)],
+        ["mpv", "--no-video", "--really-quiet", str(path)],
+        ["mpg123", "-q", str(path)],
+    ]
+    for cmd in players:
+        if subprocess.run(["bash", "-lc", f"command -v {cmd[0]} >/dev/null 2>&1"]).returncode == 0:
+            result = subprocess.run(cmd)
+            if result.returncode == 0:
+                return
+            die(f"audio player failed: {' '.join(cmd)}", result.returncode)
+    die("no audio player found. Install ffmpeg/ffplay, mpv, or mpg123.")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Make ATLAS speak through the default audio output.")
+    parser.add_argument("--tts", default="elevenlabs", help="TTS backend: elevenlabs or local")
+    parser.add_argument("--voice", default=None, help="Local TTS voice number/key, or 'list'. Used with --tts local.")
+    parser.add_argument("--voiceid", default=None, help="ElevenLabs voice ID override for this utterance. Used with --tts elevenlabs.")
+    parser.add_argument("--no-play", action="store_true", help="Generate the audio file but do not play it.")
+    parser.add_argument("text", nargs="*", help="Text to speak. If omitted, stdin is used.")
+    if len(sys.argv) == 2 and sys.argv[1] in {"help", "-h", "--help"}:
+        parser.print_help()
+        return 0
+    args = parser.parse_args()
+
+    if args.tts == "local" and args.voice == "list":
+        list_local_voices()
+        return 0
+
+    text = build_text(args.text)
+    if args.tts == "elevenlabs":
+        config = load_config()
+        api_key, voice_id = resolve_elevenlabs_config(config, args.voiceid)
+        out = synthesize_elevenlabs(text, api_key, voice_id)
+    elif args.tts == "local":
+        out = synthesize_local(text, args.voice)
+    else:
+        die("unsupported --tts value. Allowed: elevenlabs, local", 2)
+    print(f"Audio: {out}")
+    if not args.no_play:
+        play_audio(out)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

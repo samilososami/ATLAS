@@ -1,0 +1,535 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ -t 1 ] && [ "${ATLAS_NO_COLOR:-0}" != "1" ]; then
+  BOLD=$'\033[1m'
+  RESET=$'\033[0m'
+  CYAN=$'\033[1;36m'
+  GREEN=$'\033[1;32m'
+  YELLOW=$'\033[1;33m'
+  RED=$'\033[1;31m'
+else
+  BOLD=""
+  RESET=""
+  CYAN=""
+  GREEN=""
+  YELLOW=""
+  RED=""
+fi
+
+fmt_bytes() {
+  awk -v kb="$1" 'BEGIN {
+    gb = kb / 1024 / 1024;
+    if (gb >= 1) printf "%.1fGB", gb;
+    else printf "%.0fMB", kb / 1024;
+  }'
+}
+
+cpu_percent() {
+  read -r _ u1 n1 s1 i1 w1 irq1 soft1 steal1 _ < /proc/stat
+  idle1=$((i1 + w1))
+  total1=$((u1 + n1 + s1 + i1 + w1 + irq1 + soft1 + steal1))
+  sleep 1
+  read -r _ u2 n2 s2 i2 w2 irq2 soft2 steal2 _ < /proc/stat
+  idle2=$((i2 + w2))
+  total2=$((u2 + n2 + s2 + i2 + w2 + irq2 + soft2 + steal2))
+  awk -v t1="$total1" -v t2="$total2" -v id1="$idle1" -v id2="$idle2" 'BEGIN {
+    dt = t2 - t1;
+    di = id2 - id1;
+    if (dt <= 0) print "0.0";
+    else printf "%.1f", (100 * (dt - di) / dt);
+  }'
+}
+
+ram_values() {
+  awk '
+    /^MemTotal:/ { total=$2 }
+    /^MemAvailable:/ { avail=$2 }
+    END {
+      used = total - avail;
+      printf "%s\t%s\t%.0f%%\n", human(used), human(total), used * 100 / total;
+    }
+    function human(kb) {
+      gb = kb / 1024 / 1024;
+      if (gb >= 1) return sprintf("%.1fGB", gb);
+      return sprintf("%.0fMB", kb / 1024);
+    }
+  ' /proc/meminfo
+}
+
+storage_values() {
+  df -h / | awk 'NR==2 { printf "%s\t%s\t%s\n", $3, $2, $5 }'
+}
+
+temp_line() {
+  if command -v vcgencmd >/dev/null 2>&1; then
+    vcgencmd measure_temp 2>/dev/null | sed "s/^temp=//;s/'/°/"
+  elif [ -r /sys/class/thermal/thermal_zone0/temp ]; then
+    awk '{ printf "%.1f°C", $1 / 1000 }' /sys/class/thermal/thermal_zone0/temp
+  else
+    printf "unknown"
+  fi
+}
+
+fan_line() {
+  local rpm="" pwm="" pct="" state="" max="" status details fan_file pwm_file d type
+
+  for fan_file in /sys/devices/platform/cooling_fan/hwmon/hwmon*/fan1_input /sys/class/hwmon/hwmon*/fan1_input; do
+    [ -r "$fan_file" ] || continue
+    rpm="$(cat "$fan_file" 2>/dev/null || true)"
+    [ -n "$rpm" ] && break
+  done
+
+  for pwm_file in /sys/devices/platform/cooling_fan/hwmon/hwmon*/pwm1 /sys/class/hwmon/hwmon*/pwm1; do
+    [ -r "$pwm_file" ] || continue
+    pwm="$(cat "$pwm_file" 2>/dev/null || true)"
+    [ -n "$pwm" ] && break
+  done
+
+  for d in /sys/class/thermal/cooling_device*; do
+    [ -d "$d" ] || continue
+    type="$(cat "$d/type" 2>/dev/null || true)"
+    case "$type" in
+      *fan*|*Fan*|pwm-fan|cooling_fan)
+        state="$(cat "$d/cur_state" 2>/dev/null || true)"
+        max="$(cat "$d/max_state" 2>/dev/null || true)"
+        break
+        ;;
+    esac
+  done
+
+  if [[ "$pwm" =~ ^[0-9]+$ ]]; then
+    pct="$(awk -v p="$pwm" 'BEGIN { printf "%.0f", p * 100 / 255 }')"
+  elif [[ "$state" =~ ^[0-9]+$ && "$max" =~ ^[1-9][0-9]*$ ]]; then
+    pct="$(awk -v s="$state" -v m="$max" 'BEGIN { printf "%.0f", s * 100 / m }')"
+  elif [[ "$rpm" =~ ^[1-9][0-9]*$ ]]; then
+    pct="on"
+  else
+    pct="unknown"
+  fi
+
+  if [[ "$rpm" =~ ^[1-9][0-9]*$ ]] || [[ "$pwm" =~ ^[1-9][0-9]*$ ]] || [[ "$state" =~ ^[1-9][0-9]*$ ]]; then
+    status="encendido"
+  elif [[ "$rpm" =~ ^0$ || "$pwm" =~ ^0$ || "$state" =~ ^0$ ]]; then
+    status="apagado"
+  else
+    status="unknown"
+  fi
+
+  if [[ "$rpm" =~ ^[0-9]+$ ]]; then
+    details="${rpm} RPM"
+  else
+    details="RPM unknown"
+  fi
+
+  if [[ "$pct" =~ ^[0-9]+$ ]]; then
+    details="${details}, ${pct}%"
+  else
+    details="${details}, ${pct}"
+  fi
+
+  printf "%s (%s)" "$status" "$details"
+}
+
+fan_values() {
+  local line status details
+  line="$(fan_line)"
+  status="${line%% (*}"
+  details="${line#* (}"
+  details="${details%)}"
+  printf "%s\t%s\n" "$status" "$details"
+}
+
+throttle_raw() {
+  if command -v vcgencmd >/dev/null 2>&1; then
+    vcgencmd get_throttled 2>/dev/null || true
+  fi
+}
+
+throttle_decode() {
+  local raw hex dec active past parts
+  raw="$(throttle_raw)"
+  if [ -z "$raw" ]; then
+    echo "unknown: vcgencmd no disponible"
+    return
+  fi
+  hex="${raw#*=}"
+  dec=$((hex))
+  parts=()
+
+  (( dec & 1 )) && parts+=("bajo voltaje ahora")
+  (( dec & 2 )) && parts+=("frecuencia limitada ahora")
+  (( dec & 4 )) && parts+=("throttling ahora")
+  (( dec & 8 )) && parts+=("soft temp limit ahora")
+
+  (( dec & 65536 )) && parts+=("hubo bajo voltaje")
+  (( dec & 131072 )) && parts+=("hubo frecuencia limitada")
+  (( dec & 262144 )) && parts+=("hubo throttling")
+  (( dec & 524288 )) && parts+=("hubo soft temp limit")
+
+  if [ ${#parts[@]} -eq 0 ]; then
+    echo "${raw} / ok, sin avisos"
+  else
+    local joined=""
+    local part
+    for part in "${parts[@]}"; do
+      if [ -z "$joined" ]; then joined="$part"; else joined="$joined, $part"; fi
+    done
+    echo "${raw} / ${joined}"
+  fi
+}
+
+pretty_process() {
+  local comm="$1"
+  local args="$2"
+  if [ "$comm" = "openclaw" ]; then
+    echo "OpenClaw Gateway"
+    return
+  fi
+  case "$args" in
+    *atlas-webscreen*server.py*) echo "ATLAS WebScreen" ;;
+    *openclaw*gateway*|*openclaw*dist/index.js*gateway*) echo "OpenClaw Gateway" ;;
+    *whisper*) echo "Whisper" ;;
+    *avahi-daemon*) echo "Avahi/mDNS" ;;
+    *sshd*) echo "SSH" ;;
+    *systemd*) echo "systemd" ;;
+    *)
+      if [ -n "$comm" ]; then echo "$comm"; else echo "unknown"; fi
+      ;;
+  esac
+}
+
+top_process() {
+  local sort_field="$1"
+  if [ "$sort_field" = "pcpu" ]; then
+    if [ -n "${top_cpu_line:-}" ]; then
+      printf "%s" "$top_cpu_line"
+      return
+    fi
+    top_cpu_process
+    return
+  fi
+
+  ps -eo comm=,pcpu=,pmem=,args= --sort="-${sort_field}" |
+    awk '
+      NR == 1 {
+        comm=$1; cpu=$2; mem=$3;
+        args="";
+        for (i=4; i<=NF; i++) args=args (i==4 ? "" : " ") $i;
+        printf "%s\t%s\t%s\t%s\n", comm, cpu, mem, args;
+        exit;
+      }
+    ' |
+    while IFS=$'\t' read -r comm cpu mem args; do
+      name="$(pretty_process "$comm" "$args")"
+      if [ "$sort_field" = "pcpu" ]; then
+        printf "%s (CPU %s%%, RAM %s%%)" "$name" "$cpu" "$mem"
+      else
+        printf "%s (RAM %s%%)" "$name" "$mem"
+      fi
+    done
+}
+
+total_cpu_ticks() {
+  awk '/^cpu / {
+    total = 0;
+    for (i = 2; i <= NF; i++) total += $i;
+    print total;
+  }' /proc/stat
+}
+
+process_cpu_ticks() {
+  local pid="$1"
+  local stat rest
+  [ -r "/proc/${pid}/stat" ] || return 1
+  stat="$(cat "/proc/${pid}/stat")"
+  rest="${stat##*) }"
+  set -- $rest
+  printf "%s\n" "$((${12:-0} + ${13:-0}))"
+}
+
+cpu_snapshot() {
+  read -r _ u n s i w irq soft steal _ < /proc/stat
+  local idle total
+  idle=$((i + w))
+  total=$((u + n + s + i + w + irq + soft + steal))
+  printf "%s %s\n" "$total" "$idle"
+}
+
+cpu_and_top_cpu_sample() {
+  local sample top_pid top_delta total1 idle1 total2 idle2 total_delta idle_delta pid ticks1 ticks2 delta line comm mem args name self_pid shell_pid stat_file sample_start sample_end clock_ticks cpu_cores openclaw_delta screen_delta whisper_delta
+  self_pid="$$"
+  shell_pid="${BASHPID:-$$}"
+  clock_ticks="$(getconf CLK_TCK 2>/dev/null || echo 100)"
+  cpu_cores="$(nproc 2>/dev/null || echo 1)"
+  sample="$(mktemp)"
+
+  sample_start="$(date +%s.%N)"
+  for stat_file in /proc/[0-9]*/stat; do
+    pid="${stat_file#/proc/}"
+    pid="${pid%/stat}"
+    [ "$pid" != "$self_pid" ] || continue
+    [ "$pid" != "$shell_pid" ] || continue
+    ticks1="$(process_cpu_ticks "$pid" 2>/dev/null || true)"
+    [ -n "$ticks1" ] || continue
+    printf "%s %s\n" "$pid" "$ticks1" >> "$sample"
+  done
+
+  read -r total1 idle1 < <(cpu_snapshot)
+  sleep 1
+
+  read -r total2 idle2 < <(cpu_snapshot)
+  total_delta=$((total2 - total1))
+  idle_delta=$((idle2 - idle1))
+  cpu="$(
+    awk -v dt="$total_delta" -v di="$idle_delta" 'BEGIN {
+      if (dt <= 0) print "0.0";
+      else printf "%.1f", 100 * (dt - di) / dt;
+    }'
+  )"
+
+  top_pid=""
+  top_delta=0
+  openclaw_delta=0
+  screen_delta=0
+  whisper_delta=0
+  while read -r pid ticks1; do
+    ticks2="$(process_cpu_ticks "$pid" 2>/dev/null || true)"
+    [ -n "$ticks2" ] || continue
+    delta=$((ticks2 - ticks1))
+    if [ "$delta" -gt 0 ]; then
+      args="$(tr '\0' ' ' < "/proc/${pid}/cmdline" 2>/dev/null || true)"
+      case "$args" in
+        *openclaw*gateway*|*openclaw*dist/index.js*gateway*) openclaw_delta=$((openclaw_delta + delta)) ;;
+        *atlas-webscreen*server.py*) screen_delta=$((screen_delta + delta)) ;;
+        *whisper-cli*|*whisper.cpp*|*whisper*) whisper_delta=$((whisper_delta + delta)) ;;
+      esac
+    fi
+    if [ "$delta" -gt "$top_delta" ]; then
+      top_delta="$delta"
+      top_pid="$pid"
+    fi
+  done < "$sample"
+  sample_end="$(date +%s.%N)"
+  rm -f "$sample"
+
+  cpu_breakdown_line="$(
+    awk -v openclaw="$openclaw_delta" -v screen="$screen_delta" -v whisper="$whisper_delta" -v total="$total_delta" -v idle="$idle_delta" 'BEGIN {
+      busy = total - idle;
+      other = busy - openclaw - screen - whisper;
+      if (other < 0) other = 0;
+      if (total <= 0) {
+        printf "OpenClaw 0.0%% · WebScreen 0.0%% · Whisper 0.0%% · otros 0.0%%";
+      } else {
+        printf "OpenClaw %.1f%% · WebScreen %.1f%% · Whisper %.1f%% · otros %.1f%%",
+          100 * openclaw / total,
+          100 * screen / total,
+          100 * whisper / total,
+          100 * other / total;
+      }
+    }'
+  )"
+
+  if [ -z "$top_pid" ]; then
+    top_cpu_line="sin consumo relevante (CPU 0.0%)"
+    return
+  fi
+  if [ "$top_delta" -lt 2 ]; then
+    top_cpu_line="sin consumo relevante (CPU <0.5%)"
+    return
+  fi
+
+  line="$(
+    ps -p "$top_pid" -o comm=,pmem=,args= |
+      awk 'NR == 1 {
+        comm=$1; mem=$2;
+        args="";
+        for (i=3; i<=NF; i++) args=args (i==3 ? "" : " ") $i;
+        printf "%s\t%s\t%s\n", comm, mem, args;
+      }'
+  )"
+  IFS=$'\t' read -r comm mem args <<< "$line"
+  name="$(pretty_process "$comm" "$args")"
+  top_cpu_line="$(
+    awk -v d="$top_delta" -v start="$sample_start" -v end="$sample_end" -v hz="$clock_ticks" -v cores="$cpu_cores" -v name="$name" -v mem="${mem:-0.0}" 'BEGIN {
+      elapsed = end - start;
+      if (elapsed <= 0 || hz <= 0 || cores <= 0) cpu = "0.0";
+      else cpu = sprintf("%.1f", 100 * (d / hz) / elapsed / cores);
+      printf "%s (CPU %s%%, RAM %s%%)", name, cpu, mem;
+    }'
+  )"
+}
+
+top_cpu_process() {
+  local sample top_pid top_delta total1 total2 total_delta pid ticks1 ticks2 delta line comm mem args name cpu self_pid shell_pid
+  self_pid="$$"
+  shell_pid="${BASHPID:-$$}"
+  sample="$(mktemp)"
+  total1="$(total_cpu_ticks)"
+
+  for stat_file in /proc/[0-9]*/stat; do
+    pid="${stat_file#/proc/}"
+    pid="${pid%/stat}"
+    [ "$pid" != "$self_pid" ] || continue
+    [ "$pid" != "$shell_pid" ] || continue
+    ticks1="$(process_cpu_ticks "$pid" 2>/dev/null || true)"
+    [ -n "$ticks1" ] || continue
+    printf "%s %s\n" "$pid" "$ticks1" >> "$sample"
+  done
+
+  sleep 1
+  total2="$(total_cpu_ticks)"
+  total_delta=$((total2 - total1))
+  top_pid=""
+  top_delta=0
+
+  while read -r pid ticks1; do
+    ticks2="$(process_cpu_ticks "$pid" 2>/dev/null || true)"
+    [ -n "$ticks2" ] || continue
+    delta=$((ticks2 - ticks1))
+    if [ "$delta" -gt "$top_delta" ]; then
+      top_delta="$delta"
+      top_pid="$pid"
+    fi
+  done < "$sample"
+  rm -f "$sample"
+
+  if [ -z "$top_pid" ]; then
+    printf "sin consumo relevante (CPU 0.0%%)"
+    return
+  fi
+  if [ "$top_delta" -lt 2 ]; then
+    printf "sin consumo relevante (CPU <0.5%%)"
+    return
+  fi
+
+  line="$(
+    ps -p "$top_pid" -o comm=,pmem=,args= |
+      awk 'NR == 1 {
+        comm=$1; mem=$2;
+        args="";
+        for (i=3; i<=NF; i++) args=args (i==3 ? "" : " ") $i;
+        printf "%s\t%s\t%s\n", comm, mem, args;
+      }'
+  )"
+  IFS=$'\t' read -r comm mem args <<< "$line"
+  name="$(pretty_process "$comm" "$args")"
+  cpu="$(
+    awk -v d="$top_delta" -v dt="$total_delta" 'BEGIN {
+      if (dt <= 0) print "0.0";
+      else printf "%.1f", 100 * d / dt;
+    }'
+  )"
+  printf "%s (CPU %s%%, RAM %s%%)" "$name" "$cpu" "${mem:-0.0}"
+}
+
+service_state() {
+  local unit="$1"
+  if systemctl list-unit-files "$unit" >/dev/null 2>&1; then
+    printf "%s / %s" "$(systemctl is-active "$unit" 2>/dev/null || echo unknown)" "$(systemctl is-enabled "$unit" 2>/dev/null || echo disabled)"
+  else
+    printf "not installed"
+  fi
+}
+
+run_color() {
+  case "$1" in
+    running) printf "%s" "$GREEN" ;;
+    stopped) printf "%s" "$RED" ;;
+    *) printf "%s" "$YELLOW" ;;
+  esac
+}
+
+system_service_run_state() {
+  local unit="$1" active enabled state
+  active="$(systemctl is-active "$unit" 2>/dev/null || true)"
+  enabled="$(systemctl is-enabled "$unit" 2>/dev/null || true)"
+  if [ "$active" = "active" ]; then state="running"; else state="stopped"; fi
+  printf "%s	%s
+" "$state" "${enabled:-unknown}"
+}
+
+atlas_cast_state() {
+  local pid state
+  pid="$(cat /home/atlas/.atlas/atlas-desktop/runtime/cast.pid 2>/dev/null || true)"
+  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then state="running"; else state="stopped"; fi
+  printf "%s	%s
+" "$state" "manual"
+}
+
+openclaw_gateway_state() {
+  local active enabled state
+  active="$(systemctl --user is-active openclaw-gateway.service 2>/dev/null || true)"
+  enabled="$(systemctl --user is-enabled openclaw-gateway.service 2>/dev/null || true)"
+  if [ "$active" = "active" ]; then
+    state="running"
+  elif ss -ltn 2>/dev/null | grep -q ':18789'; then
+    state="running"
+  else
+    state="stopped"
+  fi
+  printf "%s	%s
+" "$state" "${enabled:-unknown}"
+}
+
+network_urls() {
+  local ips ip out
+  ips="$(hostname -I 2>/dev/null || true)"
+  out=""
+  for ip in $ips; do
+    case "$ip" in
+      127.*|169.254.*) continue ;;
+    esac
+    out="${out}${out:+ }http://${ip}:5000"
+  done
+  out="${out}${out:+ }http://atlas.local:5000"
+  printf "%s" "${out:-unknown}"
+}
+
+model="unknown"
+if [ -r /proc/device-tree/model ]; then
+  model="$(tr -d '\0' < /proc/device-tree/model)"
+fi
+
+cpu="unknown"
+top_cpu_line=""
+cpu_breakdown_line=""
+cpu_and_top_cpu_sample
+IFS=$'\t' read -r ram_used ram_total ram_pct < <(ram_values)
+IFS=$'\t' read -r storage_used storage_total storage_pct < <(storage_values)
+temp="$(temp_line)"
+IFS=$'\t' read -r fan_status fan_details < <(fan_values)
+IFS=$'	' read -r gateway_state gateway_enabled < <(openclaw_gateway_state)
+IFS=$'	' read -r cast_state cast_enabled < <(atlas_cast_state)
+IFS=$'	' read -r desktop_state desktop_enabled < <(system_service_run_state atlas-desktop.service)
+IFS=$'	' read -r webscreen_state webscreen_enabled < <(system_service_run_state atlas-webscreen.service)
+gateway_state_color="$(run_color "$gateway_state")"
+cast_state_color="$(run_color "$cast_state")"
+desktop_state_color="$(run_color "$desktop_state")"
+webscreen_state_color="$(run_color "$webscreen_state")"
+throttle="$(throttle_decode)"
+uptime_pretty="$(uptime -p 2>/dev/null | sed 's/^up //' || true)"
+throttle_code="$(printf "%s" "$throttle" | sed -n 's/^throttled=\([^ ]*\).*/\1/p')"
+throttle_rest="${throttle#* / }"
+if [ "$throttle_rest" = "$throttle" ]; then
+  throttle_rest=""
+fi
+
+cat <<OUT
+${BOLD}ATLAS PI STATUS${RESET}
+${BOLD}Host:${RESET} $(hostname) / ${model}
+${BOLD}Uptime:${RESET} ${CYAN}${uptime_pretty:-unknown}${RESET}
+
+${BOLD}CPU:${RESET} ${CYAN}${cpu}%${RESET}
+${BOLD}CPU detail:${RESET} ${cpu_breakdown_line:-unknown}
+${BOLD}RAM:${RESET} ${CYAN}${ram_used}${RESET}/${ram_total} (${ram_pct})
+${BOLD}Storage /:${RESET} ${CYAN}${storage_used}${RESET}/${storage_total} (${storage_pct})
+${BOLD}Temperature:${RESET} ${CYAN}${temp}${RESET}    ${BOLD}Fan:${RESET} ${CYAN}${fan_status}${RESET} (${fan_details})
+${BOLD}Throttle:${RESET} throttled=${CYAN}${throttle_code:-unknown}${RESET}${throttle_rest:+ / ${throttle_rest}}
+
+${BOLD}Top RAM:${RESET} $(top_process pmem)
+${BOLD}OpenClaw Gateway:${RESET} ${gateway_state_color}${gateway_state}${RESET} / ${gateway_enabled}
+${BOLD}Atlas WebScreen:${RESET} ${webscreen_state_color}${webscreen_state}${RESET} / ${webscreen_enabled}
+${BOLD}Atlas Desktop:${RESET} ${desktop_state_color}${desktop_state}${RESET} / ${desktop_enabled}
+${BOLD}Atlas Cast:${RESET} ${cast_state_color}${cast_state}${RESET} / ${cast_enabled}
+OUT
