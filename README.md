@@ -92,6 +92,18 @@ ATLAS se encuentra en desarrollo activo. La versión 1.0 establece la identidad 
 
 Las funciones de voz, pantalla táctil, audio integrado, detección de periféricos y ATLAS Roles se ampliarán y evaluarán en versiones posteriores.
 
+## RAFAS
+
+RAFAS es un concepto futuro del proyecto y todavía no está desarrollado. Su nombre significa ***Runtime Access For ATLAS Systems***.
+
+Durante el desarrollo de ATLAS A1 fueron apareciendo errores e incidencias. Habitualmente, ATLAS podía resolverlos por sí mismo o recuperarse mediante sus herramientas de auto-reparación. Sin embargo, algunos fallos afectaban al propio Gateway de OpenClaw, al provider del modelo —por ejemplo, OpenAI— o a NetworkManager. En esas situaciones, ATLAS entraba en un estado de hibernación operativa y no podía reparar el problema desde dentro.
+
+Hasta entonces, la alternativa era conectarse por SSH a la terminal de ATLAS OS y resolverlo manualmente. Esto se volvía especialmente complicado si el fallo estaba relacionado con la conectividad: si la Raspberry Pi no conseguía conectarse a Internet, tampoco era posible acceder a ella por red.
+
+Con la incorporación de la pantalla al ATLAS A1 surgió la idea de RAFAS. Al conectar un teclado físico y pulsar la combinación `Ctrl + W + O + W`, la pantalla mostraría un entorno de depuración y recuperación. Tras validar la contraseña correspondiente, se accedería a una shell con privilegios de root para diagnosticar y corregir rápidamente errores críticos sin depender de una conexión de red.
+
+RAFAS requerirá presencia física, autenticación y controles explícitos antes de proporcionar acceso administrativo. Su diseño final podrá cambiar conforme avance el hardware y el sistema operativo de ATLAS.
+
 ### Roadmap
 
 - Desarrollar **ATLAS Imager** para Windows y Linux.
