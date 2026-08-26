@@ -43,7 +43,7 @@ ensure_config() {
       printf '%s\n' '# ATLAS_CAST_FPS='
       printf '%s\n' '# ATLAS_CAST_BITRATE='
     } > "$CONFIG_FILE"
-    chown atlas:atlas "$CONFIG_FILE" 2>/dev/null || true
+    chown sami:sami "$CONFIG_FILE" 2>/dev/null || true
   fi
 }
 
@@ -102,7 +102,7 @@ as_atlas() {
   if [ "$(id -un)" = "atlas" ]; then
     env DISPLAY="$DISPLAY_ID" HOME=/home/atlas XDG_RUNTIME_DIR="$ROOT/runtime/xdg" "$@"
   else
-    sudo -n runuser -u atlas -- env DISPLAY="$DISPLAY_ID" HOME=/home/atlas XDG_RUNTIME_DIR="$ROOT/runtime/xdg" "$@"
+    sudo -n runuser -u sami -- env DISPLAY="$DISPLAY_ID" HOME=/home/atlas XDG_RUNTIME_DIR="$ROOT/runtime/xdg" "$@"
   fi
 }
 
@@ -357,7 +357,7 @@ write_runtime_quality() {
   printf '%s\n' "$ACTIVE_PROFILE" > "$PROFILEFILE"
   printf '%sx%s @ %sfps, %s' "$CAST_WIDTH" "$CAST_HEIGHT" "$CAST_FPS" "$CAST_BITRATE" > "$QUALITYFILE"
   printf '%s\n' "$AUTO_REASON" > "$REASONFILE"
-  chown atlas:atlas "$PROFILEFILE" "$QUALITYFILE" "$REASONFILE" 2>/dev/null || true
+  chown sami:sami "$PROFILEFILE" "$QUALITYFILE" "$REASONFILE" 2>/dev/null || true
 }
 
 run_cast() {
@@ -373,8 +373,8 @@ run_cast() {
   if [ "$(id -un)" = "atlas" ]; then
     bash -lc "cd '$ROOT'; nohup $cmdline > '$LOGFILE' 2>&1 & echo \$!" > "$PIDFILE"
   else
-    sudo -n runuser -u atlas -- bash -lc "cd '$ROOT'; nohup $cmdline > '$LOGFILE' 2>&1 & echo \$!" | sudo -n tee "$PIDFILE" >/dev/null
-    sudo -n chown atlas:atlas "$PIDFILE" "$LOGFILE" 2>/dev/null || true
+    sudo -n runuser -u sami -- bash -lc "cd '$ROOT'; nohup $cmdline > '$LOGFILE' 2>&1 & echo \$!" | sudo -n tee "$PIDFILE" >/dev/null
+    sudo -n chown sami:sami "$PIDFILE" "$LOGFILE" 2>/dev/null || true
   fi
   printf '%s\n' "$device" > "$DEVICEFILE"
   write_runtime_quality
@@ -398,7 +398,7 @@ set_profile_config() {
   ' "$CONFIG_FILE" > "$tmp"
   install -m 644 "$tmp" "$CONFIG_FILE"
   rm -f "$tmp"
-  chown atlas:atlas "$CONFIG_FILE" 2>/dev/null || true
+  chown sami:sami "$CONFIG_FILE" 2>/dev/null || true
   printf 'ATLAS_CAST_PROFILE=%s\n' "$profile"
 }
 
