@@ -112,7 +112,7 @@ as_atlas() {
   if [ "$(id -un)" = "atlas" ]; then
     env DISPLAY="$DISPLAY_ID" HOME=/home/atlas XDG_RUNTIME_DIR="$ROOT/runtime/xdg" "$@"
   else
-    sudo -n runuser -u atlas -- env DISPLAY="$DISPLAY_ID" HOME=/home/atlas XDG_RUNTIME_DIR="$ROOT/runtime/xdg" "$@"
+    sudo -n runuser -u sami -- env DISPLAY="$DISPLAY_ID" HOME=/home/atlas XDG_RUNTIME_DIR="$ROOT/runtime/xdg" "$@"
   fi
 }
 
@@ -272,7 +272,7 @@ apply_wallpaper() {
   fi
   rm -f "$ACTIVE_WALLPAPER"
   ln -s "$path" "$ACTIVE_WALLPAPER"
-  chown -h atlas:atlas "$ACTIVE_WALLPAPER" 2>/dev/null || true
+  chown -h sami:sami "$ACTIVE_WALLPAPER" 2>/dev/null || true
   if systemctl is-active --quiet "$SERVICE"; then
     as_atlas feh --no-fehbg --bg-fill "$ACTIVE_WALLPAPER" >/dev/null 2>&1 || true
   fi
@@ -337,12 +337,12 @@ nuke_desktop() {
   done
 
   sleep 1
-  sudo -n pkill -TERM -u atlas -x chromium >/dev/null 2>&1 || true
-  sudo -n pkill -TERM -u atlas -x chrome_crashpad_handler >/dev/null 2>&1 || true
-  sudo -n pkill -TERM -u atlas -f "$ROOT/chromium-profile" >/dev/null 2>&1 || true
+  sudo -n pkill -TERM -u sami -x chromium >/dev/null 2>&1 || true
+  sudo -n pkill -TERM -u sami -x chrome_crashpad_handler >/dev/null 2>&1 || true
+  sudo -n pkill -TERM -u sami -f "$ROOT/chromium-profile" >/dev/null 2>&1 || true
   sleep 0.6
-  sudo -n pkill -KILL -u atlas -x chromium >/dev/null 2>&1 || true
-  sudo -n pkill -KILL -u atlas -f "$ROOT/chromium-profile" >/dev/null 2>&1 || true
+  sudo -n pkill -KILL -u sami -x chromium >/dev/null 2>&1 || true
+  sudo -n pkill -KILL -u sami -f "$ROOT/chromium-profile" >/dev/null 2>&1 || true
 
   if [ -e "$ACTIVE_WALLPAPER" ]; then
     as_atlas feh --no-fehbg --bg-fill "$ACTIVE_WALLPAPER" >/dev/null 2>&1 || true
@@ -357,7 +357,7 @@ capture_screenshot() {
   ensure_running
   mkdir -p "$(dirname "$out")"
   as_atlas ffmpeg -hide_banner -loglevel error -y -f x11grab -video_size "${WIDTH}x${HEIGHT}" -i "$DISPLAY_ID" -frames:v 1 "$out"
-  chown atlas:atlas "$out" 2>/dev/null || true
+  chown sami:sami "$out" 2>/dev/null || true
   printf '%s\n' "$out"
 }
 
