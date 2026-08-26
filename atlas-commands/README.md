@@ -43,34 +43,24 @@ Muestra un resumen del estado de la Raspberry Pi y de los servicios principales:
 atlas-pistatus
 ```
 
-## `atlas-priority`
-
-Libera temporalmente recursos de CPU y RAM deteniendo servicios secundarios, y restaura después el estado anterior.
-
-```bash
-atlas-priority 10
-atlas-priority status
-atlas-priority restore
-```
-
 ## `atlas-say`
 
-Convierte texto en audio mediante un backend de TTS local o ElevenLabs y lo reproduce por la salida predeterminada.
+Convierte texto en audio mediante ElevenLabs y lo reproduce por la salida predeterminada.
 
 ```bash
 atlas-say "Hola"
-atlas-say --tts local "Prueba local"
-atlas-say --tts local --voice list
+atlas-say --tts elevenlabs "Prueba"
 ```
 
 Las API keys y los Voice IDs privados no están incluidos en este repositorio. Deben configurarse localmente mediante el mecanismo de secretos correspondiente.
 
 ## `atlas-webscreen`
 
-Instala, activa, desactiva y comprueba el servicio HTTPS de ATLAS WebScreen.
+Instala, reinicia, desactiva y comprueba el servicio HTTP de ATLAS WebScreen ubicado en `/home/atlas/.atlas/atlas-webscreen`.
 
 ```bash
 atlas-webscreen enable
+atlas-webscreen restart
 atlas-webscreen status
 atlas-webscreen disable
 ```

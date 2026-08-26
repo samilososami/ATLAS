@@ -3,10 +3,10 @@ set -euo pipefail
 
 SERVICE="atlas-webscreen.service"
 UNIT="/etc/systemd/system/${SERVICE}"
-PROJECT="/home/atlas/.openclaw/workspace/atlas-webscreen"
+PROJECT="/home/atlas/.atlas/atlas-webscreen"
 START_SCRIPT="${PROJECT}/start.sh"
 PORT="5000"
-PROTOCOL="https"
+PROTOCOL="http"
 
 if [ -t 1 ] && [ "${ATLAS_NO_COLOR:-0}" != "1" ]; then
   BOLD=$'\033[1m'
@@ -66,11 +66,11 @@ After=network-online.target
 
 [Service]
 Type=simple
-User=atlas
-Group=atlas
+User=sami
+Group=sami
 WorkingDirectory=${PROJECT}
 Environment=ATLAS_WEBSCREEN_HOST=0.0.0.0
-Environment=ATLAS_WEBSCREEN_HTTPS=1
+Environment=ATLAS_WEBSCREEN_SESSION_IDLE=1800
 Environment=PYTHONUNBUFFERED=1
 ExecStart=${START_SCRIPT}
 Restart=on-failure
@@ -114,6 +114,7 @@ wait_for_health() {
     fi
     sleep 1
   done
+  return 1
 }
 
 enable_webscreen() {
@@ -122,6 +123,21 @@ enable_webscreen() {
   as_root systemctl enable "$SERVICE" >/dev/null 2>&1 || true
   as_root systemctl restart "$SERVICE"
   wait_for_health
+  status_webscreen
+}
+
+restart_webscreen() {
+  ensure_project
+  if ! systemctl cat "$SERVICE" >/dev/null 2>&1; then
+    echo "error: ${SERVICE} is not installed; run 'atlas-webscreen enable' first" >&2
+    exit 1
+  fi
+  as_root systemctl restart "$SERVICE"
+  if ! wait_for_health; then
+    echo "error: ATLAS WebScreen did not become healthy after restart" >&2
+    as_root systemctl status "$SERVICE" --no-pager -n 20 >&2 || true
+    exit 1
+  fi
   status_webscreen
 }
 
@@ -151,7 +167,7 @@ status_webscreen() {
   printf "%sService:%s %s / %s\n" "$BOLD" "$RESET" "$(paint_status "$active")" "$(paint_status "$enabled")"
   printf "%sMain PID:%s %s\n" "$BOLD" "$RESET" "$pid"
   printf "%sLocal URL:%s %s://localhost:%s\n" "$BOLD" "$RESET" "$PROTOCOL" "$PORT"
-  printf "%sNetwork URLs:%s %s %s://atlas.local:%s\n" "$BOLD" "$RESET" "${addresses:-unknown}" "$PROTOCOL" "$PORT"
+  printf "%sNetwork URLs:%s %s %s://atlas-a1.local:%s\n" "$BOLD" "$RESET" "${addresses:-unknown}" "$PROTOCOL" "$PORT"
 
   if command -v ss >/dev/null 2>&1; then
     printf "%sListener:%s\n" "$BOLD" "$RESET"
@@ -170,10 +186,11 @@ status_webscreen() {
 
 usage() {
   cat <<USAGE
-usage: atlas-webscreen <enable|disable|status>
+usage: atlas-webscreen <enable|disable|restart|status>
 
-  enable   install/update the systemd service and start ATLAS WebScreen on HTTPS :5000
+  enable   install/update the systemd service and start ATLAS WebScreen on HTTP :5000
   disable  stop ATLAS WebScreen and disable automatic startup
+  restart  restart ATLAS WebScreen, wait for health, and show its status
   status   show systemd state, listener, and health
 USAGE
 }
@@ -181,6 +198,7 @@ USAGE
 case "${1:-}" in
   enable) enable_webscreen ;;
   disable) disable_webscreen ;;
+  restart) restart_webscreen ;;
   status) status_webscreen ;;
   -h|--help|help) usage ;;
   *) usage; exit 2 ;;

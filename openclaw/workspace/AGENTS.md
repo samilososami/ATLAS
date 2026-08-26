@@ -133,15 +133,14 @@ Skills provide your tools. When you need one, check its `SKILL.md`. Keep local n
 
 **ATLAS command interfaces:** Commands named `atlas-*` are built for you. They are not random shell helpers; they are compact, optimized interfaces for the local ATLAS system. Prefer them before composing lower-level commands by hand.
 
-Use them when they match the task. Detailed command docs live in `atlas/`:
+Use them when they match the task. Detailed command docs live in `atlas-commands/`:
 
-- `atlas/ATLAS-PISTATUS.md` — `atlas-pistatus`, quick Raspberry Pi health and service state.
-- `atlas/ATLAS-WEBSCREEN.md` — `atlas-webscreen`, local ATLAS visual/voice web surface.
-- `atlas/ATLAS-DESKTOP.md` — `atlas-desktop`, visual desktop, windows, browser, screenshots, clicks, and wallpapers.
-- `atlas/ATLAS-CAST.md` — `atlas-cast`, Chromecast discovery, connection, stream quality, and stop/status.
-- `atlas/ATLAS-AUDIO.md` — `atlas-audio`, speaker/audio output control, Bluetooth, volume, mute, and tests.
-- `atlas/ATLAS-SAY.md` — `atlas-say`, spoken output through the current default audio output.
-- `atlas/ATLAS-PRIORITY.md` — `atlas-priority`, temporary resource-focus mode.
+- `atlas-commands/ATLAS-PISTATUS.md` — `atlas-pistatus`, quick Raspberry Pi health and service state.
+- `atlas-commands/ATLAS-WEBSCREEN.md` — `atlas-webscreen`, local ATLAS visual/voice web surface.
+- `atlas-commands/ATLAS-DESKTOP.md` — `atlas-desktop`, visual desktop, windows, browser, screenshots, clicks, and wallpapers.
+- `atlas-commands/ATLAS-CAST.md` — `atlas-cast`, Chromecast discovery, connection, stream quality, and stop/status.
+- `atlas-commands/ATLAS-AUDIO.md` — `atlas-audio`, speaker/audio output control, Bluetooth, volume, mute, and tests.
+- `atlas-commands/ATLAS-SAY.md` — `atlas-say`, spoken output through the current default audio output.
 
 If sami asks something like "is the webscreen running?", do not guess and do not run a pile of raw `systemctl` commands first. Use `atlas-pistatus` or `atlas-webscreen status`, then answer from that. These commands exist so you can move quickly and keep the system understandable.
 
@@ -150,7 +149,7 @@ If sami asks something like "is the webscreen running?", do not guess and do not
 Use these Raspberry Pi paths:
 
 - `/home/atlas/.openclaw/workspaces/tmp` for temporary or disposable files: screenshots for verification, short-lived `.mp3`/`.wav` files, extracted attachments, debug captures, scratch downloads, transient conversions, and anything that can be safely deleted later.
-- `/home/atlas/.openclaw/workspaces/projects` for user-requested projects. If sami asks you to create a new website, script, prototype, app, experiment, or standalone deliverable, create a named folder there, for example `/home/atlas/.openclaw/workspaces/projects/crypto-web`.
+- `/home/atlas/.atlas/atlas-webscreen-workspace` for projects requested through WebScreen. Create a named folder there, for example `/home/atlas/.atlas/atlas-webscreen-workspace/crypto-web`.
 
 Use clear lowercase folder names for projects. Keep each project self-contained unless sami explicitly asks to integrate it somewhere else.
 

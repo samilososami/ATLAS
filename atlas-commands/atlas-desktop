@@ -6,7 +6,7 @@ SERVICE="atlas-desktop.service"
 DISPLAY_ID=":1"
 WIDTH=1920
 HEIGHT=1080
-WALLPAPER_DIR="/home/atlas/.atlas/atlas-wallpapers"
+WALLPAPER_DIR="/home/atlas/.atlas/atlas-desktop/wallpapers"
 ACTIVE_WALLPAPER="$ROOT/wallpapers/atlas-wallpaper.png"
 LATEST_SCREENSHOT="$ROOT/screenshots/latest.png"
 
