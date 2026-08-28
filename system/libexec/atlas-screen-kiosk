@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+export DISPLAY=:0 XAUTHORITY=/run/atlas-screen-kiosk/Xauthority
+umask 007
+install -d -o sami -g sami -m 700 /home/atlas/.atlas/atlas-screen/chrome-profile
+touch "$XAUTHORITY"
+xauth -f "$XAUTHORITY" add "$DISPLAY" . "$(mcookie)"
+chmod 640 "$XAUTHORITY"
+chown root:sami "$XAUTHORITY"
+/usr/bin/xinit /usr/local/libexec/atlas-screen-kiosk-session -- \
+  /usr/bin/Xorg :0 -seat seat0 -nolisten tcp -auth "$XAUTHORITY" \
+  -config atlas-kiosk.conf -s 0 -dpms vt1 -keeptty -novtswitch &
+xinit_pid=$!
+stop() {
+  kill -TERM "$xinit_pid" 2>/dev/null || true
+  wait "$xinit_pid" 2>/dev/null || true
+  exit 0
+}
+trap stop TERM INT
+wait "$xinit_pid"

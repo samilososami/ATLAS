@@ -1,18 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT="/home/atlas/.atlas/atlas-desktop"
+if [ "$EUID" -eq 0 ]; then
+  exec runuser -u sami -- env DISPLAY="${DISPLAY:-:1}" "$ROOT/bin/open-chrome" "$@"
+fi
 export DISPLAY="${DISPLAY:-:1}"
 export HOME="/home/atlas"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-$ROOT/runtime/xdg}"
-mkdir -p "$ROOT/chromium-profile" "$ROOT/logs" "$XDG_RUNTIME_DIR"
+mkdir -p "$ROOT/chrome-profile" "$ROOT/logs" "$XDG_RUNTIME_DIR"
+chmod 700 "$ROOT/chrome-profile"
 chmod 700 "$XDG_RUNTIME_DIR" 2>/dev/null || true
 
 if [ "$#" -eq 0 ]; then
   set -- about:blank
 fi
 
-nohup chromium \
-  --user-data-dir="$ROOT/chromium-profile" \
+nohup google-chrome-stable \
+  --user-data-dir="$ROOT/chrome-profile" \
   --no-first-run \
   --no-default-browser-check \
   --disable-session-crashed-bubble \
@@ -21,12 +25,12 @@ nohup chromium \
   --start-fullscreen \
   --window-position=0,0 \
   --window-size=1920,1080 \
-  "$@" >> "$ROOT/logs/chromium.log" 2>&1 &
+  "$@" >> "$ROOT/logs/chrome.log" 2>&1 &
 pid="$!"
 
 (
   for _ in $(seq 1 40); do
-    ids="$(wmctrl -lx 2>/dev/null | awk 'tolower($0) ~ /chromium/ { print $1 }' || true)"
+    ids="$(wmctrl -lx 2>/dev/null | awk 'tolower($3) ~ /google-chrome/ { print $1 }' || true)"
     if [ -n "$ids" ]; then
       for id in $ids; do
         wmctrl -ir "$id" -b add,fullscreen >/dev/null 2>&1 || true

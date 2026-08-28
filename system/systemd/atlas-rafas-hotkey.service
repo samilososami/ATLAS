@@ -1,0 +1,22 @@
+[Unit]
+Description=RAFAS USB recovery hotkey (event-driven)
+After=local-fs.target systemd-udevd.service atlas-screen-boot-off.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=/usr/local/libexec/atlas-rafas-hotkey
+Restart=always
+RestartSec=1
+OOMScoreAdjust=-900
+MemoryMax=32M
+LimitCORE=0
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+RestrictAddressFamilies=AF_UNIX
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

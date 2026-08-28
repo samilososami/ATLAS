@@ -3,13 +3,15 @@ set -euo pipefail
 
 LIGHTDM_SERVICE="lightdm.service"
 TERMINAL_SERVICE="atlas-screen-terminal.service"
+KIOSK_SERVICE="atlas-screen-kiosk.service"
+RAFAS_SERVICE="atlas-rafas.service"
 GETTY_SERVICE="getty@tty1.service"
 DISPLAY_ID=":0"
 XAUTHORITY_FILE="/home/atlas/.Xauthority"
 MODE_DIR="/home/atlas/.atlas/atlas-screen"
 MODE_FILE="$MODE_DIR/mode"
 
-if [ "${EUID}" -ne 0 ]; then
+if [[ "${EUID}" -ne 0 && "${BASH_SOURCE[0]}" == "$0" ]]; then
   exec sudo -n "$0" "$@"
 fi
 
@@ -31,6 +33,13 @@ Usage:
   atlas-screen off
   atlas-screen --desktop
   atlas-screen --terminal
+  atlas-screen --atlas
+  atlas-screen --rafas
+  atlas-screen --rafas --on
+  atlas-screen --atlas --on
+  atlas-screen --desktop --on
+  atlas-screen --terminal --off
+Modes select the next surface. Combine a mode with on/--on to open it now.
 USAGE
   exit 2
 }
@@ -49,7 +58,7 @@ selected_mode() {
   ensure_mode_store
   mode="$(tr -d '[:space:]' < "$MODE_FILE")"
   case "$mode" in
-    desktop|terminal) printf '%s\n' "$mode" ;;
+    desktop|terminal|atlas|rafas) printf '%s\n' "$mode" ;;
     *) printf 'desktop\n' ;;
   esac
 }
@@ -103,6 +112,8 @@ keep_boot_default_off() {
 }
 
 start_desktop() {
+  systemctl stop "$RAFAS_SERVICE" >/dev/null 2>&1 || true
+  systemctl stop "$KIOSK_SERVICE" >/dev/null 2>&1 || true
   systemctl stop "$TERMINAL_SERVICE" >/dev/null 2>&1 || true
   systemctl start "$GETTY_SERVICE" >/dev/null 2>&1 || true
   systemctl start "$LIGHTDM_SERVICE"
@@ -120,6 +131,8 @@ start_desktop() {
 }
 
 start_terminal() {
+  systemctl stop "$RAFAS_SERVICE" >/dev/null 2>&1 || true
+  systemctl stop "$KIOSK_SERVICE" >/dev/null 2>&1 || true
   if systemctl is-active --quiet "$LIGHTDM_SERVICE"; then
     env DISPLAY="$DISPLAY_ID" XAUTHORITY="$XAUTHORITY_FILE" xset dpms force off >/dev/null 2>&1 || true
   fi
@@ -139,6 +152,43 @@ start_terminal() {
   exit 1
 }
 
+start_atlas() {
+  systemctl stop "$RAFAS_SERVICE" >/dev/null 2>&1 || true
+  systemctl stop "$LIGHTDM_SERVICE" "$TERMINAL_SERVICE" "$GETTY_SERVICE"
+  systemctl start atlas-webscreen.service
+  systemctl restart "$KIOSK_SERVICE"
+  chvt 1 >/dev/null 2>&1 || true
+  for _ in $(seq 1 250); do
+    if [ -e /run/atlas-screen-kiosk/ready ] && systemctl is-active --quiet "$KIOSK_SERVICE"; then
+      return 0
+    fi
+    if systemctl is-failed --quiet "$KIOSK_SERVICE"; then break; fi
+    sleep 0.2
+  done
+  echo "ATLAS kiosk did not become ready. Check: journalctl -u $KIOSK_SERVICE -n 40" >&2
+  return 1
+}
+
+start_rafas() {
+  # Bound shutdown of broken graphical surfaces. Only their own cgroups are
+  # killed if they ignore TERM; never stop the network, Gateway or backend.
+  local service
+  for service in "$LIGHTDM_SERVICE" "$TERMINAL_SERVICE" "$KIOSK_SERVICE"; do
+    if ! timeout 5s systemctl stop "$service"; then
+      systemctl kill --kill-whom=all --signal=KILL "$service" 2>/dev/null || true
+      systemctl stop --no-block "$service" 2>/dev/null || true
+    fi
+  done
+  systemctl stop getty@tty8.service >/dev/null 2>&1 || true
+  force_connector on
+  set_framebuffer_blank 0
+  systemctl reset-failed "$RAFAS_SERVICE" 2>/dev/null || true
+  systemctl start "$RAFAS_SERVICE"
+  chvt 8
+  # Switching away from a crashed X server must not leave the framebuffer blank.
+  set_framebuffer_blank 0
+}
+
 screen_on() {
   local mode
   keep_boot_default_off
@@ -149,6 +199,8 @@ screen_on() {
   case "$mode" in
     desktop) start_desktop ;;
     terminal) start_terminal ;;
+    atlas) start_atlas ;;
+    rafas) start_rafas ;;
   esac
 
   echo "ATLAS screen is on in ${mode} mode."
@@ -156,12 +208,14 @@ screen_on() {
 
 screen_off() {
   keep_boot_default_off
+  systemctl stop "$RAFAS_SERVICE" >/dev/null 2>&1 || true
 
   if systemctl is-active --quiet "$LIGHTDM_SERVICE"; then
     env DISPLAY="$DISPLAY_ID" XAUTHORITY="$XAUTHORITY_FILE" xset dpms force off >/dev/null 2>&1 || true
   fi
   systemctl stop "$LIGHTDM_SERVICE" >/dev/null 2>&1 || true
   systemctl stop "$TERMINAL_SERVICE" >/dev/null 2>&1 || true
+  systemctl stop "$KIOSK_SERVICE" >/dev/null 2>&1 || true
   systemctl start "$GETTY_SERVICE" >/dev/null 2>&1 || true
 
   chvt 1 >/dev/null 2>&1 || true
@@ -186,7 +240,11 @@ print_status() {
     fi
   fi
 
-  if systemctl is-active --quiet "$LIGHTDM_SERVICE"; then
+  if systemctl is-active --quiet "$RAFAS_SERVICE"; then
+    active_surface="rafas"
+  elif systemctl is-active --quiet "$KIOSK_SERVICE"; then
+    active_surface="atlas"
+  elif systemctl is-active --quiet "$LIGHTDM_SERVICE"; then
     active_surface="desktop"
   elif systemctl is-active --quiet "$TERMINAL_SERVICE"; then
     active_surface="terminal"
@@ -201,26 +259,44 @@ print_status() {
   printf 'Boot default: off\n'
 }
 
-case "$#" in
-  0)
-    print_status
-    ;;
-  1)
-    case "$1" in
-      on) screen_on ;;
-      off) screen_off ;;
-      --desktop)
-        save_mode desktop
-        echo "ATLAS screen mode selected: desktop."
-        print_status
+main() {
+  local mode="" action="" argument value
+  # Validate the complete request before changing files, services or HDMI.
+  for argument in "$@"; do
+    case "$argument" in
+      --desktop|--terminal|--atlas|--rafas)
+        value="${argument#--}"
+        [ -z "$mode" ] || [ "$mode" = "$value" ] || usage
+        mode="$value"
         ;;
-      --terminal)
-        save_mode terminal
-        echo "ATLAS screen mode selected: terminal."
-        print_status
+      --RAFAS)
+        [ -z "$mode" ] || [ "$mode" = rafas ] || usage
+        mode=rafas
         ;;
+      on|--on|off|--off)
+        value="${argument#--}"
+        [ -z "$action" ] || [ "$action" = "$value" ] || usage
+        action="$value"
+        ;;
+      -h|--help) usage ;;
       *) usage ;;
     esac
-    ;;
-  *) usage ;;
-esac
+  done
+  # A mode switch can stop the very terminal that invoked it. Hand the action
+  # to systemd first, so killing that session cannot kill the switch halfway.
+  if [ -n "$action" ] && grep -Eq '/(atlas-rafas|atlas-screen-terminal|atlas-screen-kiosk)\.service' "/proc/$$/cgroup"; then
+    systemd-run --quiet --collect --no-block --unit="atlas-screen-action-$$" /usr/local/bin/atlas-screen "$@"
+    return
+  fi
+  if [ -n "$mode" ]; then
+    save_mode "$mode"
+    echo "ATLAS screen mode selected: $mode."
+  fi
+  case "$action" in
+    on) screen_on ;;
+    off) screen_off ;;
+    "") print_status ;;
+  esac
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then main "$@"; fi

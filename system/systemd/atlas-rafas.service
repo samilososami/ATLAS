@@ -1,0 +1,28 @@
+[Unit]
+Description=RAFAS local root recovery console
+After=systemd-user-sessions.service
+Conflicts=getty@tty8.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/home/atlas
+Environment=TERM=linux
+ExecStart=/usr/local/libexec/atlas-rafas-console
+Restart=always
+RestartSec=1
+TimeoutStopSec=3
+StandardInput=tty-force
+StandardOutput=tty
+StandardError=tty
+TTYPath=/dev/tty8
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+UtmpIdentifier=tty8
+UtmpMode=user
+KillMode=control-group
+KillSignal=SIGHUP
+SendSIGHUP=yes
+# No Install section. Only the hotkey listener starts at boot.

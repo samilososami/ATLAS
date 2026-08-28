@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+set -euo pipefail
+if [ "$EUID" -eq 0 ]; then
+  exec runuser -u sami -- env HOME=/home/atlas USER=sami LOGNAME=sami \
+    DISPLAY=:0 XAUTHORITY=/run/atlas-screen-kiosk/Xauthority \
+    XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus \
+    PULSE_SERVER=unix:/run/user/1000/pulse/native \
+    /usr/local/libexec/atlas-screen-kiosk-session
+fi
+
+export PATH=/usr/local/bin:/usr/bin:/bin
+export LANG=en_GB.UTF-8
+export GTK_USE_PORTAL=0
+umask 077
+profile=/home/atlas/.atlas/atlas-screen/chrome-profile
+mkdir -p "$profile"
+xset -dpms s off s noblank
+xsetroot -solid '#040b18'
+
+openbox --config-file /etc/atlas/openbox-kiosk.xml &
+wm_pid=$!
+/usr/local/libexec/atlas-screen-cursor &
+cursor_pid=$!
+browser_pid=""
+cleanup() {
+  [ -z "$browser_pid" ] || kill "$browser_pid" 2>/dev/null || true
+  kill "$cursor_pid" "$wm_pid" 2>/dev/null || true
+  wait 2>/dev/null || true
+}
+trap cleanup EXIT
+trap 'exit 0' INT TERM
+
+# Repair the boot-with-HDMI-off case before opening the microphone/browser.
+# This is a bounded startup check, not another background audio watcher.
+/usr/local/libexec/atlas-screen-audio-ready || true
+
+for _ in $(seq 1 60); do
+  if curl -fsS --max-time 1 http://localhost:5000/ >/dev/null; then break; fi
+  sleep 0.5
+done
+
+google-chrome-stable --ozone-platform=x11 --use-angle=gles --kiosk --no-first-run --no-default-browser-check \
+  --enable-logging=stderr \
+  --password-store=basic --lang=es-ES --disable-features=Translate \
+  --enable-speech-dispatcher \
+  --disable-session-crashed-bubble --disable-pinch \
+  --autoplay-policy=no-user-gesture-required --user-data-dir="$profile" \
+  --window-size=1024,600 --window-position=0,0 \
+  'http://localhost:5000/?kiosk=1' &
+browser_pid=$!
+
+for _ in $(seq 1 400); do
+  kill -0 "$browser_pid" 2>/dev/null || { wait "$browser_pid"; exit 1; }
+  if xdotool search --onlyvisible --all --pid "$browser_pid" --name 'ATLAS WebScreen' >/dev/null 2>&1; then
+    touch /run/atlas-screen-kiosk/ready
+    break
+  fi
+  sleep 0.1
+done
+[ -e /run/atlas-screen-kiosk/ready ] || { echo 'ATLAS page did not load in Google Chrome.' >&2; exit 1; }
+wait "$browser_pid"

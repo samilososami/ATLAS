@@ -61,7 +61,7 @@ python3 -m unittest -v test_fast_lane.py
 
 El reconocimiento nativo depende del navegador y puede usar servicios remotos.
 Esta implementación no garantiza STT offline ni compatibilidad de Speech
-Recognition en cualquier compilación de Chromium.
+Recognition en cualquier compilación de Google Chrome.
 
 El canal conserva una sesión exclusiva de WebScreen para mantener el contexto de la conversación. Si pasan 30 minutos sin una nueva interacción, se crea una sesión nueva. El modelo se hereda de la configuración actual de OpenClaw; las credenciales nunca se envían al navegador.
 
@@ -75,6 +75,51 @@ cualquier llamada que no proceda de
 
 ## Herramientas de depuración
 
+### Acceso exclusivo y delegación
+
+Solo una pestaña tiene el control, tanto desde localhost como desde la red.
+Las demás ven una pantalla azul oscuro y el botón **Reclamar acceso**. Cada
+pestaña puede solicitarlo una vez cada diez segundos, también comprobado por
+el servidor. El propietario recibe una notificación y puede pulsar
+**Delegar acceso** únicamente en la vista ATLAS y en estado de espera: sin
+grabación, respuesta, reproducción, continuación pendiente ni trabajo del backend.
+
+Al delegar se detienen micrófono, reconocimiento y audio de la pestaña anterior.
+La nueva pestaña puede activar su micrófono; se mantiene la sesión de OpenClaw.
+No se crean cuentas ni se reinicia la memoria al cambiar de pantalla.
+
+`access_control.py` mantiene un permiso aleatorio por página, solo en memoria.
+`static/access.js` renueva la conexión cada dos segundos. Cerrar la pestaña
+libera el control; si desaparece sin avisar, su permiso caduca a los veinte
+segundos. El cliente se detiene si pasa ocho segundos sin confirmar el acceso.
+Otro cliente no entra mientras quede una petición o trabajo especulativo en
+curso. Una recarga crea un permiso nuevo; si el cierre no llegó al servidor,
+puede esperar hasta que caduque el anterior. Tras actualizar WebScreen hay que
+recargar las pestañas antiguas.
+
+El backend exige `X-Atlas-Client` para las operaciones de voz, texto, preámbulos,
+cancelación, ajustes, eventos y consulta de cuota. No basta con ocultar botones.
+`/api/health` sigue público para los comandos de estado y el oyente interno
+conserva su ruta de loopback, rechazada desde navegadores.
+
+Esto arbitra el uso, no autentica personas: quien accede primero cuando está
+libre obtiene el control. HTTP en una LAN tampoco cifra el permiso. No expongas
+el puerto a Internet; contraseña y HTTPS siguen siendo trabajo futuro.
+
+Pruebas sin llamadas a modelos: `python3 -m unittest -v test_access_control.py`.
+
+El tab ATLAS muestra arriba a la derecha la cuota disponible de Codex para las
+ventanas de cinco horas y semanal, con la fecha de renovación en Europe/Madrid.
+`codex_usage.py` consulta `usage.status` a través del bridge persistente y guarda
+una lectura compartida durante sesenta segundos. No crea turnos del agente ni
+devuelve tokens, datos de cuenta o facturación. Si la lectura falla, se indica
+que el dato está desactualizado; una cuota desconocida nunca se presenta como
+cero. `static/quota.js` actualiza el indicador sin bloquear la conversación.
+
+La semántica de porcentaje usado y renovación procede de la
+[documentación oficial de Codex](https://developers.openai.com/codex/app-server#6-rate-limits-chatgpt).
+Pruebas del adaptador: `python3 -m unittest -v test_codex_usage.py`.
+
 El menú lateral separa cuatro vistas: `ATLAS` conserva la conversación normal;
 `Transcripción` reutiliza el reconocimiento continuo de Chrome y separa bloques
 tras setecientos milisegundos de silencio; `Texto a voz` permite comparar la voz
@@ -84,6 +129,34 @@ El Voice ID personalizado se guarda con permisos restringidos en
 `.runtime/webscreen-settings.json`.
 
 ## Uso
+
+En la pantalla física, `atlas-screen --atlas --on` abre esta misma interfaz en
+Google Chrome kiosko sobre `http://localhost:5000/?kiosk=1`. No añade otra sesión de
+OpenClaw ni cambia la dirección HTTP de la red. El micrófono se activa con el
+botón habitual; necesita un dispositivo de entrada real. El modo kiosko utiliza
+el audio predeterminado de `sami`, mantiene el sandbox del navegador y esconde
+el cursor cuando no hay ratón conectado. `atlas-screen off` cierra únicamente
+la superficie física, no este servidor. La compilación de Google Chrome debe tener
+acceso funcional al servicio de Speech Recognition; esto se verifica hablando
+desde el dispositivo, no solo al cargar la página.
+
+En ATLAS A1, la voz gratuita de Google Chrome usa Speech Dispatcher y eSpeak NG,
+instalados a nivel del sistema. El lanzador activa `--enable-speech-dispatcher`.
+Su sonido puede diferir de las voces del navegador del portátil; ElevenLabs
+sigue siendo la otra opción. El navegador utiliza un perfil dedicado sin
+contraseñas personales; `--password-store=basic` evita la espera de un keyring
+de escritorio que no existe en esta sesión mínima.
+
+El kiosko usa el paquete oficial `google-chrome-stable` ARM64 y un perfil nuevo
+en `/home/atlas/.atlas/atlas-screen/chrome-profile`, independiente del escritorio
+virtual. No importa claves de otro navegador ni requiere una API key personal
+para intentar el reconocimiento nativo; necesita acceso al servicio de Google.
+
+El permiso de captura se limita a `http://localhost:5000` mediante
+[`AudioCaptureAllowedUrls`](https://chromeenterprise.google/policies/#AudioCaptureAllowedUrls).
+La política se instala en `/etc/opt/chrome/policies/managed/atlas-webscreen.json`.
+El kiosko evita salidas accidentales, pero no es una frontera de seguridad ni
+un sustituto del futuro control de acceso.
 
 ```bash
 atlas-webscreen enable

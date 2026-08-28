@@ -1,0 +1,4 @@
+{
+  "AudioCaptureAllowedUrls": ["http://localhost:5000"],
+  "DefaultBrowserSettingEnabled": false
+}

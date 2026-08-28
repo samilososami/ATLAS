@@ -30,6 +30,8 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 from zoneinfo import ZoneInfo
+from codex_usage import CodexUsageCache
+from access_control import AccessControl, AccessError
 
 HOST = os.environ.get("ATLAS_WEBSCREEN_HOST", "0.0.0.0")
 PORT = int(os.environ.get("ATLAS_WEBSCREEN_PORT", "5000"))
@@ -315,6 +317,25 @@ class PersistentGatewayBridge:
             with self.lock:
                 self.pending.pop(bridge_request_id, None)
 
+    def usage(self, timeout: float = 20.0) -> dict[str, Any]:
+        """Read the authenticated Gateway's quotas without creating an agent turn."""
+        bridge_request_id = uuid4().hex
+        events: queue.Queue[dict[str, Any]] = queue.Queue()
+        with self.lock:
+            self.pending[bridge_request_id] = events
+        try:
+            self.send({"command": "usage", "bridgeRequestId": bridge_request_id})
+            try:
+                event = events.get(timeout=timeout)
+            except queue.Empty as error:
+                raise RuntimeError("La consulta de límites agotó su tiempo") from error
+            if event.get("type") != "usage":
+                raise RuntimeError("OpenClaw no pudo consultar los límites")
+            return event.get("summary") or {}
+        finally:
+            with self.lock:
+                self.pending.pop(bridge_request_id, None)
+
     def health(self) -> dict[str, Any]:
         with self.lock:
             alive = self.process is not None and self.process.poll() is None
@@ -542,6 +563,7 @@ class SpeculativeMainRun:
 
 
 BRIDGE = PersistentGatewayBridge()
+CODEX_USAGE = CodexUsageCache(BRIDGE.usage)
 RESIDENT_STARTERS = ResidentStarterPool()
 
 
@@ -1663,6 +1685,26 @@ def local_network_addresses() -> list[str]:
     return sorted(addresses)
 
 
+def access_backend_busy() -> bool:
+    with ACTIVE_RUNS_LOCK:
+        if ACTIVE_RUNS:
+            return True
+    # Speculative work can outlive the HTTP request which started it.
+    with SPECULATIVE_MAIN_RUNS_LOCK:
+        if any(not state.done.is_set() for state in SPECULATIVE_MAIN_RUNS.values()):
+            return True
+    with SPECULATIVE_STARTERS_LOCK:
+        if any(not state.done.is_set() for state in SPECULATIVE_STARTERS.values()):
+            return True
+    with RESIDENT_STARTER_CONDITION:
+        if RESIDENT_STARTERS.active is not None and not RESIDENT_STARTERS.active.done.is_set():
+            return True
+    return False
+
+
+ACCESS = AccessControl(busy=access_backend_busy)
+
+
 class AtlasScreenHandler(SimpleHTTPRequestHandler):
     server_version = "AtlasWebScreen/3.2"
     protocol_version = "HTTP/1.1"
@@ -1679,6 +1721,8 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
         super().end_headers()
 
     def log_message(self, message_format: str, *args: object) -> None:
+        if self.path == "/api/access/heartbeat" and len(args) > 1 and str(args[1]) == "200":
+            return
         print(f"[atlas-webscreen] {self.address_string()} - {message_format % args}")
 
     def send_json(self, status: int, data: dict[str, Any]) -> None:
@@ -1696,7 +1740,19 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
+        if parsed.path in {"/api/settings", "/api/codex-usage"}:
+            try:
+                ACCESS.authorize(self.headers.get("X-Atlas-Client", ""))
+            except AccessError as error:
+                self.send_json(error.status, {"error": str(error)})
+                return
+        if parsed.path == "/api/codex-usage":
+            self.send_json(200, CODEX_USAGE.snapshot())
+            return
         if parsed.path == "/api/resident/wait":
+            if self.headers.get("Sec-Fetch-Site") is not None or self.headers.get("Origin"):
+                self.send_json(403, {"error": "Ruta interna del oyente"})
+                return
             if self.client_address[0] not in {"127.0.0.1", "::1"}:
                 self.send_json(403, {"error": "El oyente solo acepta conexiones locales"})
                 return
@@ -1742,6 +1798,57 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
         super().do_GET()
 
     def do_POST(self) -> None:
+        # No CORS; a custom header also prevents cross-origin form submissions.
+        origin = self.headers.get("Origin")
+        if origin and origin not in {f"http://{self.headers.get('Host')}", f"https://{self.headers.get('Host')}"}:
+            self.close_connection = True
+            self.send_json(403, {"error": "Origen no permitido"})
+            return
+        if self.path.startswith("/api/access/"):
+            self.handle_access()
+            return
+        try:
+            ACCESS.authorize(self.headers.get("X-Atlas-Client", ""), begin=True)
+        except AccessError as error:
+            self.close_connection = True
+            self.send_json(error.status, {"error": str(error)})
+            return
+        try:
+            self.connection.settimeout(15)
+            self.handle_controlled_post()
+        finally:
+            ACCESS.finish()
+
+    def handle_access(self) -> None:
+        try:
+            if self.headers.get("X-Atlas-Access") != "1":
+                raise AccessError(403, "Solicitud de acceso inválida")
+            self.connection.settimeout(10)
+            payload = self.read_json_payload(2048)
+            token = self.headers.get("X-Atlas-Client", "")
+            action = self.path.removeprefix("/api/access/")
+            if action == "connect":
+                result = ACCESS.connect()
+            elif action == "heartbeat":
+                result = ACCESS.heartbeat(token, payload.get("idle"))
+            elif action == "claim":
+                result = ACCESS.claim(token)
+            elif action == "delegate":
+                result = ACCESS.delegate(token, payload.get("requestId"), payload.get("idle"))
+            elif action == "release":
+                ACCESS.release(token)
+                result = {"released": True}
+            else:
+                raise AccessError(404, "Ruta de acceso desconocida")
+            self.send_json(200, result)
+        except AccessError as error:
+            self.close_connection = True
+            self.send_json(error.status, {"error": str(error)})
+        except (ValueError, TimeoutError) as error:
+            self.close_connection = True
+            self.send_json(400, {"error": "Solicitud de acceso inválida"})
+
+    def handle_controlled_post(self) -> None:
         if self.path == "/api/cancel":
             self.handle_cancel()
         elif self.path == "/api/client-event":

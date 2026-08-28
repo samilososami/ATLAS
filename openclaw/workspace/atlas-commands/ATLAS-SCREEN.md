@@ -33,7 +33,42 @@ Put it back to sleep and release the RAM used by its visible surface:
 atlas-screen off
 ```
 
-`off` stops both possible physical surfaces, blanks the framebuffer, and forces HDMI-A-1 into DRM Off. It does not stop OpenClaw Gateway, WebScreen's server, or the separate virtual desktop.
+`off` stops all four physical surfaces, blanks the framebuffer, and forces HDMI-A-1 into DRM Off. It does not stop OpenClaw Gateway, WebScreen's server, or the separate virtual desktop.
+
+## ATLAS mode
+
+```bash
+atlas-screen --atlas --on
+```
+
+This opens `http://localhost:5000/?kiosk=1` in fullscreen Google Chrome on the physical screen. No desktop is hiding underneath. Google Chrome runs as `sami`, with its sandbox enabled and its own private profile under `/home/atlas/.atlas/atlas-screen/chrome-profile`.
+
+Use the official `google-chrome-stable` ARM64 package. The launcher calls that binary directly; the system policy lives at `/etc/opt/chrome/policies/managed/atlas-webscreen.json`. Keep the profile private and out of the public repository. Your browser luggage is not release material.
+
+Mode and power options can be combined in either order: `--desktop --on`, `--terminal --on`, or `--atlas --off`. Plain `on` and `off` still work. A mode on its own only selects what should appear next; it does not wake the screen. Conflicting options are rejected before anything changes.
+
+The cursor is hidden for touch-only use. Connecting a USB or Bluetooth mouse makes it visible; unplugging the mouse hides it again. A wireless receiver that advertises a mouse counts as a connected mouse, even if its companion is asleep.
+
+Audio uses the user's PulseAudio default output and input. If the only output is a dummy sink, the launcher retries HDMI-A-1; it does not override an existing real output such as Bluetooth. Attach a USB microphone before enabling listening. Microphone permission is granted only to the local WebScreen origin. Native Speech Recognition still depends on the installed Google Chrome build and its service access; localhost alone does not guarantee that part works.
+
+`/usr/local/libexec/atlas-screen-audio-ready` performs that bounded startup repair.
+It can recreate a missing HDMI card after a screen-off boot, without restarting
+PulseAudio or the USB microphone. It leaves your chosen real output, volume and
+mute settings alone. The helper works as your normal user or through root.
+
+Browser TTS uses Speech Dispatcher with the installed eSpeak NG voices on this Linux build. It is free and local, but does not sound like Chrome's voices on every other operating system. ElevenLabs remains available in the existing voice selector. The required system packages are `speech-dispatcher` and `speech-dispatcher-espeak-ng`; Google Chrome is launched with `--enable-speech-dispatcher`.
+
+`atlas-screen-kiosk.service` manages the physical session. `off` releases its browser, window manager and X server. The backend and LAN URL remain available. The kiosk has no desktop shortcuts, blocks common page escape shortcuts, and disables X virtual-terminal switching only in this mode. It is a presentation guard, not an authentication system or a physical-security boundary. SSH remains the recovery route.
+
+## RAFAS recovery mode
+
+`atlas-screen --rafas --on` opens the native monochrome recovery console on `tty8`.
+It does not need a graphical session. Hold Ctrl and tap W, O, W on a USB keyboard
+to open it from any display mode, including off. See `ATLAS-RAFAS.md` for the
+service model and the deliberate local-root access without a password.
+
+The graphical terminal's touch keyboard is now ATLAS TOUCH TYPE; its helpers
+are `/usr/local/libexec/atlas-touch-type.py` and `atlas-touch-type-session`.
 
 ## Desktop mode
 

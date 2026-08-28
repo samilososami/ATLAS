@@ -33,8 +33,8 @@ Service:
   logs [lines]                   show recent service logs
 
 Open:
-  open-url <url>                 open a URL in Chromium fullscreen
-  open-file <path>               open a local file in Chromium fullscreen
+  open-url <url>                 open a URL in Google Chrome fullscreen
+  open-file <path>               open a local file in Google Chrome fullscreen
 
 Vision:
   screenshot [path|latest]       capture the desktop to a PNG
@@ -337,18 +337,16 @@ nuke_desktop() {
   done
 
   sleep 1
-  sudo -n pkill -TERM -u sami -x chromium >/dev/null 2>&1 || true
-  sudo -n pkill -TERM -u sami -x chrome_crashpad_handler >/dev/null 2>&1 || true
-  sudo -n pkill -TERM -u sami -f "$ROOT/chromium-profile" >/dev/null 2>&1 || true
+  # Only this desktop profile: never close the physical WebScreen kiosk.
+  sudo -n pkill -TERM -u sami -f -- "--user-data-dir=$ROOT/chrome-profile([[:space:]]|$)" >/dev/null 2>&1 || true
   sleep 0.6
-  sudo -n pkill -KILL -u sami -x chromium >/dev/null 2>&1 || true
-  sudo -n pkill -KILL -u sami -f "$ROOT/chromium-profile" >/dev/null 2>&1 || true
+  sudo -n pkill -KILL -u sami -f -- "--user-data-dir=$ROOT/chrome-profile([[:space:]]|$)" >/dev/null 2>&1 || true
 
   if [ -e "$ACTIVE_WALLPAPER" ]; then
     as_atlas feh --no-fehbg --bg-fill "$ACTIVE_WALLPAPER" >/dev/null 2>&1 || true
   fi
 
-  printf 'Closed %s ATLAS desktop window(s) and killed Chromium leftovers.\n' "$count"
+  printf 'Closed %s ATLAS desktop window(s) and killed Chrome leftovers.\n' "$count"
 }
 
 capture_screenshot() {
@@ -410,7 +408,7 @@ case "$cmd" in
   open-url)
     [ "$#" -ge 1 ] || { echo 'missing URL' >&2; exit 2; }
     ensure_running
-    as_atlas "$ROOT/bin/open-chromium" "$@" >/dev/null
+    as_atlas "$ROOT/bin/open-chrome" "$@" >/dev/null
     ;;
   open-file)
     [ "$#" -eq 1 ] || { echo 'usage: atlas-desktop open-file <path>' >&2; exit 2; }
@@ -422,7 +420,7 @@ case "$cmd" in
     ensure_running
     abs="$(realpath "$path")"
     uri="file://${abs// /%20}"
-    as_atlas "$ROOT/bin/open-chromium" "$uri" >/dev/null
+    as_atlas "$ROOT/bin/open-chrome" "$uri" >/dev/null
     ;;
   screenshot)
     capture_screenshot "${1:-$LATEST_SCREENSHOT}"

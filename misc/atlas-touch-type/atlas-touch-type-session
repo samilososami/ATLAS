@@ -11,8 +11,6 @@ keyboard_pid=""
 input_pid=""
 input_suppressed_until=0
 event_log="$runtime_dir/touch-events.log"
-terminal_full_height=600
-terminal_keyboard_height=294
 double_tap_timeout_ms=550
 double_tap_distance_px=48
 pending_tap_ms=0
@@ -20,7 +18,7 @@ pending_tap_x=0
 pending_tap_y=0
 
 keyboard_window() {
-  xdotool search --onlyvisible --name '^ATLAS Keyboard$' 2>/dev/null | head -n 1 || true
+  xdotool search --onlyvisible --name '^ATLAS TOUCH TYPE$' 2>/dev/null | head -n 1 || true
 }
 
 keyboard_is_visible() {
@@ -34,13 +32,12 @@ terminal_window() {
 }
 
 resize_terminal() {
-  local height="$1" window
+  local window
   window="$(terminal_window)"
   [ -n "$window" ] || return 0
-  wmctrl -i -r "$window" -b remove,fullscreen,maximized_vert,maximized_horz >/dev/null 2>&1 || true
+  wmctrl -i -r "$window" -b remove,fullscreen >/dev/null 2>&1 || true
   wmctrl -i -r "$window" -b add,undecorated >/dev/null 2>&1 || true
-  xdotool windowmove "$window" 0 0 >/dev/null 2>&1 || true
-  xdotool windowsize "$window" 1024 "$height" >/dev/null 2>&1 || true
+  wmctrl -i -r "$window" -b add,maximized_vert,maximized_horz >/dev/null 2>&1 || true
   xdotool windowactivate "$window" >/dev/null 2>&1 || true
 }
 
@@ -55,7 +52,7 @@ stop_keyboard_process() {
 
 hide_keyboard() {
   stop_keyboard_process
-  resize_terminal "$terminal_full_height"
+  resize_terminal
 }
 
 show_keyboard() {
@@ -67,13 +64,12 @@ show_keyboard() {
   terminal_window="$(terminal_window)"
   [ -n "$terminal_window" ] || return 1
 
-  # Reserve the lower part of the display before mapping the keyboard. VTE
-  # recalculates its rows immediately, so the prompt remains above the new edge.
-  resize_terminal "$terminal_keyboard_height"
-  sleep 0.08
+  # The keyboard's EWMH dock strut reserves its exact height on mapping. VTE
+  # follows the available workarea and font zoom never resizes the outer window.
+  resize_terminal
 
-  /usr/local/libexec/atlas-screen-keyboard.py \
-    --terminal-window "$terminal_window" >/tmp/atlas-screen-keyboard.log 2>&1 &
+  /usr/local/libexec/atlas-touch-type.py \
+    --terminal-window "$terminal_window" >/tmp/atlas-touch-type.log 2>&1 &
   keyboard_pid="$!"
   printf '%s\n' "$keyboard_pid" > "$pid_file"
 
@@ -108,13 +104,13 @@ handle_left_click() {
   # this listener. Treat its coordinates as a close action even if the process
   # has already exited, otherwise that same release would reopen the keyboard.
   if [[ "$pointer_x" =~ ^[0-9]+$ && "$pointer_y" =~ ^[0-9]+$ ]] &&
-     [ "$pointer_x" -ge 980 ] && [ "$pointer_y" -le 324 ]; then
+     [ "$pointer_x" -ge 980 ] && [ "$pointer_y" -ge 300 ] && [ "$pointer_y" -le 326 ]; then
     hide_keyboard
     return 0
   fi
 
   if keyboard_is_visible; then
-    if [[ "$pointer_y" =~ ^[0-9]+$ ]] && [ "$pointer_y" -lt 288 ]; then
+    if [[ "$pointer_y" =~ ^[0-9]+$ ]] && [ "$pointer_y" -lt 300 ]; then
       hide_keyboard
     fi
   else

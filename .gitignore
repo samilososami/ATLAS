@@ -22,6 +22,7 @@ backups/
 credentials/
 sessions/
 chromium-profile/
+chrome-profile/
 runtime/
 logs/
 .atlas/atlas-webscreen-workspace/*

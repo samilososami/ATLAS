@@ -1,0 +1,33 @@
+[Unit]
+Description=ATLAS physical WebScreen kiosk
+After=systemd-user-sessions.service user@1000.service atlas-webscreen.service
+Wants=user@1000.service atlas-webscreen.service
+Conflicts=getty@tty1.service lightdm.service atlas-screen-terminal.service
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=root
+Group=sami
+WorkingDirectory=/home/atlas
+RuntimeDirectory=atlas-screen-kiosk
+RuntimeDirectoryMode=0770
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/run/atlas-screen-kiosk/Xauthority
+ExecStart=/usr/local/libexec/atlas-screen-kiosk
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=10
+KillMode=control-group
+StandardInput=tty-force
+StandardOutput=journal
+StandardError=journal
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+UtmpIdentifier=tty1
+UtmpMode=user
+
+# Deliberately no Install section: the display always boots off.

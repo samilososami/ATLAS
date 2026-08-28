@@ -1,0 +1,70 @@
+#!/usr/bin/python3
+"""Recover the physical HDMI output only while PulseAudio has a dummy sink."""
+import os
+from pathlib import Path
+import subprocess
+import time
+
+CARD = 'alsa_card.platform-107c701400.hdmi'
+SINK = 'alsa_output.platform-107c701400.hdmi.hdmi-stereo'
+
+
+def pactl(*args):
+    try:
+        result = subprocess.run(['pactl', *args], text=True, capture_output=True,
+                                timeout=2, check=False)
+        return result.stdout.strip() if result.returncode == 0 else ''
+    except (OSError, subprocess.TimeoutExpired):
+        return ''
+
+
+def hdmi_device():
+    # Card numbers change when a USB microphone is connected during boot.
+    for path in Path('/sys/class/sound').glob('card[0-9]*'):
+        if '107c701400.hdmi' in str(path.resolve()):
+            return path.name.removeprefix('card')
+    return None
+
+
+def recover():
+    for attempt in range(3):
+        if pactl('get-default-sink') != 'auto_null':
+            return  # Includes a failed PulseAudio connection: do not guess.
+        names = [line.split()[1] for line in pactl('list', 'short', 'cards').splitlines()
+                 if len(line.split()) >= 2]
+        if CARD not in names:
+            device = hdmi_device()
+            if device is not None:
+                # PulseAudio can fail to create the card entirely while HDMI is
+                # forced off. A profile toggle alone cannot recover that case.
+                pactl('load-module', 'module-alsa-card', f'device_id={device}',
+                      'name=platform-107c701400.hdmi', f'card_name={CARD}',
+                      'namereg_fail=true', 'tsched=no')
+        else:
+            pactl('set-card-profile', CARD, 'off')
+            pactl('set-card-profile', CARD, 'output:hdmi-stereo')
+        sinks = pactl('list', 'short', 'sinks')
+        if any(len(row.split()) >= 2 and row.split()[1] == SINK
+               for row in sinks.splitlines()):
+            # Recheck: a Bluetooth/user-selected output may have appeared.
+            if pactl('get-default-sink') == 'auto_null':
+                pactl('set-default-sink', SINK)
+            if pactl('get-default-sink') == SINK:
+                for row in pactl('list', 'short', 'sink-inputs').splitlines():
+                    fields = row.split()
+                    if fields:
+                        pactl('move-sink-input', fields[0], SINK)
+            print('ATLAS HDMI audio is available.')
+            return
+        if attempt < 2:
+            time.sleep(.5)
+    print('ATLAS HDMI audio is not available; leaving other audio settings unchanged.')
+
+
+if __name__ == '__main__':
+    if os.geteuid() == 0:
+        os.execvp('runuser', ['runuser', '-u', 'sami', '--', 'env',
+                             'HOME=/home/atlas', 'XDG_RUNTIME_DIR=/run/user/1000',
+                             'PULSE_SERVER=unix:/run/user/1000/pulse/native',
+                             '/usr/local/libexec/atlas-screen-audio-ready'])
+    recover()

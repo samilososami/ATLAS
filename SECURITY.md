@@ -14,7 +14,7 @@ Las versiones públicas de ATLAS no deben incluir:
 Las imágenes de ATLAS OS se generan desde una copia de trabajo y se sanea esa copia. El sistema de origen no debe modificarse durante el proceso de publicación.
 
 La sincronización de código usa una selección explícita de archivos. Excluye
-`.runtime`, `.certs`, `.models`, `.venv`, logs, backups, perfiles de Chromium,
+`.runtime`, `.certs`, `.models`, `.venv`, logs, backups, perfiles de Google Chrome,
 sesiones de OpenClaw y proyectos personales generados. Los templates privados
 no deben sustituirse por las copias reales de una Raspberry Pi.
 
@@ -25,9 +25,16 @@ navegador. Puede ejecutar acciones a través de OpenClaw: no lo expongas a
 Internet y limita su acceso a una red de confianza. Las credenciales se leen
 en el backend y no deben enviarse al cliente.
 
-El modo `atlas-screen --terminal` abre una shell root física sin pedir una
-contraseña adicional. Es una función de desarrollo para un equipo bajo control
-de su propietario, no la implementación futura y autenticada de RAFAS.
+El acceso exclusivo utiliza permisos efímeros por pestaña y valida el control
+en el backend. Esto evita peticiones de otros clientes sin el permiso actual,
+pero no identifica a una persona: el primero que llega cuando está libre
+obtiene el control. Los permisos viajan por HTTP sin cifrar en esta versión.
+
+Los modos `atlas-screen --terminal` y `atlas-screen --rafas` abren una shell root
+física sin pedir una contraseña adicional. RAFAS también se activa con Ctrl y la
+secuencia W, O, W en un teclado USB. Son funciones de desarrollo para un equipo
+bajo control de su propietario; el atajo no es autenticación. El servicio no
+registra pulsaciones ni escucha en la red. La autenticación de RAFAS queda pendiente.
 
 ## Reportar un problema
 

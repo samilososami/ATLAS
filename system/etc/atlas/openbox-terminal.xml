@@ -28,22 +28,23 @@
   </desktops>
 
   <applications>
-    <application class="Lxterminal" name="ATLAS Root Terminal">
+    <application class="Lxterminal">
       <decor>no</decor>
+      <maximized>yes</maximized>
     </application>
 
-    <application name="ATLAS Keyboard">
+    <application class="Atlastouchtype">
       <decor>no</decor>
       <focus>no</focus>
       <layer>above</layer>
       <position force="yes">
         <x>center</x>
-        <y>288</y>
+        <y>300</y>
         <monitor>Primary</monitor>
       </position>
       <size>
         <width>1024</width>
-        <height>312</height>
+        <height>300</height>
       </size>
     </application>
   </applications>

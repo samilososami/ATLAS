@@ -1,5 +1,7 @@
 const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
-const CLIENT_BUILD = "2026-08-28-followup-echo-guard-1";
+const CLIENT_BUILD = "2026-08-28-access-1";
+const accessFetch = (url, options) => window.atlasAccess.fetch(url, options);
+const hasControl = () => window.atlasAccess.hasControl();
 const LANGUAGE = "es-ES";
 const SILENCE_MS = 700;
 const ADAPTIVE_FINAL_SILENCE_MS = 700;
@@ -104,6 +106,7 @@ let dictationSpeaking = false;
 let dictationInsertBreak = false;
 let ttsLabAudio = null;
 let ttsLabToken = 0;
+let ttsLabBusy = false;
 
 function selectedVoiceProvider() {
   return voiceProviderSelect.value === "elevenlabs" ? "elevenlabs" : "browser";
@@ -184,12 +187,14 @@ function configureDictation() {
   dictationRecognition.interimResults = true;
   dictationRecognition.maxAlternatives = 1;
   dictationRecognition.onstart = () => {
+    if (!hasControl()) { dictationRecognition.abort(); return; }
     dictationRunning = true;
     dictationToggle.dataset.recording = "true";
     dictationToggle.setAttribute("aria-label", "Detener transcripción");
     dictationStatus.textContent = "Escuchando";
   };
   dictationRecognition.onresult = (event) => {
+    if (!hasControl()) return;
     let nextInterim = "";
     for (let index = event.resultIndex; index < event.results.length; index += 1) {
       const result = event.results[index];
@@ -225,6 +230,7 @@ function configureDictation() {
     renderDictation();
     if (dictationShouldRestart && activeView === "transcription") {
       window.setTimeout(() => {
+        if (!hasControl() || !dictationShouldRestart) return;
         try { dictationRecognition.start(); } catch {}
       }, 150);
       return;
@@ -235,6 +241,7 @@ function configureDictation() {
 }
 
 function startDictation() {
+  if (!hasControl()) return;
   if (!SpeechRecognitionAPI) {
     dictationStatus.textContent = "Chrome no soporta la transcripción nativa";
     return;
@@ -264,6 +271,7 @@ function stopDictation() {
 }
 
 function stopTtsLab() {
+  ttsLabBusy = false;
   ttsLabToken += 1;
   window.speechSynthesis?.cancel();
   if (ttsLabAudio) {
@@ -315,6 +323,7 @@ function playLabEncodedAudio(encodedAudio, token) {
 
 async function runTtsLab(event) {
   event.preventDefault();
+  if (!hasControl()) return;
   const text = ttsText.value.trim();
   if (!text) {
     ttsResult.className = "tool-result error";
@@ -322,6 +331,7 @@ async function runTtsLab(event) {
     return;
   }
   stopTtsLab();
+  ttsLabBusy = true;
   const token = ttsLabToken;
   const started = performance.now();
   ttsSubmit.disabled = true;
@@ -330,12 +340,13 @@ async function runTtsLab(event) {
   try {
     let generationMs = 0;
     if (ttsProvider.value === "elevenlabs") {
-      const response = await fetch("/api/tts", {
+      const response = await accessFetch("/api/tts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text }),
       });
       const payload = await response.json();
+      if (token !== ttsLabToken || !hasControl()) return;
       if (!response.ok) throw new Error(payload.error || "ElevenLabs no pudo generar la voz");
       generationMs = Number(payload.generationMs || 0);
       ttsResult.textContent = `Voz generada en ${formatDuration(generationMs)}. Reproduciendo…`;
@@ -355,13 +366,13 @@ async function runTtsLab(event) {
     ttsResult.className = "tool-result error";
     ttsResult.textContent = error.message;
   } finally {
-    if (token === ttsLabToken) ttsSubmit.disabled = false;
+    if (token === ttsLabToken) { ttsSubmit.disabled = false; ttsLabBusy = false; }
   }
 }
 
 async function loadSettings() {
   try {
-    const response = await fetch("/api/settings", { cache: "no-store" });
+    const response = await accessFetch("/api/settings", { cache: "no-store" });
     const settings = await response.json();
     if (!response.ok) throw new Error(settings.error || "No se pudieron cargar los ajustes");
     voiceIdInput.value = settings.elevenlabsVoiceId || "";
@@ -377,11 +388,12 @@ async function loadSettings() {
 
 async function saveSettings(event) {
   event.preventDefault();
+  if (!hasControl()) return;
   settingsSubmit.disabled = true;
   settingsResult.className = "tool-result";
   settingsResult.textContent = "Guardando…";
   try {
-    const response = await fetch("/api/settings", {
+    const response = await accessFetch("/api/settings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ elevenlabsVoiceId: voiceIdInput.value.trim() }),
@@ -550,7 +562,7 @@ function scheduleSpeculativeStarter(transcript) {
     }
     speculativeSent = true;
     addLog("Preámbulo anticipado solicitado durante la transcripción");
-    void fetch("/api/starter", {
+    void accessFetch("/api/starter", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -635,10 +647,12 @@ function muteRecognitionFor(duration = WAKE_ECHO_MUTE_MS) {
 
 function scheduleRecognitionRestart(delay = 400) {
   window.clearTimeout(recognitionRestartTimer);
+  if (!hasControl()) return;
   const shouldListen = nativeTranscribing || !interactionActive || interruptMonitoring;
   if (activeView !== "atlas" || !recognition || !recognitionEnabled || !shouldListen || !microphoneStream) return;
   const restartDelay = Math.max(delay, Math.ceil(recognitionMutedUntil - performance.now()));
   recognitionRestartTimer = window.setTimeout(() => {
+    if (!hasControl()) return;
     const stillShouldListen = nativeTranscribing || !interactionActive || interruptMonitoring;
     if (activeView !== "atlas" || recognitionRunning || !stillShouldListen) return;
     if (performance.now() < recognitionMutedUntil) {
@@ -662,6 +676,7 @@ function configureRecognition() {
   recognition.lang = LANGUAGE;
   recognition.maxAlternatives = 1;
   recognition.onstart = () => {
+    if (!hasControl()) { recognition.abort(); return; }
     recognitionRunning = true;
     if (!interactionActive) setWaiting();
   };
@@ -681,6 +696,7 @@ function configureRecognition() {
     }
   };
   recognition.onresult = (event) => {
+    if (!hasControl()) return;
     if (performance.now() < recognitionMutedUntil) return;
     if (nativeTranscribing) {
       let newInterim = "";
@@ -748,6 +764,7 @@ function configureRecognition() {
 }
 
 async function beginWakeRecording() {
+  if (!hasControl()) return;
   if (interactionActive) return;
   stopRecognition();
   setScreen("ACTIVADO", "Te escucho", "ATLAS ha detectado la wake word. Puedes hablar.", "listening");
@@ -755,6 +772,7 @@ async function beginWakeRecording() {
 }
 
 async function startRecording(mode = "wake", parentId = "") {
+  if (!hasControl()) return;
   if (interactionActive || !microphoneStream) return;
   window.clearTimeout(followUpStartTimer);
   followUpStartTimer = 0;
@@ -839,7 +857,7 @@ async function stopRecordingAndSend(reason, silenceThresholdMs = 0) {
   const controller = new AbortController();
   requestController = controller;
   try {
-    const response = await fetch("/api/text", {
+    const response = await accessFetch("/api/text", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -862,7 +880,7 @@ async function stopRecordingAndSend(reason, silenceThresholdMs = 0) {
     if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
     await readEventStream(response.body, token);
   } catch (error) {
-    if (error.name !== "AbortError") failInteraction(error.message || "No se pudo completar la interacción.");
+    if (token === interactionToken && hasControl() && error.name !== "AbortError") failInteraction(error.message || "No se pudo completar la interacción.");
   } finally {
     if (requestController === controller) requestController = null;
   }
@@ -1013,7 +1031,7 @@ async function handleServerEvent(event, token) {
 
 function reportBrowserEventFor(interactionId, stage, message, durationMs = null, error = null) {
   if (!interactionId) return Promise.resolve();
-  return fetch("/api/client-event", {
+  return accessFetch("/api/client-event", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -1305,7 +1323,7 @@ function failInteraction(message) {
 
 function requestServerCancellation(requestId) {
   if (!requestId) return Promise.resolve();
-  return fetch("/api/cancel", {
+  return accessFetch("/api/cancel", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ requestId }), keepalive: true,
   }).catch(() => {});
@@ -1397,21 +1415,24 @@ async function cancelInteraction() {
 }
 
 async function initializeMicrophone() {
+  if (!hasControl()) return;
   if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
     setScreen("MICRÓFONO BLOQUEADO", "Chrome no permite el micrófono", "Marca esta URL HTTP como origen seguro en Chrome.", "error");
     addLog("El origen HTTP no está autorizado como contexto seguro", null, "error");
     return;
   }
   if (!SpeechRecognitionAPI) {
-    failInteraction("Este navegador no soporta la transcripción nativa. Usa Chrome o Chromium.");
+    failInteraction("Este navegador no soporta la transcripción nativa. Usa Google Chrome.");
     return;
   }
   enableButton.disabled = true;
   try {
-    microphoneStream = await navigator.mediaDevices.getUserMedia({
+    const stream = await navigator.mediaDevices.getUserMedia({
       video: false,
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     });
+    if (!hasControl()) { stream.getTracks().forEach(track => track.stop()); return; }
+    microphoneStream = stream;
     recognitionEnabled = true;
     configureRecognition();
     enableButton.hidden = true;
@@ -1426,7 +1447,7 @@ async function initializeMicrophone() {
 
 async function checkHealth() {
   try {
-    const response = await fetch("/api/health", { cache: "no-store" });
+    const response = await accessFetch("/api/health", { cache: "no-store" });
     const health = await response.json();
     healthDot.className = health.ready ? "ready" : "error";
     healthLabel.textContent = health.ready
@@ -1485,5 +1506,38 @@ window.addEventListener("beforeunload", () => {
 
 transcriptElement.classList.add("placeholder");
 responseElement.classList.add("placeholder");
-void checkHealth();
-void loadSettings();
+window.atlasAccess.bind({
+  isIdle: () => activeView === "atlas" && stateMark.dataset.state === "idle"
+    && !interactionActive && !nativeTranscribing && !followUpStartTimer
+    && !currentAudio && !streamedSpeechActive && !dictationRunning
+    && !dictationShouldRestart && !ttsLabBusy && !settingsSubmit.disabled,
+  suspend() {
+    interactionToken += 1;
+    recognitionEnabled = false;
+    interruptHandling = false;
+    window.clearTimeout(followUpStartTimer);
+    followUpStartTimer = 0;
+    window.cancelAnimationFrame(monitorFrame);
+    stopRecognition();
+    recognitionRunning = false;
+    microphoneStream?.getTracks().forEach(track => track.stop());
+    microphoneStream = null;
+    requestController?.abort();
+    requestController = null;
+    stopCurrentPlayback();
+    stopDictation();
+    stopTtsLab();
+    resetInteractionState();
+    setPanelOpen(false);
+    enableButton.hidden = false;
+    enableButton.disabled = false;
+    recordButton.hidden = true;
+    cancelButton.hidden = true;
+  },
+  acquired() {
+    switchView("atlas");
+    setScreen("EN ESPERA", "Esperando a ATLAS", "Activa el micrófono para comenzar.", "idle");
+    void checkHealth();
+    void loadSettings();
+  },
+});

@@ -5,11 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#080b10" />
     <meta name="color-scheme" content="dark" />
+    <meta name="google" content="notranslate" />
     <title>ATLAS WebScreen</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="/styles.css?v=2026-08-28-access-1" />
   </head>
   <body>
+    <section class="access-blocked" id="access-blocked" aria-labelledby="access-title">
+      <div>
+        <p class="access-brand">ATLAS</p>
+        <h1 id="access-title">Conectando con ATLAS…</h1>
+        <p id="access-detail" role="status">Comprobando quién tiene el control.</p>
+        <button class="primary" id="access-claim" type="button" disabled>Reclamar acceso</button>
+      </div>
+    </section>
+    <aside class="access-notice" id="access-notice" role="region" aria-label="Solicitud de acceso" hidden>
+      <p>Otro usuario quiere acceder a ATLAS WebScreen. ¿Delegar?</p>
+      <span id="access-notice-detail" role="status"></span>
+      <button class="primary" id="access-delegate" type="button" disabled>Delegar acceso</button>
+    </aside>
+    <div id="webscreen-content" hidden inert>
     <button class="menu-toggle" id="menu-toggle" type="button" aria-label="Abrir herramientas" aria-expanded="false">
       <span></span><span></span><span></span>
     </button>
@@ -32,8 +47,26 @@
     <section class="app-view active" id="view-atlas" data-view-panel="atlas">
       <main class="shell">
         <header class="topbar">
+          <div class="topbar-status">
           <span class="brand">ATLAS WebScreen</span>
           <span class="connection"><i id="health-dot"></i><span id="health-label">Comprobando sistema</span></span>
+          </div>
+          <section class="codex-usage" id="codex-usage" aria-label="Límites de Codex">
+            <div class="usage-heading"><span>CODEX</span><span>Disponible</span></div>
+            <div class="usage-row" id="quota-five-hour">
+              <span class="usage-label">5 h</span>
+              <progress max="100" value="0" aria-label="Cuota disponible de cinco horas"></progress>
+              <strong class="usage-value">—</strong>
+              <span class="usage-reset">Consultando…</span>
+            </div>
+            <div class="usage-row" id="quota-weekly">
+              <span class="usage-label">Semanal</span>
+              <progress max="100" value="0" aria-label="Cuota semanal disponible"></progress>
+              <strong class="usage-value">—</strong>
+              <span class="usage-reset">Consultando…</span>
+            </div>
+            <span class="usage-status" id="quota-status" role="status">Consultando límites…</span>
+          </section>
         </header>
 
         <section class="hero" aria-labelledby="main-status">
@@ -132,6 +165,10 @@
       </main>
     </section>
 
-    <script src="/app.js?v=2026-08-28-followup-echo-guard-1"></script>
+    </div>
+    <script src="/access.js?v=2026-08-28-access-1"></script>
+    <script src="/kiosk.js?v=2026-08-28-kiosk-1"></script>
+    <script src="/app.js?v=2026-08-28-access-1"></script>
+    <script src="/quota.js?v=2026-08-28-access-1"></script>
   </body>
 </html>

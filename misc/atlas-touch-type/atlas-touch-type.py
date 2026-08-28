@@ -6,9 +6,9 @@ import tkinter as tk
 
 
 WIDTH = 1024
-HEIGHT = 312
+HEIGHT = 300
 SCREEN_X = 0
-SCREEN_Y = 288
+SCREEN_Y = 300
 
 BG = "#080c14"
 PANEL = "#0d1320"
@@ -42,21 +42,22 @@ def rounded_rectangle(canvas, x1, y1, x2, y2, radius, **kwargs):
     return canvas.create_polygon(points, smooth=True, splinesteps=24, **kwargs)
 
 
-class AtlasKeyboard:
+class AtlasTouchType:
     def __init__(self, terminal_window):
         self.terminal_window = terminal_window
         self.modifiers = {"ctrl": False, "alt": False, "shift": False, "caps": False}
         self.buttons = []
 
-        self.root = tk.Tk(className="AtlasKeyboard")
+        self.root = tk.Tk(className="AtlasTouchType")
         self.root.withdraw()
-        self.root.title("ATLAS Keyboard")
+        self.root.title("ATLAS TOUCH TYPE")
         self.root.configure(bg=BG)
         try:
             self.root.configure(cursor="none")
         except tk.TclError:
             pass
-        self.root.overrideredirect(True)
+        # A managed dock reserves real workarea instead of covering VTE rows.
+        self.root.attributes('-type', 'dock')
         self.root.geometry(f"{WIDTH}x{HEIGHT}+{SCREEN_X}+{SCREEN_Y}")
         self.root.attributes("-topmost", True)
 
@@ -75,12 +76,19 @@ class AtlasKeyboard:
 
         self.root.update_idletasks()
         self.root.deiconify()
+        self.root.update_idletasks()
+        # Tk replaces its outer wrapper on first mapping; address the mapped
+        # client, not the temporary pre-map window returned by wm_frame().
+        subprocess.run(['xprop', '-name', 'ATLAS TOUCH TYPE', '-f', '_NET_WM_STRUT_PARTIAL',
+                        '32c', '-set', '_NET_WM_STRUT_PARTIAL',
+                        f'0, 0, 0, {HEIGHT}, 0, 0, 0, 0, 0, 0, 0, {WIDTH - 1}'],
+                       check=True, stdout=subprocess.DEVNULL)
         self.root.lift()
         self.root.after(20, self.root.lift)
 
     def draw_panel(self):
         rounded_rectangle(self.canvas, 0, 0, WIDTH - 1, HEIGHT - 1, 15, fill=PANEL, outline="#25344b")
-        self.canvas.create_text(16, 14, text="ATLAS KEYBOARD", anchor="w", fill=ACCENT,
+        self.canvas.create_text(16, 14, text="ATLAS TOUCH TYPE", anchor="w", fill=ACCENT,
                                 font=("DejaVu Sans", 9, "bold"))
         self.add_button(WIDTH - 34, 4, 25, 20, "×", "close", "close", font_size=12)
 
@@ -200,7 +208,7 @@ class AtlasKeyboard:
         left = 6
         right = 6
         gap = 3
-        row_height = 43
+        row_height = 41
         top = 33
 
         def draw_row(row, row_index, right_margin=right):
@@ -245,7 +253,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--terminal-window", required=True)
     args = parser.parse_args()
-    AtlasKeyboard(args.terminal_window).run()
+    AtlasTouchType(args.terminal_window).run()
 
 
 if __name__ == "__main__":

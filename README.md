@@ -64,6 +64,8 @@ La versión mostrada utiliza:
 
 El código de [`ATLAS WebScreen`](.atlas/atlas-webscreen) incluye una interfaz de depuración con cuatro vistas: ATLAS, Transcripción, Texto a voz y Ajustes.
 
+Una sola pestaña controla WebScreen a la vez. Otros clientes pueden reclamar acceso cada diez segundos; el propietario recibe una notificación y puede delegarlo cuando ATLAS está en espera. El cambio conserva la conversación y desactiva el micrófono y el audio de la pestaña anterior. Este control de uso no sustituye una futura autenticación.
+
 - Wake word `ATLAS`, sin locución de confirmación, y cierre del turno tras setecientos milisegundos de silencio.
 - Transcripción nativa del navegador mediante Speech Recognition. Su disponibilidad depende del navegador y puede utilizar servicios remotos; no se presenta como STT offline. Whisper sigue disponible para los demás canales y como fallback.
 - TTS del navegador o ElevenLabs, con Voice ID configurable y texto preparado para voz en español.
@@ -77,9 +79,9 @@ La vía rápida y el turno principal son ejecuciones distintas del mismo agente,
 
 ### Pantalla y terminal local
 
-`atlas-screen` muestra el estado y permite elegir `--desktop` o `--terminal`. `on` abre el modo seleccionado y `off` apaga la salida; el escritorio físico permanece apagado por defecto al reiniciar.
+`atlas-screen` muestra el estado y permite elegir `--desktop`, `--terminal`, `--atlas` o `--rafas`. `on` abre el modo seleccionado y `off` apaga la salida; la pantalla permanece apagada por defecto al reiniciar. Las opciones se pueden combinar: `atlas-screen --atlas --on` abre WebScreen en Google Chrome kiosko sobre localhost, conservando el acceso por red. El cursor se oculta cuando no hay un ratón USB/Bluetooth conectado.
 
-La terminal usa Zsh con autocompletado, highlighting, zoom y teclado táctil oscuro. Un doble toque abre el teclado sin tapar la zona de escritura; un toque lo cierra y dos dedos permiten recorrer el historial. Esta terminal tiene acceso root local: úsala únicamente en un dispositivo bajo tu control. Es independiente del concepto futuro RAFAS.
+La terminal usa Zsh con autocompletado, highlighting y **ATLAS TOUCH TYPE**, el teclado táctil oscuro. Un doble toque abre el teclado sin tapar la zona de escritura; un toque lo cierra y dos dedos permiten recorrer el historial. El zoom cambia la letra y reajusta las líneas sin cambiar la ventana. Esta terminal tiene acceso root local: úsala únicamente en un dispositivo bajo tu control. RAFAS es su alternativa de recuperación sin entorno gráfico.
 
 ## Workspace de OpenClaw
 
@@ -98,12 +100,15 @@ La carpeta [`atlas-commands`](atlas-commands) contiene los comandos `atlas-*` ut
 
 ## Estructura del repositorio
 
+Las [herramientas misceláneas](misc/README.md) reúnen [ATLAS TOUCH TYPE](misc/atlas-touch-type/README.md) y [RAFAS](misc/rafas/README.md), con su código y notas de instalación.
+
 ```text
 ATLAS/
 ├── .atlas/                 Runtime público: WebScreen, desktop, pantalla y proyectos
 ├── assets/                 Recursos visuales y capturas
 ├── atlas-commands/         Comandos de administración de ATLAS A1
 ├── docs/                   Notas de versiones y documentación técnica
+├── misc/                   ATLAS TOUCH TYPE, RAFAS y herramientas misceláneas
 ├── openclaw/workspace/     Identidad pública y templates de OpenClaw
 ├── system/                 Helpers, servicios, terminal, HDMI y personalización
 ├── README.md               Presentación del proyecto
@@ -118,15 +123,17 @@ La voz, la pantalla táctil y las herramientas de recuperación están en desarr
 
 ## RAFAS
 
-RAFAS es un concepto futuro del proyecto y todavía no está desarrollado. Su nombre significa ***Recovery Access For ATLAS Systems***.
+RAFAS significa ***Recovery Access For ATLAS Systems***. Su primera implementación ya permite abrir una consola de recuperación local independiente del entorno gráfico, de OpenClaw y de la red.
 
 Durante el desarrollo de ATLAS A1 fueron apareciendo errores e incidencias. Habitualmente, ATLAS podía resolverlos por sí mismo o recuperarse mediante sus herramientas de auto-reparación. Sin embargo, algunos fallos afectaban al propio Gateway de OpenClaw, al provider del modelo —por ejemplo, OpenAI— o a NetworkManager. En esas situaciones, ATLAS entraba en un estado de hibernación operativa y no podía reparar el problema desde dentro.
 
 Hasta entonces, la alternativa era conectarse por SSH a la terminal de ATLAS OS y resolverlo manualmente. Esto se volvía especialmente complicado si el fallo estaba relacionado con la conectividad: si la Raspberry Pi no conseguía conectarse a Internet, tampoco era posible acceder a ella por red.
 
-Con la incorporación de la pantalla al ATLAS A1 surgió la idea de RAFAS. Al conectar un teclado físico y pulsar la combinación `Ctrl + W + O + W`, la pantalla mostraría un entorno de depuración y recuperación. Tras validar la contraseña correspondiente, se accedería a una shell con privilegios de root para diagnosticar y corregir rápidamente errores críticos sin depender de una conexión de red.
+Con la incorporación de la pantalla al ATLAS A1 surgió RAFAS. Con un teclado USB, mantén Ctrl y pulsa W, O, W. La pantalla se enciende y muestra el logo de ATLAS y el título R.A.F.A.S. en blanco, junto a una shell root en `/home/atlas`. También se abre con `atlas-screen --rafas --on`. Funciona desde los modos apagado, desktop, terminal o Atlas; no necesita Chrome ni Xorg.
 
-RAFAS requerirá presencia física, autenticación y controles explícitos antes de proporcionar acceso administrativo. Su diseño final podrá cambiar conforme avance el hardware y el sistema operativo de ATLAS.
+Un pequeño servicio espera eventos del teclado, sin sondeo periódico ni registro de pulsaciones. Se inicia con el sistema y se reinicia si falla. No es un sistema operativo alternativo: necesita que Linux, systemd, el teclado y la pantalla sigan funcionando.
+
+**Esta versión de desarrollo ofrece acceso root local sin contraseña adicional.** Está pensada exclusivamente para dispositivos bajo control de su propietario. La autenticación y las herramientas visuales de recuperación se incorporarán más adelante. [Código, funcionamiento y límites](misc/rafas/README.md).
 
 ### Roadmap
 

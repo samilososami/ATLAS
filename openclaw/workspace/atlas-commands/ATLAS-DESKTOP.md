@@ -4,6 +4,8 @@ This is your controllable visual workspace on the Raspberry Pi. It exists so you
 
 The desktop is a lightweight virtual X11 display on `:1` at `1920x1080`. It does not run all the time. `atlas-cast start ...` starts it when needed.
 
+Web pages and files open in official Google Chrome through `/home/atlas/.atlas/atlas-desktop/bin/open-chrome`. Its private `chrome-profile` is separate from the physical WebScreen kiosk. `atlas-desktop nuke` only closes this virtual desktop's browser, not the physical screen. Different desks, different piles of paper.
+
 ## The mental model
 
 `atlas-desktop` controls the desktop. `atlas-cast` only sends that desktop to a receiver.

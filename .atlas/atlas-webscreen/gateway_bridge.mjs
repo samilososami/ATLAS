@@ -330,6 +330,11 @@ async function handleCommand(request) {
     if (request.command === "run") await startRun(request);
     else if (request.command === "cancel") await cancelRun(request);
     else if (request.command === "inject") await injectMessage(request);
+    else if (request.command === "usage") {
+      await connectedPromise;
+      const summary = await client.request("usage.status", {});
+      emit({ bridgeRequestId: request.bridgeRequestId, type: "usage", summary });
+    }
     else if (request.command === "ping") emit({ type: "pong", nonce: request.nonce || null, connected });
     else throw new Error("unknown bridge command");
   } catch (error) {

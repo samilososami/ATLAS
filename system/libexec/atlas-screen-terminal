@@ -44,17 +44,16 @@ window_id=""
 for _ in $(seq 1 100); do
   window_id="$(xdotool search --onlyvisible --name 'ATLAS Root Terminal' 2>/dev/null | head -n 1 || true)"
   if [ -n "$window_id" ]; then
-    wmctrl -i -r "$window_id" -b remove,fullscreen,maximized_vert,maximized_horz >/dev/null 2>&1 || true
+    wmctrl -i -r "$window_id" -b remove,fullscreen >/dev/null 2>&1 || true
     wmctrl -i -r "$window_id" -b add,undecorated >/dev/null 2>&1 || true
-    xdotool windowmove --sync "$window_id" 0 0 >/dev/null 2>&1 || true
-    xdotool windowsize --sync "$window_id" 1024 600 >/dev/null 2>&1 || true
+    wmctrl -i -r "$window_id" -b add,maximized_vert,maximized_horz >/dev/null 2>&1 || true
     xdotool windowactivate "$window_id" >/dev/null 2>&1 || true
     # The shell can paint its first prompt before fullscreen settles. Clear once
     # after the final geometry so no fragments are left clinging to the edges.
     sleep 0.25
     xdotool key --window "$window_id" ctrl+l >/dev/null 2>&1 || true
 
-    /usr/local/libexec/atlas-screen-touch-keyboard >/tmp/atlas-screen-touch-keyboard.log 2>&1 &
+    /usr/local/libexec/atlas-touch-type-session >/tmp/atlas-touch-type-session.log 2>&1 &
     touch_keyboard_pid="$!"
     break
   fi

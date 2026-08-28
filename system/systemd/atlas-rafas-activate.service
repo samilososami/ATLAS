@@ -1,0 +1,8 @@
+[Unit]
+Description=Switch the physical ATLAS screen to RAFAS
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/atlas-screen --rafas --on
+TimeoutStartSec=25

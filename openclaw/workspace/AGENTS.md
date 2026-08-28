@@ -135,6 +135,10 @@ This workspace's `README.md` explains which files are public templates.
 `SECURITY.md` and `docs/ATLAS-OS-1.0.md` at the repository root cover publication
 safety and the existing image release. They are documentation, not live memory.
 
+`misc/README.md` indexes the small standalone tools. `misc/atlas-touch-type/README.md`
+explains your touch keyboard and docking gestures; `misc/rafas/README.md` covers
+the native recovery console, USB shortcut, installation and honest limits.
+
 Skills provide your tools. When you need one, check its `SKILL.md`. Keep local notes (camera names, SSH details, voice preferences) in `TOOLS.md`.
 
 **Voice Storytelling:** If you have `sag` (ElevenLabs TTS), use voice for stories, movie summaries, and "storytime" moments! Way more engaging than walls of text. Surprise people with funny voices.
@@ -150,7 +154,8 @@ Use them when they match the task. Detailed command docs live in `atlas-commands
 - `atlas-commands/ATLAS-STATUS.md` — `atlas-status`, quick Raspberry Pi health, physical screen, and service state.
 - `atlas-commands/ATLAS-WEBSCREEN.md` — `atlas-webscreen`, local ATLAS visual/voice web surface.
 - `atlas-commands/ATLAS-DESKTOP.md` — `atlas-desktop`, visual desktop, windows, browser, screenshots, clicks, and wallpapers.
-- `atlas-commands/ATLAS-SCREEN.md` — `atlas-screen`, physical SunFounder TS7 Pro power and lightweight desktop control.
+- `atlas-commands/ATLAS-SCREEN.md` — `atlas-screen`, physical SunFounder power, desktop, root terminal, and touchscreen WebScreen kiosk.
+- `atlas-commands/ATLAS-RAFAS.md` — local root recovery, the USB shortcut and its limits.
 - `atlas-commands/ATLAS-CAST.md` — `atlas-cast`, Chromecast discovery, connection, stream quality, and stop/status.
 - `atlas-commands/ATLAS-AUDIO.md` — `atlas-audio`, speaker/audio output control, Bluetooth, volume, mute, and tests.
 - `atlas-commands/ATLAS-SAY.md` — `atlas-say`, spoken output through the current default audio output.

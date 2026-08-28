@@ -26,7 +26,7 @@ atlas-cast status
 
 ## `atlas-desktop`
 
-Controla el escritorio virtual de ATLAS: servicio, Chromium, ventanas, entrada simulada, capturas de pantalla, layouts y wallpaper.
+Controla el escritorio virtual de ATLAS: servicio, Google Chrome, ventanas, entrada simulada, capturas de pantalla, layouts y wallpaper.
 
 ```bash
 atlas-desktop status
@@ -64,9 +64,16 @@ atlas-screen --terminal
 atlas-screen on
 atlas-screen off
 atlas-screen --desktop
+atlas-screen --atlas --on
+atlas-screen --desktop --on
+atlas-screen --rafas --on
 ```
 
-El modo terminal abre una shell root Zsh con autocompletado, highlighting, zoom y teclado táctil integrado. Doble toque abre el teclado; un toque lo cierra; dos dedos desplazan el historial. Requiere los helpers y configuraciones de [`system`](../system).
+El modo terminal abre una shell root Zsh con autocompletado, highlighting, zoom y ATLAS TOUCH TYPE. Doble toque abre el teclado; un toque lo cierra; dos dedos desplazan el historial. El zoom cambia los caracteres y reajusta las líneas sin redimensionar la ventana. Requiere las configuraciones de [`system`](../system) y los helpers de [`misc/atlas-touch-type`](../misc/atlas-touch-type).
+
+El modo `--rafas` abre la consola nativa de recuperación, blanca y sin entorno gráfico, como root en `/home/atlas`. También se activa manteniendo Ctrl y pulsando W, O, W en un teclado USB. Está disponible incluso con la pantalla apagada, pero sigue necesitando un kernel y hardware funcionales. Esta versión no pide contraseña local. [Funcionamiento y límites](../misc/rafas/README.md).
+
+El modo `--atlas` abre WebScreen en Google Chrome kiosko sobre `localhost:5000`, como usuario normal y con sandbox. El cursor solo aparece cuando hay un ratón USB/Bluetooth conectado. Las opciones de modo y encendido se pueden combinar en cualquier orden; los modos por sí solos no encienden la pantalla. El kiosko no sustituye la autenticación ni protege contra acceso físico al equipo.
 
 ## `atlas-webscreen`
 
