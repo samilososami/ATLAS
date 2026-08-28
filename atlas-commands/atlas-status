@@ -17,6 +17,37 @@ else
   RED=""
 fi
 
+spinner_pid=""
+
+start_spinner() {
+  [ -t 1 ] || return 0
+  (
+    local frames=('/' '-' '\\' '|')
+    local frame
+    while true; do
+      for frame in "${frames[@]}"; do
+        printf '\r[%s] Recopilando información...' "$frame"
+        sleep 0.12
+      done
+    done
+  ) &
+  spinner_pid="$!"
+}
+
+stop_spinner() {
+  if [ -n "$spinner_pid" ]; then
+    kill "$spinner_pid" 2>/dev/null || true
+    wait "$spinner_pid" 2>/dev/null || true
+    spinner_pid=""
+  fi
+  if [ -t 1 ]; then
+    printf '\r\033[2K'
+  fi
+}
+
+trap 'stop_spinner' EXIT
+trap 'stop_spinner; exit 130' INT TERM
+
 fmt_bytes() {
   awk -v kb="$1" 'BEGIN {
     gb = kb / 1024 / 1024;
@@ -486,6 +517,31 @@ network_urls() {
   printf "%s" "${out:-unknown}"
 }
 
+atlas_screen_values() {
+  local output power mode surface boot
+
+  power="unknown"
+  mode="unknown"
+  surface="unknown"
+  boot="unknown"
+
+  if command -v atlas-screen >/dev/null 2>&1; then
+    output="$(ATLAS_NO_COLOR=1 atlas-screen 2>/dev/null || true)"
+    power="$(printf '%s\n' "$output" | awk -F': ' '$1 == "Power" { print $2; exit }')"
+    mode="$(printf '%s\n' "$output" | awk -F': ' '$1 == "Selected mode" { print $2; exit }')"
+    surface="$(printf '%s\n' "$output" | awk -F': ' '$1 == "Active surface" { print $2; exit }')"
+    boot="$(printf '%s\n' "$output" | awk -F': ' '$1 == "Boot default" { print $2; exit }')"
+  fi
+
+  printf '%s\t%s\t%s\t%s\n' \
+    "${power:-unknown}" \
+    "${mode:-unknown}" \
+    "${surface:-unknown}" \
+    "${boot:-unknown}"
+}
+
+start_spinner
+
 model="unknown"
 if [ -r /proc/device-tree/model ]; then
   model="$(tr -d '\0' < /proc/device-tree/model)"
@@ -503,10 +559,18 @@ IFS=$'	' read -r gateway_state gateway_enabled < <(openclaw_gateway_state)
 IFS=$'	' read -r cast_state cast_enabled < <(atlas_cast_state)
 IFS=$'	' read -r desktop_state desktop_enabled < <(system_service_run_state atlas-desktop.service)
 IFS=$'	' read -r webscreen_state webscreen_enabled < <(system_service_run_state atlas-webscreen.service)
+IFS=$'	' read -r screen_power screen_mode screen_surface screen_boot < <(atlas_screen_values)
 gateway_state_color="$(run_color "$gateway_state")"
 cast_state_color="$(run_color "$cast_state")"
 desktop_state_color="$(run_color "$desktop_state")"
 webscreen_state_color="$(run_color "$webscreen_state")"
+if [ "$screen_power" = "on" ]; then
+  screen_power_color="$GREEN"
+elif [ "$screen_power" = "off" ]; then
+  screen_power_color="$RED"
+else
+  screen_power_color="$YELLOW"
+fi
 throttle="$(throttle_decode)"
 uptime_pretty="$(uptime -p 2>/dev/null | sed 's/^up //' || true)"
 throttle_code="$(printf "%s" "$throttle" | sed -n 's/^throttled=\([^ ]*\).*/\1/p')"
@@ -515,8 +579,10 @@ if [ "$throttle_rest" = "$throttle" ]; then
   throttle_rest=""
 fi
 
+stop_spinner
+
 cat <<OUT
-${BOLD}ATLAS PI STATUS${RESET}
+${BOLD}ATLAS A1 STATUS${RESET}
 ${BOLD}Host:${RESET} $(hostname) / ${model}
 ${BOLD}Uptime:${RESET} ${CYAN}${uptime_pretty:-unknown}${RESET}
 
@@ -532,4 +598,5 @@ ${BOLD}OpenClaw Gateway:${RESET} ${gateway_state_color}${gateway_state}${RESET} 
 ${BOLD}Atlas WebScreen:${RESET} ${webscreen_state_color}${webscreen_state}${RESET} / ${webscreen_enabled}
 ${BOLD}Atlas Desktop:${RESET} ${desktop_state_color}${desktop_state}${RESET} / ${desktop_enabled}
 ${BOLD}Atlas Cast:${RESET} ${cast_state_color}${cast_state}${RESET} / ${cast_enabled}
+${BOLD}Atlas Screen:${RESET} ${screen_power_color}${screen_power}${RESET} / selected ${screen_mode} / active ${screen_surface} / boot ${screen_boot}
 OUT

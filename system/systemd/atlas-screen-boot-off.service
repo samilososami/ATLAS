@@ -1,0 +1,10 @@
+[Unit]
+Description=Keep the ATLAS physical screen off after boot
+After=systemd-user-sessions.service getty@tty1.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/atlas-screen off
+
+[Install]
+WantedBy=multi-user.target

@@ -1,5 +1,12 @@
 # TOOLS.md - Local Notes
 
+## Connected services
+
+When the direct Gmail app is configured through Codex, use `codex_apps.gmail.*`.
+Do not mistake Composio's connection state for Gmail's direct connection: those
+are different front doors. Verify the actual tool before claiming access is
+missing. No app authentication is bundled with this public template.
+
 Skills define _how_ tools work. This file is for _your_ specifics — the stuff that's unique to your setup.
 
 ## What Goes Here

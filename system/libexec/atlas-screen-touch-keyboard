@@ -1,0 +1,415 @@
+#!/usr/bin/env bash
+set -u
+
+export DISPLAY=:0
+export LANG=en_GB.UTF-8
+export LC_ALL=en_GB.UTF-8
+
+runtime_dir=/run/atlas-screen-terminal
+pid_file="$runtime_dir/keyboard.pid"
+keyboard_pid=""
+input_pid=""
+input_suppressed_until=0
+event_log="$runtime_dir/touch-events.log"
+terminal_full_height=600
+terminal_keyboard_height=294
+double_tap_timeout_ms=550
+double_tap_distance_px=48
+pending_tap_ms=0
+pending_tap_x=0
+pending_tap_y=0
+
+keyboard_window() {
+  xdotool search --onlyvisible --name '^ATLAS Keyboard$' 2>/dev/null | head -n 1 || true
+}
+
+keyboard_is_visible() {
+  local window
+  window="$(keyboard_window)"
+  [ -n "$window" ] && [ -n "$keyboard_pid" ] && kill -0 "$keyboard_pid" 2>/dev/null
+}
+
+terminal_window() {
+  xdotool search --onlyvisible --name '^ATLAS Root Terminal$' 2>/dev/null | head -n 1 || true
+}
+
+resize_terminal() {
+  local height="$1" window
+  window="$(terminal_window)"
+  [ -n "$window" ] || return 0
+  wmctrl -i -r "$window" -b remove,fullscreen,maximized_vert,maximized_horz >/dev/null 2>&1 || true
+  wmctrl -i -r "$window" -b add,undecorated >/dev/null 2>&1 || true
+  xdotool windowmove "$window" 0 0 >/dev/null 2>&1 || true
+  xdotool windowsize "$window" 1024 "$height" >/dev/null 2>&1 || true
+  xdotool windowactivate "$window" >/dev/null 2>&1 || true
+}
+
+stop_keyboard_process() {
+  if [ -n "$keyboard_pid" ]; then
+    kill "$keyboard_pid" 2>/dev/null || true
+    wait "$keyboard_pid" 2>/dev/null || true
+  fi
+  keyboard_pid=""
+  rm -f "$pid_file"
+}
+
+hide_keyboard() {
+  stop_keyboard_process
+  resize_terminal "$terminal_full_height"
+}
+
+show_keyboard() {
+  local window terminal_window
+
+  keyboard_is_visible && return 0
+  stop_keyboard_process
+
+  terminal_window="$(terminal_window)"
+  [ -n "$terminal_window" ] || return 1
+
+  # Reserve the lower part of the display before mapping the keyboard. VTE
+  # recalculates its rows immediately, so the prompt remains above the new edge.
+  resize_terminal "$terminal_keyboard_height"
+  sleep 0.08
+
+  /usr/local/libexec/atlas-screen-keyboard.py \
+    --terminal-window "$terminal_window" >/tmp/atlas-screen-keyboard.log 2>&1 &
+  keyboard_pid="$!"
+  printf '%s\n' "$keyboard_pid" > "$pid_file"
+
+  window=""
+  for _ in $(seq 1 60); do
+    window="$(keyboard_window)"
+    [ -n "$window" ] && break
+    sleep 0.05
+  done
+
+  if [ -z "$window" ]; then
+    hide_keyboard
+    return 1
+  fi
+
+  xdotool windowraise "$window" >/dev/null 2>&1 || true
+}
+
+cleanup() {
+  if [ -n "$input_pid" ]; then
+    kill "$input_pid" 2>/dev/null || true
+  fi
+  hide_keyboard
+}
+trap cleanup EXIT INT TERM
+
+handle_left_click() {
+  local pointer_x pointer_y now delta dx dy
+  read -r pointer_x pointer_y < <(pointer_position)
+
+  # The close button destroys its own window before the raw release reaches
+  # this listener. Treat its coordinates as a close action even if the process
+  # has already exited, otherwise that same release would reopen the keyboard.
+  if [[ "$pointer_x" =~ ^[0-9]+$ && "$pointer_y" =~ ^[0-9]+$ ]] &&
+     [ "$pointer_x" -ge 980 ] && [ "$pointer_y" -le 324 ]; then
+    hide_keyboard
+    return 0
+  fi
+
+  if keyboard_is_visible; then
+    if [[ "$pointer_y" =~ ^[0-9]+$ ]] && [ "$pointer_y" -lt 288 ]; then
+      hide_keyboard
+    fi
+  else
+    [[ "$pointer_x" =~ ^[0-9]+$ && "$pointer_y" =~ ^[0-9]+$ ]] || return 0
+    now="$(date +%s%3N)"
+    delta=$((now - pending_tap_ms))
+    dx=$((pointer_x - pending_tap_x))
+    dy=$((pointer_y - pending_tap_y))
+    [ "$dx" -lt 0 ] && dx=$((-dx))
+    [ "$dy" -lt 0 ] && dy=$((-dy))
+
+    if [ "$pending_tap_ms" -gt 0 ] &&
+       [ "$delta" -le "$double_tap_timeout_ms" ] &&
+       [ "$dx" -le "$double_tap_distance_px" ] &&
+       [ "$dy" -le "$double_tap_distance_px" ]; then
+      pending_tap_ms=0
+      pending_tap_x=0
+      pending_tap_y=0
+      show_keyboard
+    else
+      pending_tap_ms="$now"
+      pending_tap_x="$pointer_x"
+      pending_tap_y="$pointer_y"
+    fi
+  fi
+}
+
+handle_input_event() {
+  local now
+  now="$(date +%s%3N)"
+  if [ "$now" -lt "$input_suppressed_until" ]; then
+    return 0
+  fi
+
+  handle_left_click
+
+  # One physical touch can arrive as TouchBegin, ButtonPress and raw variants.
+  # Suppress its echoes so opening the keyboard never immediately closes it.
+  now="$(date +%s%3N)"
+  input_suppressed_until=$((now + 80))
+}
+
+coproc INPUT_EVENTS { exec stdbuf -oL xinput test-xi2 --root 2>/dev/null; }
+input_pid="$INPUT_EVENTS_PID"
+input_fd="${INPUT_EVENTS[0]}"
+button_event=""
+button_source=""
+touch_device_id="$(xinput list --id-only 'wch.cn USB2IIC_CTP_CONTROL' 2>/dev/null | head -n 1 || true)"
+touch_device_id="${touch_device_id:--1}"
+touch_phase=""
+touch_active=0
+touch_start_x=0
+touch_start_y=0
+touch_started_ms=0
+touch_max_movement=0
+gesture_source=""
+touch_event_id=""
+multitouch_active=0
+scroll_last_y=0
+scroll_accumulator=0
+scroll_threshold=22
+declare -A mt_x=()
+declare -A mt_y=()
+
+touch_begin() {
+  local x="$1" y="$2" source="${3:-touch}"
+  touch_active=1
+  touch_start_x="$x"
+  touch_start_y="$y"
+  touch_started_ms="$(date +%s%3N)"
+  touch_max_movement=0
+  gesture_source="$source"
+}
+
+touch_update() {
+  local x="$1" y="$2" dx dy
+  [ "$touch_active" -eq 1 ] || return 0
+  dx=$((x - touch_start_x))
+  dy=$((y - touch_start_y))
+  [ "$dx" -lt 0 ] && dx=$((-dx))
+  [ "$dy" -lt 0 ] && dy=$((-dy))
+  [ "$dx" -gt "$touch_max_movement" ] && touch_max_movement="$dx"
+  [ "$dy" -gt "$touch_max_movement" ] && touch_max_movement="$dy"
+}
+
+touch_finish() {
+  local x="$1" y="$2" now duration verdict
+  [ "$touch_active" -eq 1 ] || return 0
+  touch_update "$x" "$y"
+  now="$(date +%s%3N)"
+  duration=$((now - touch_started_ms))
+  verdict="drag"
+
+  if [ "$touch_max_movement" -le 18 ] && [ "$duration" -le 900 ]; then
+    verdict="tap"
+    handle_input_event
+  fi
+
+  printf '%s gesture=%s duration_ms=%s movement_px=%s\n' \
+    "$(date --iso-8601=seconds)" "$verdict" "$duration" "$touch_max_movement" >> "$event_log"
+  touch_active=0
+  touch_phase=""
+  gesture_source=""
+}
+
+pointer_position() {
+  xdotool getmouselocation --shell 2>/dev/null |
+    awk -F= '
+      $1 == "X" { x=$2 }
+      $1 == "Y" { y=$2 }
+      END { if (x != "" && y != "") print x, y }
+    '
+}
+
+pointer_begin() {
+  local x y
+  read -r x y < <(pointer_position)
+  [[ "$x" =~ ^[0-9]+$ && "$y" =~ ^[0-9]+$ ]] || return 0
+  touch_begin "$x" "$y" pointer
+}
+
+pointer_update() {
+  local x y
+  [ "$touch_active" -eq 1 ] && [ "$gesture_source" = "pointer" ] || return 0
+  read -r x y < <(pointer_position)
+  [[ "$x" =~ ^[0-9]+$ && "$y" =~ ^[0-9]+$ ]] || return 0
+  touch_update "$x" "$y"
+}
+
+pointer_finish() {
+  local x y
+  [ "$touch_active" -eq 1 ] && [ "$gesture_source" = "pointer" ] || return 0
+  read -r x y < <(pointer_position)
+  [[ "$x" =~ ^[0-9]+$ && "$y" =~ ^[0-9]+$ ]] || return 0
+  touch_finish "$x" "$y"
+}
+
+active_touch_count() {
+  printf '%s\n' "${#mt_y[@]}"
+}
+
+average_touch_y() {
+  local id total=0 count=0
+  for id in "${!mt_y[@]}"; do
+    total=$((total + mt_y[$id]))
+    count=$((count + 1))
+  done
+  if [ "$count" -gt 0 ]; then
+    printf '%s\n' "$((total / count))"
+  else
+    printf '0\n'
+  fi
+}
+
+scroll_terminal() {
+  local button="$1" steps="$2" window
+  [ "$steps" -gt 0 ] || return 0
+  window="$(terminal_window)"
+  [ -n "$window" ] || return 0
+  xdotool windowactivate "$window" >/dev/null 2>&1 || true
+  xdotool click --repeat "$steps" --delay 12 "$button" >/dev/null 2>&1 || true
+}
+
+clear_terminal_selection() {
+  local now window
+  window="$(terminal_window)"
+  [ -n "$window" ] || return 0
+
+  # VTE also sees the physical two-finger drag and briefly treats it as a
+  # selection. Once both fingers are up, one harmless left click clears that
+  # selection. Suppress the synthetic click here so it cannot become the first
+  # half of the double-tap gesture that opens the keyboard.
+  pending_tap_ms=0
+  pending_tap_x=0
+  pending_tap_y=0
+  now="$(date +%s%3N)"
+  input_suppressed_until=$((now + 250))
+  sleep 0.04
+  xdotool windowactivate "$window" >/dev/null 2>&1 || true
+  xdotool click 1 >/dev/null 2>&1 || true
+}
+
+multitouch_begin() {
+  local id="$1" x="$2" y="$3" count
+  mt_x[$id]="$x"
+  mt_y[$id]="$y"
+  count="$(active_touch_count)"
+
+  if [ "$count" -eq 1 ] && [ "$multitouch_active" -eq 0 ]; then
+    touch_begin "$x" "$y" touch
+  elif [ "$count" -ge 2 ]; then
+    multitouch_active=1
+    touch_active=0
+    pending_tap_ms=0
+    scroll_last_y="$(average_touch_y)"
+    scroll_accumulator=0
+  fi
+}
+
+multitouch_update() {
+  local id="$1" x="$2" y="$3" count average delta steps
+  mt_x[$id]="$x"
+  mt_y[$id]="$y"
+  count="$(active_touch_count)"
+
+  if [ "$multitouch_active" -eq 1 ] && [ "$count" -ge 2 ]; then
+    average="$(average_touch_y)"
+    delta=$((average - scroll_last_y))
+    scroll_last_y="$average"
+    scroll_accumulator=$((scroll_accumulator + delta))
+
+    if [ "$scroll_accumulator" -ge "$scroll_threshold" ]; then
+      steps=$((scroll_accumulator / scroll_threshold))
+      scroll_terminal 4 "$steps"
+      scroll_accumulator=$((scroll_accumulator % scroll_threshold))
+    elif [ "$scroll_accumulator" -le $((-scroll_threshold)) ]; then
+      steps=$((-scroll_accumulator / scroll_threshold))
+      scroll_terminal 5 "$steps"
+      scroll_accumulator=$((-((-scroll_accumulator) % scroll_threshold)))
+    fi
+  elif [ "$multitouch_active" -eq 0 ]; then
+    touch_update "$x" "$y"
+  fi
+}
+
+multitouch_end() {
+  local id="$1" x="$2" y="$3" count
+  unset "mt_x[$id]" "mt_y[$id]"
+  count="$(active_touch_count)"
+
+  if [ "$multitouch_active" -eq 1 ]; then
+    if [ "$count" -eq 0 ]; then
+      clear_terminal_selection
+      printf '%s gesture=two-finger-scroll\n' "$(date --iso-8601=seconds)" >> "$event_log"
+      multitouch_active=0
+      scroll_last_y=0
+      scroll_accumulator=0
+    fi
+  else
+    touch_finish "$x" "$y"
+  fi
+}
+
+while IFS= read -r line <&"$input_fd"; do
+  if [[ "$line" == "EVENT type "*"(RawButtonPress)"* ]]; then
+    button_event="begin"
+    button_source=""
+    printf '%s %s\n' "$(date --iso-8601=seconds)" "$line" >> "$event_log"
+  elif [[ "$line" == "EVENT type "*"(RawButtonRelease)"* ]]; then
+    button_event="end"
+    button_source=""
+  elif [[ "$line" == "EVENT type "*"(RawMotion)"* ]]; then
+    button_event=""
+    pointer_update
+  elif [ -n "$button_event" ] && [[ "$line" =~ device:[[:space:]]*[0-9]+[[:space:]]*\(([0-9]+)\) ]]; then
+    button_source="${BASH_REMATCH[1]}"
+  elif [[ "$line" == "EVENT type "*"(TouchBegin)"* ]]; then
+    button_event=""
+    touch_phase="begin"
+    touch_event_id=""
+    printf '%s %s\n' "$(date --iso-8601=seconds)" "$line" >> "$event_log"
+  elif [[ "$line" == "EVENT type "*"(TouchUpdate)"* ]]; then
+    button_event=""
+    touch_phase="update"
+    touch_event_id=""
+  elif [[ "$line" == "EVENT type "*"(TouchEnd)"* ]]; then
+    button_event=""
+    touch_phase="end"
+    touch_event_id=""
+  elif [ -n "$touch_phase" ] && [[ "$line" =~ ^[[:space:]]*detail:[[:space:]]*([0-9]+)[[:space:]]*$ ]]; then
+    touch_event_id="${BASH_REMATCH[1]}"
+  elif [ -n "$touch_phase" ] && [[ "$line" =~ ^[[:space:]]*root:[[:space:]]*([0-9]+)\.([0-9]+)/([0-9]+)\.([0-9]+) ]]; then
+    touch_x="${BASH_REMATCH[1]}"
+    touch_y="${BASH_REMATCH[3]}"
+    if [ -n "$touch_event_id" ]; then
+      case "$touch_phase" in
+        begin) multitouch_begin "$touch_event_id" "$touch_x" "$touch_y" ;;
+        update) multitouch_update "$touch_event_id" "$touch_x" "$touch_y" ;;
+        end) multitouch_end "$touch_event_id" "$touch_x" "$touch_y" ;;
+      esac
+    fi
+    touch_phase=""
+    touch_event_id=""
+  elif [ -n "$button_event" ] && [[ "$line" =~ ^[[:space:]]*detail:[[:space:]]*1[[:space:]]*$ ]]; then
+    if [ "$button_source" != "$touch_device_id" ]; then
+      case "$button_event" in
+        begin) pointer_begin ;;
+        end) pointer_finish ;;
+      esac
+    fi
+    button_event=""
+  elif [[ "$line" == "EVENT type "* ]]; then
+    button_event=""
+    button_source=""
+    touch_phase=""
+    touch_event_id=""
+  fi
+done

@@ -42,7 +42,7 @@ ATLAS A1 es la primera implementación física del proyecto. Actualmente se ejec
 
 La Raspberry Pi actúa como Gateway, entorno de ejecución y punto de conexión con el hardware. Los modelos más grandes se ejecutan normalmente en la nube; los modelos locales se reservan para tareas compatibles con los recursos disponibles, como determinados procesos de STT, TTS o experimentación con modelos pequeños.
 
-El diseño físico completo, la pantalla, el sistema de audio, el micrófono y la carcasa se documentarán en futuras versiones.
+La pantalla actual es una SunFounder TS7 Pro táctil de siete pulgadas y resolución 1024 × 600. El diseño físico completo, el audio, el micrófono y la carcasa se documentarán conforme avance el prototipo.
 
 ## Software
 
@@ -60,6 +60,27 @@ La versión mostrada utiliza:
 - Fastfetch y Neofetch con identidad visual propia.
 - OpenClaw como Gateway del agente.
 
+### WebScreen y conversación por voz
+
+El código de [`ATLAS WebScreen`](.atlas/atlas-webscreen) incluye una interfaz de depuración con cuatro vistas: ATLAS, Transcripción, Texto a voz y Ajustes.
+
+- Wake word `ATLAS`, sin locución de confirmación, y cierre del turno tras setecientos milisegundos de silencio.
+- Transcripción nativa del navegador mediante Speech Recognition. Su disponibilidad depende del navegador y puede utilizar servicios remotos; no se presenta como STT offline. Whisper sigue disponible para los demás canales y como fallback.
+- TTS del navegador o ElevenLabs, con Voice ID configurable y texto preparado para voz en español.
+- Una conexión persistente al Gateway y un oyente caliente del mismo agente OpenClaw, actualmente con GPT-5.6 Luna.
+- Respuesta directa para conversación sencilla, juegos y conocimiento general cuando Luna tiene suficiente contexto. Si necesita herramientas, información privada o acciones, delega al turno principal.
+- Historial breve compartido y estado de juego para mantener la continuidad. Hora y fecha simples se resuelven con el reloj del sistema en Europe/Madrid.
+- Preámbulos y avances de trabajo, reproducción por frases con TTS del navegador, interrupción mediante `ATLAS` y continuación automática cuando se espera una respuesta.
+- Cancelaciones sencillas sin LLM y logs por interacción para medir tiempos y depurar.
+
+La vía rápida y el turno principal son ejecuciones distintas del mismo agente, no dos identidades diferentes. El contexto conversacional se renueva tras treinta minutos sin actividad. El historial rápido vive en memoria y se vacía al reiniciar WebScreen; no sustituye la memoria duradera de OpenClaw.
+
+### Pantalla y terminal local
+
+`atlas-screen` muestra el estado y permite elegir `--desktop` o `--terminal`. `on` abre el modo seleccionado y `off` apaga la salida; el escritorio físico permanece apagado por defecto al reiniciar.
+
+La terminal usa Zsh con autocompletado, highlighting, zoom y teclado táctil oscuro. Un doble toque abre el teclado sin tapar la zona de escritura; un toque lo cierra y dos dedos permiten recorrer el historial. Esta terminal tiene acceso root local: úsala únicamente en un dispositivo bajo tu control. Es independiente del concepto futuro RAFAS.
+
 ## Workspace de OpenClaw
 
 El directorio [`openclaw/workspace`](openclaw/workspace) contiene la base pública del contexto de ATLAS.
@@ -67,6 +88,7 @@ El directorio [`openclaw/workspace`](openclaw/workspace) contiene la base públi
 - `AGENTS.md`, `IDENTITY.md` y `SOUL.md` conservan el comportamiento e identidad definidos para ATLAS.
 - `USER.md`, `MEMORY.md`, `TDR.md`, `ENVIRONMENT.md` y `HEARTBEAT.md` se distribuyen como templates sin datos personales.
 - `TOOLS.md` sirve como guía local para documentar hardware, rutas y herramientas de cada instalación.
+- `VARIABLES.md` y `ADB_CONTROL.md` son templates; `atlas-commands/` contiene las instrucciones de los comandos para el agente.
 
 Los tokens, API keys, sesiones, credenciales, historiales, datos personales y configuraciones privadas no forman parte del repositorio ni de las imágenes publicadas.
 
@@ -78,10 +100,12 @@ La carpeta [`atlas-commands`](atlas-commands) contiene los comandos `atlas-*` ut
 
 ```text
 ATLAS/
+├── .atlas/                 Runtime público: WebScreen, desktop, pantalla y proyectos
 ├── assets/                 Recursos visuales y capturas
 ├── atlas-commands/         Comandos de administración de ATLAS A1
 ├── docs/                   Notas de versiones y documentación técnica
 ├── openclaw/workspace/     Identidad pública y templates de OpenClaw
+├── system/                 Helpers, servicios, terminal, HDMI y personalización
 ├── README.md               Presentación del proyecto
 └── SECURITY.md             Política de publicación segura
 ```
@@ -90,7 +114,7 @@ ATLAS/
 
 ATLAS se encuentra en desarrollo activo. La versión 1.0 establece la identidad del agente, su sistema operativo base, el Gateway de OpenClaw, el contexto persistente y las primeras herramientas de control.
 
-Las funciones de voz, pantalla táctil, audio integrado, detección de periféricos y ATLAS Roles se ampliarán y evaluarán en versiones posteriores.
+La voz, la pantalla táctil y las herramientas de recuperación están en desarrollo activo. El código de este repositorio avanza por delante de la imagen de la release 1.0: esta actualización no genera ni sustituye ninguna imagen del sistema. Consulta el [mapa de instalación y límites actuales](.atlas/README.md).
 
 ## RAFAS
 

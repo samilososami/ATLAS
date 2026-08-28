@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<openbox_config xmlns="http://openbox.org/3.4/rc"
+                xmlns:xi="http://www.w3.org/2001/XInclude">
+  <focus>
+    <focusNew>yes</focusNew>
+    <followMouse>no</followMouse>
+    <raiseOnFocus>yes</raiseOnFocus>
+  </focus>
+
+  <placement>
+    <policy>Smart</policy>
+    <center>yes</center>
+    <monitor>Primary</monitor>
+  </placement>
+
+  <theme>
+    <name>Clearlooks</name>
+    <titleLayout></titleLayout>
+    <keepBorder>no</keepBorder>
+    <animateIconify>no</animateIconify>
+  </theme>
+
+  <desktops>
+    <number>1</number>
+    <firstdesk>1</firstdesk>
+    <names><name>ATLAS Terminal</name></names>
+    <popupTime>0</popupTime>
+  </desktops>
+
+  <applications>
+    <application class="Lxterminal" name="ATLAS Root Terminal">
+      <decor>no</decor>
+    </application>
+
+    <application name="ATLAS Keyboard">
+      <decor>no</decor>
+      <focus>no</focus>
+      <layer>above</layer>
+      <position force="yes">
+        <x>center</x>
+        <y>288</y>
+        <monitor>Primary</monitor>
+      </position>
+      <size>
+        <width>1024</width>
+        <height>312</height>
+      </size>
+    </application>
+  </applications>
+</openbox_config>

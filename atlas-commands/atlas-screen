@@ -1,0 +1,226 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+LIGHTDM_SERVICE="lightdm.service"
+TERMINAL_SERVICE="atlas-screen-terminal.service"
+GETTY_SERVICE="getty@tty1.service"
+DISPLAY_ID=":0"
+XAUTHORITY_FILE="/home/atlas/.Xauthority"
+MODE_DIR="/home/atlas/.atlas/atlas-screen"
+MODE_FILE="$MODE_DIR/mode"
+
+if [ "${EUID}" -ne 0 ]; then
+  exec sudo -n "$0" "$@"
+fi
+
+if [ -t 1 ]; then
+  BOLD="$(tput bold 2>/dev/null || true)"
+  RESET="$(tput sgr0 2>/dev/null || true)"
+  CYAN="$(tput setaf 6 2>/dev/null || true)"
+else
+  BOLD=""
+  RESET=""
+  CYAN=""
+fi
+
+usage() {
+  cat >&2 <<'USAGE'
+Usage:
+  atlas-screen
+  atlas-screen on
+  atlas-screen off
+  atlas-screen --desktop
+  atlas-screen --terminal
+USAGE
+  exit 2
+}
+
+ensure_mode_store() {
+  install -d -o root -g sami -m 755 "$MODE_DIR"
+  if [ ! -f "$MODE_FILE" ]; then
+    printf 'desktop\n' > "$MODE_FILE"
+    chown root:sami "$MODE_FILE"
+    chmod 644 "$MODE_FILE"
+  fi
+}
+
+selected_mode() {
+  local mode
+  ensure_mode_store
+  mode="$(tr -d '[:space:]' < "$MODE_FILE")"
+  case "$mode" in
+    desktop|terminal) printf '%s\n' "$mode" ;;
+    *) printf 'desktop\n' ;;
+  esac
+}
+
+save_mode() {
+  local mode="$1"
+  local temporary
+  ensure_mode_store
+  temporary="$(mktemp "$MODE_DIR/.mode.XXXXXX")"
+  printf '%s\n' "$mode" > "$temporary"
+  chown root:sami "$temporary"
+  chmod 644 "$temporary"
+  mv -f "$temporary" "$MODE_FILE"
+}
+
+connector_path() {
+  local path
+  local _
+  for _ in $(seq 1 50); do
+    for path in /sys/class/drm/card*-HDMI-A-1; do
+      if [ -e "$path/status" ]; then
+        printf '%s\n' "$path"
+        return 0
+      fi
+    done
+    sleep 0.1
+  done
+  return 1
+}
+
+force_connector() {
+  local state="$1"
+  local path
+  if ! path="$(connector_path)"; then
+    echo "ATLAS could not find HDMI-A-1." >&2
+    exit 1
+  fi
+  printf '%s' "$state" > "$path/status"
+}
+
+set_framebuffer_blank() {
+  local value="$1"
+  if [ -w /sys/class/graphics/fb0/blank ]; then
+    printf '%s' "$value" > /sys/class/graphics/fb0/blank
+  fi
+}
+
+keep_boot_default_off() {
+  systemctl disable "$LIGHTDM_SERVICE" >/dev/null 2>&1 || true
+  systemctl set-default multi-user.target >/dev/null 2>&1
+}
+
+start_desktop() {
+  systemctl stop "$TERMINAL_SERVICE" >/dev/null 2>&1 || true
+  systemctl start "$GETTY_SERVICE" >/dev/null 2>&1 || true
+  systemctl start "$LIGHTDM_SERVICE"
+
+  for _ in $(seq 1 50); do
+    if systemctl is-active --quiet "$LIGHTDM_SERVICE" && [ -e "$XAUTHORITY_FILE" ]; then
+      env DISPLAY="$DISPLAY_ID" XAUTHORITY="$XAUTHORITY_FILE" xset dpms force on >/dev/null 2>&1 || true
+      return 0
+    fi
+    sleep 0.1
+  done
+
+  echo "ATLAS could not start the physical desktop." >&2
+  exit 1
+}
+
+start_terminal() {
+  if systemctl is-active --quiet "$LIGHTDM_SERVICE"; then
+    env DISPLAY="$DISPLAY_ID" XAUTHORITY="$XAUTHORITY_FILE" xset dpms force off >/dev/null 2>&1 || true
+  fi
+  systemctl stop "$LIGHTDM_SERVICE" >/dev/null 2>&1 || true
+  systemctl stop "$GETTY_SERVICE" >/dev/null 2>&1 || true
+  systemctl restart "$TERMINAL_SERVICE"
+  chvt 1 >/dev/null 2>&1 || true
+
+  for _ in $(seq 1 30); do
+    if systemctl is-active --quiet "$TERMINAL_SERVICE"; then
+      return 0
+    fi
+    sleep 0.1
+  done
+
+  echo "ATLAS could not start the root terminal." >&2
+  exit 1
+}
+
+screen_on() {
+  local mode
+  keep_boot_default_off
+  mode="$(selected_mode)"
+  force_connector on
+  set_framebuffer_blank 0
+
+  case "$mode" in
+    desktop) start_desktop ;;
+    terminal) start_terminal ;;
+  esac
+
+  echo "ATLAS screen is on in ${mode} mode."
+}
+
+screen_off() {
+  keep_boot_default_off
+
+  if systemctl is-active --quiet "$LIGHTDM_SERVICE"; then
+    env DISPLAY="$DISPLAY_ID" XAUTHORITY="$XAUTHORITY_FILE" xset dpms force off >/dev/null 2>&1 || true
+  fi
+  systemctl stop "$LIGHTDM_SERVICE" >/dev/null 2>&1 || true
+  systemctl stop "$TERMINAL_SERVICE" >/dev/null 2>&1 || true
+  systemctl start "$GETTY_SERVICE" >/dev/null 2>&1 || true
+
+  chvt 1 >/dev/null 2>&1 || true
+  set_framebuffer_blank 4
+  force_connector off
+
+  echo "ATLAS screen is off."
+}
+
+print_status() {
+  local mode power active_surface connector connector_status connector_enabled connector_dpms
+  mode="$(selected_mode)"
+  power="off"
+  active_surface="none"
+
+  if connector="$(connector_path 2>/dev/null)"; then
+    connector_status="$(cat "$connector/status" 2>/dev/null || true)"
+    connector_enabled="$(cat "$connector/enabled" 2>/dev/null || true)"
+    connector_dpms="$(cat "$connector/dpms" 2>/dev/null || true)"
+    if [ "$connector_status" = "connected" ] && [ "$connector_enabled" = "enabled" ] && [ "$connector_dpms" = "On" ]; then
+      power="on"
+    fi
+  fi
+
+  if systemctl is-active --quiet "$LIGHTDM_SERVICE"; then
+    active_surface="desktop"
+  elif systemctl is-active --quiet "$TERMINAL_SERVICE"; then
+    active_surface="terminal"
+  elif [ "$power" = "on" ]; then
+    active_surface="console"
+  fi
+
+  printf '%s%sATLAS SCREEN%s\n' "$BOLD" "$CYAN" "$RESET"
+  printf 'Power: %s\n' "$power"
+  printf 'Selected mode: %s\n' "$mode"
+  printf 'Active surface: %s\n' "$active_surface"
+  printf 'Boot default: off\n'
+}
+
+case "$#" in
+  0)
+    print_status
+    ;;
+  1)
+    case "$1" in
+      on) screen_on ;;
+      off) screen_off ;;
+      --desktop)
+        save_mode desktop
+        echo "ATLAS screen mode selected: desktop."
+        print_status
+        ;;
+      --terminal)
+        save_mode terminal
+        echo "ATLAS screen mode selected: terminal."
+        print_status
+        ;;
+      *) usage ;;
+    esac
+    ;;
+  *) usage ;;
+esac

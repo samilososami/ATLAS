@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+export HOME=/root
+export USER=root
+export LOGNAME=root
+export SHELL=/usr/bin/zsh
+export TERM=xterm-256color
+export LANG=en_GB.UTF-8
+export LC_ALL=en_GB.UTF-8
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin
+export XDG_CONFIG_HOME=/etc/atlas
+export XDG_RUNTIME_DIR=/run/atlas-screen-terminal
+
+xset -dpms s off s noblank
+xsetroot -solid '#05070c'
+
+openbox --config-file /etc/atlas/openbox-terminal.xml >/tmp/atlas-screen-openbox.log 2>&1 &
+openbox_pid="$!"
+unclutter -idle 1 -root >/tmp/atlas-screen-unclutter.log 2>&1 &
+unclutter_pid="$!"
+
+cleanup() {
+  kill "${touch_keyboard_pid:-}" "$unclutter_pid" "$openbox_pid" 2>/dev/null || true
+  if [ -r /run/atlas-screen-terminal/keyboard.pid ]; then
+    keyboard_pid="$(cat /run/atlas-screen-terminal/keyboard.pid 2>/dev/null || true)"
+    if [ -n "$keyboard_pid" ]; then
+      kill "$keyboard_pid" 2>/dev/null || true
+    fi
+  fi
+  wait "${touch_keyboard_pid:-}" "$unclutter_pid" "$openbox_pid" 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
+lxterminal \
+  --no-remote \
+  --profile=atlas \
+  --title='ATLAS Root Terminal' \
+  --working-directory=/home/atlas \
+  --command=/usr/local/libexec/atlas-screen-zsh &
+terminal_pid="$!"
+
+window_id=""
+for _ in $(seq 1 100); do
+  window_id="$(xdotool search --onlyvisible --name 'ATLAS Root Terminal' 2>/dev/null | head -n 1 || true)"
+  if [ -n "$window_id" ]; then
+    wmctrl -i -r "$window_id" -b remove,fullscreen,maximized_vert,maximized_horz >/dev/null 2>&1 || true
+    wmctrl -i -r "$window_id" -b add,undecorated >/dev/null 2>&1 || true
+    xdotool windowmove --sync "$window_id" 0 0 >/dev/null 2>&1 || true
+    xdotool windowsize --sync "$window_id" 1024 600 >/dev/null 2>&1 || true
+    xdotool windowactivate "$window_id" >/dev/null 2>&1 || true
+    # The shell can paint its first prompt before fullscreen settles. Clear once
+    # after the final geometry so no fragments are left clinging to the edges.
+    sleep 0.25
+    xdotool key --window "$window_id" ctrl+l >/dev/null 2>&1 || true
+
+    /usr/local/libexec/atlas-screen-touch-keyboard >/tmp/atlas-screen-touch-keyboard.log 2>&1 &
+    touch_keyboard_pid="$!"
+    break
+  fi
+  sleep 0.05
+done
+
+wait "$terminal_pid"

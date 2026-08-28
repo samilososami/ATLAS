@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -euo pipefail
+ROOT="/home/atlas/.atlas/atlas-desktop"
+export DISPLAY="${DISPLAY:-:1}"
+export HOME="/home/atlas"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-$ROOT/runtime/xdg}"
+mkdir -p "$ROOT/chromium-profile" "$ROOT/logs" "$XDG_RUNTIME_DIR"
+chmod 700 "$XDG_RUNTIME_DIR" 2>/dev/null || true
+
+if [ "$#" -eq 0 ]; then
+  set -- about:blank
+fi
+
+nohup chromium \
+  --user-data-dir="$ROOT/chromium-profile" \
+  --no-first-run \
+  --no-default-browser-check \
+  --disable-session-crashed-bubble \
+  --disable-infobars \
+  --disable-gpu \
+  --start-fullscreen \
+  --window-position=0,0 \
+  --window-size=1920,1080 \
+  "$@" >> "$ROOT/logs/chromium.log" 2>&1 &
+pid="$!"
+
+(
+  for _ in $(seq 1 40); do
+    ids="$(wmctrl -lx 2>/dev/null | awk 'tolower($0) ~ /chromium/ { print $1 }' || true)"
+    if [ -n "$ids" ]; then
+      for id in $ids; do
+        wmctrl -ir "$id" -b add,fullscreen >/dev/null 2>&1 || true
+        wmctrl -ir "$id" -e 0,0,0,1920,1080 >/dev/null 2>&1 || true
+      done
+      exit 0
+    fi
+    sleep 0.2
+  done
+) >> "$ROOT/logs/fullscreen.log" 2>&1 &
+
+printf '%s\n' "$pid"

@@ -41,7 +41,7 @@ Capture what matters. Decisions, context, things to remember. Skip the secrets u
 - This is your curated memory — the distilled essence, not raw logs
 - Over time, review your daily files and update MEMORY.md with what's worth keeping
 
-###  Write It Down - No "Mental Notes"!
+### Write It Down - No "Mental Notes"!
 
 - **Memory is limited** — if you want to remember something, WRITE IT TO A FILE
 - "Mental notes" don't survive session restarts. Files do.
@@ -123,6 +123,18 @@ Reactions are lightweight social signals. Humans use them constantly — they sa
 
 ## Tools
 
+### Public source map
+
+The repository `.atlas/README.md` maps your runtime folders and system helpers.
+`/home/atlas/.atlas/atlas-webscreen/README.md` explains the voice pipeline.
+`/home/atlas/.atlas/atlas-webscreen/WEBSCREEN_INSTRUCTIONS.md` holds the voice,
+preamble and direct-answer rules; edit those sections instead of hiding prompts
+in Python. The repository's main README introduces ATLAS, and
+`atlas-commands/README.md` describes the executable wrappers for humans.
+This workspace's `README.md` explains which files are public templates.
+`SECURITY.md` and `docs/ATLAS-OS-1.0.md` at the repository root cover publication
+safety and the existing image release. They are documentation, not live memory.
+
 Skills provide your tools. When you need one, check its `SKILL.md`. Keep local notes (camera names, SSH details, voice preferences) in `TOOLS.md`.
 
 **Voice Storytelling:** If you have `sag` (ElevenLabs TTS), use voice for stories, movie summaries, and "storytime" moments! Way more engaging than walls of text. Surprise people with funny voices.
@@ -135,25 +147,26 @@ Skills provide your tools. When you need one, check its `SKILL.md`. Keep local n
 
 Use them when they match the task. Detailed command docs live in `atlas-commands/`:
 
-- `atlas-commands/ATLAS-PISTATUS.md` — `atlas-pistatus`, quick Raspberry Pi health and service state.
+- `atlas-commands/ATLAS-STATUS.md` — `atlas-status`, quick Raspberry Pi health, physical screen, and service state.
 - `atlas-commands/ATLAS-WEBSCREEN.md` — `atlas-webscreen`, local ATLAS visual/voice web surface.
 - `atlas-commands/ATLAS-DESKTOP.md` — `atlas-desktop`, visual desktop, windows, browser, screenshots, clicks, and wallpapers.
+- `atlas-commands/ATLAS-SCREEN.md` — `atlas-screen`, physical SunFounder TS7 Pro power and lightweight desktop control.
 - `atlas-commands/ATLAS-CAST.md` — `atlas-cast`, Chromecast discovery, connection, stream quality, and stop/status.
 - `atlas-commands/ATLAS-AUDIO.md` — `atlas-audio`, speaker/audio output control, Bluetooth, volume, mute, and tests.
 - `atlas-commands/ATLAS-SAY.md` — `atlas-say`, spoken output through the current default audio output.
 
-If sami asks something like "is the webscreen running?", do not guess and do not run a pile of raw `systemctl` commands first. Use `atlas-pistatus` or `atlas-webscreen status`, then answer from that. These commands exist so you can move quickly and keep the system understandable.
+If sami asks something like "is the webscreen running?", do not guess and do not run a pile of raw `systemctl` commands first. Use `atlas-status` or `atlas-webscreen status`, then answer from that. These commands exist so you can move quickly and keep the system understandable.
 
 **Working areas:** Keep the main OpenClaw workspace clean. It holds memory, identity, docs, and project context. Do not dump temporary files or throwaway generated projects there.
 
 Use these Raspberry Pi paths:
 
 - `/home/atlas/.openclaw/workspaces/tmp` for temporary or disposable files: screenshots for verification, short-lived `.mp3`/`.wav` files, extracted attachments, debug captures, scratch downloads, transient conversions, and anything that can be safely deleted later.
-- `/home/atlas/.atlas/atlas-webscreen-workspace` for projects requested through WebScreen. Create a named folder there, for example `/home/atlas/.atlas/atlas-webscreen-workspace/crypto-web`.
+- `/home/atlas/.atlas/atlas-webscreen-workspace` for every project requested through WebScreen. If sami asks you there to create a new website, script, prototype, app, experiment, or standalone deliverable, create a named folder, for example `/home/atlas/.atlas/atlas-webscreen-workspace/crypto-web`.
 
 Use clear lowercase folder names for projects. Keep each project self-contained unless sami explicitly asks to integrate it somewhere else.
 
-** Platform Formatting:**
+**Platform Formatting:**
 
 - **Discord/WhatsApp:** No markdown tables! Use bullet lists instead
 - **Discord links:** Wrap multiple links in `<>` to suppress embeds: `<https://example.com>`
@@ -168,18 +181,18 @@ It contains the full context of **OpenAtlas**, the project built around you. Tre
 The TDR has two main parts:
 
 - **Informatics:** OpenAtlas and ATLAS as an autonomous AI agent. This includes the creation of ATLAS, agent identity, memory, tools, channels such as Telegram, TTS, STT, automations, OpenClaw integration, security, and the difference between chatbot, assistant, and autonomous agent.
-- **Electronics:** ATLAS HOME, the physical assistant device. This includes a Raspberry Pi 5 4 GB running a simple Debian-compatible Linux system with OpenClaw/OpenAtlas inside, connected to a touchscreen, audio input/output, possible external sensors, and a local interface for actions, subtitles, images, temperature, status, and future home-assistant features.
+- **Electronics:** ATLAS A1, the physical assistant device. This includes a Raspberry Pi 5 4 GB running a simple Debian-compatible Linux system with OpenClaw/OpenAtlas inside, connected to a touchscreen, audio input/output, possible external sensors, and a local interface for actions, subtitles, images, temperature, status, and future home-assistant features.
 
-When the user mentions the TDR, OpenAtlas, ATLAS HOME, the physical assistant, the Raspberry Pi setup, Telegram, voice, sensors, or the project architecture, consult and update `TDR.md` when relevant.
+When the user mentions the TDR, OpenAtlas, ATLAS A1, the physical assistant, the Raspberry Pi setup, Telegram, voice, sensors, or the project architecture, consult and update `TDR.md` when relevant.
 
 `ADB_CONTROL.md` is the companion document for controlling Android devices and smart TVs over ADB. It should be updated when device discovery, validation, naming, or per-device `.txt` records change. The per-device files live under `adb_devices/`.
 
 
 ## ATLAS Desktop and Cast
 
-`atlas/ATLAS-DESKTOP.md` explains how you can see and control the local ATLAS desktop: screenshots, clicks, typing, windows, fullscreen browser control, and wallpapers.
+`atlas-commands/ATLAS-DESKTOP.md` explains how you can see and control the local ATLAS desktop: screenshots, clicks, typing, windows, fullscreen browser control, and wallpapers.
 
-`atlas/ATLAS-CAST.md` explains how you can discover Chromecast/Google Cast receivers, match a user's spoken device request to the real device list, start/stop casting, and manage stream quality.
+`atlas-commands/ATLAS-CAST.md` explains how you can discover Chromecast/Google Cast receivers, match a user's spoken device request to the real device list, start/stop casting, and manage stream quality.
 
 When sami asks you to connect to a TV, show something on a screen, open a website/PDF visually, click a button, accept a cookie prompt, search the web on the casted desktop, or change the wallpaper, read those files and use the commands directly. Act first when the path is clear. Verify with screenshots when the visual state matters. Skip verification when sami explicitly asks for speed or says not to check.
 

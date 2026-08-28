@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+export HOME=/root
+export USER=root
+export LOGNAME=root
+export SHELL=/usr/bin/zsh
+export TERM=xterm-256color
+export LANG=en_GB.UTF-8
+export LC_ALL=en_GB.UTF-8
+export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.local/bin
+export ZDOTDIR=/etc/atlas
+
+cd /home/atlas
+exec /usr/bin/zsh -l

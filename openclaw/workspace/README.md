@@ -13,5 +13,10 @@ Este directorio contiene la base de contexto que convierte una instalación de O
 - `TDR.md`: template para el contexto académico o de investigación.
 - `ENVIRONMENT.md`: template para describir el dispositivo y sus servicios.
 - `HEARTBEAT.md`: template para comprobaciones periódicas.
+- `VARIABLES.md`: constantes no secretas de cada instalación.
+- `ADB_CONTROL.md`: template de control de dispositivos autorizados.
+- `atlas-commands/`: documentación actual de cada comando para el agente.
+
+El runtime de voz y pantalla vive en [`../../.atlas`](../../.atlas), separado de la identidad y memoria de OpenClaw.
 
 Los templates no contienen información de la instalación original. Cada usuario debe completarlos localmente y evitar subir datos privados a repositorios públicos.

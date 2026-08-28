@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="/home/atlas/.atlas/atlas-desktop"
+DISPLAY_NUM="${ATLAS_DESKTOP_DISPLAY_NUM:-1}"
+export DISPLAY=":${DISPLAY_NUM}"
+WIDTH="${ATLAS_DESKTOP_WIDTH:-1920}"
+HEIGHT="${ATLAS_DESKTOP_HEIGHT:-1080}"
+DEPTH="${ATLAS_DESKTOP_DEPTH:-24}"
+WALLPAPER="$ROOT/wallpapers/atlas-wallpaper.png"
+
+mkdir -p "$ROOT/logs" "$ROOT/runtime" "$ROOT/screenshots" "$ROOT/chromium-profile"
+export HOME="/home/atlas"
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-$ROOT/runtime/xdg}"
+mkdir -p "$XDG_RUNTIME_DIR"
+chmod 700 "$XDG_RUNTIME_DIR"
+
+apply_wallpaper() {
+  xsetroot -display "$DISPLAY" -solid '#050505' || true
+  if [ -f "$WALLPAPER" ]; then
+    feh --no-fehbg --bg-fill "$WALLPAPER" >> "$ROOT/logs/session.log" 2>&1 || true
+  fi
+}
+
+LOCK="/tmp/.X${DISPLAY_NUM}-lock"
+SOCKET="/tmp/.X11-unix/X${DISPLAY_NUM}"
+if [ -f "$LOCK" ]; then
+  old_pid="$(tr -d ' ' < "$LOCK" 2>/dev/null || true)"
+  if [ -n "$old_pid" ] && kill -0 "$old_pid" 2>/dev/null; then
+    echo "Display $DISPLAY is already in use by PID $old_pid" >&2
+    exit 1
+  fi
+  rm -f "$LOCK" "$SOCKET" 2>/dev/null || true
+fi
+
+cleanup() {
+  set +e
+  [ -n "${OPENBOX_PID:-}" ] && kill "$OPENBOX_PID" 2>/dev/null || true
+  [ -n "${UNCLUTTER_PID:-}" ] && kill "$UNCLUTTER_PID" 2>/dev/null || true
+  [ -n "${DBUS_SESSION_BUS_PID:-}" ] && kill "$DBUS_SESSION_BUS_PID" 2>/dev/null || true
+  [ -n "${XVFB_PID:-}" ] && kill "$XVFB_PID" 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
+Xvfb "$DISPLAY" -screen 0 "${WIDTH}x${HEIGHT}x${DEPTH}" -nolisten tcp -ac +extension RANDR > "$ROOT/logs/xvfb.log" 2>&1 &
+XVFB_PID="$!"
+
+for _ in $(seq 1 80); do
+  if xdpyinfo -display "$DISPLAY" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.1
+done
+
+if ! xdpyinfo -display "$DISPLAY" >/dev/null 2>&1; then
+  echo "Xvfb did not become ready on $DISPLAY" >&2
+  tail -80 "$ROOT/logs/xvfb.log" >&2 || true
+  exit 1
+fi
+
+if command -v dbus-launch >/dev/null 2>&1; then
+  eval "$(dbus-launch --sh-syntax 2>/dev/null || true)"
+fi
+
+xset -display "$DISPLAY" -dpms s off s noblank || true
+
+openbox --config-file "$ROOT/config/openbox/rc.xml" >> "$ROOT/logs/openbox.log" 2>&1 &
+OPENBOX_PID="$!"
+
+sleep 0.4
+apply_wallpaper
+(sleep 1.2; apply_wallpaper) &
+
+unclutter -display "$DISPLAY" -idle 1 -root >> "$ROOT/logs/session.log" 2>&1 &
+UNCLUTTER_PID="$!"
+
+wait "$OPENBOX_PID"
