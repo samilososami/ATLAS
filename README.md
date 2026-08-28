@@ -94,7 +94,7 @@ Las funciones de voz, pantalla táctil, audio integrado, detección de periféri
 
 ## RAFAS
 
-RAFAS es un concepto futuro del proyecto y todavía no está desarrollado. Su nombre significa ***Runtime Access For ATLAS Systems***.
+RAFAS es un concepto futuro del proyecto y todavía no está desarrollado. Su nombre significa ***Recovery Access For ATLAS Systems***.
 
 Durante el desarrollo de ATLAS A1 fueron apareciendo errores e incidencias. Habitualmente, ATLAS podía resolverlos por sí mismo o recuperarse mediante sus herramientas de auto-reparación. Sin embargo, algunos fallos afectaban al propio Gateway de OpenClaw, al provider del modelo —por ejemplo, OpenAI— o a NetworkManager. En esas situaciones, ATLAS entraba en un estado de hibernación operativa y no podía reparar el problema desde dentro.
 
