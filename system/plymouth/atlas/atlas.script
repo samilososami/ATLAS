@@ -1,0 +1,115 @@
+# ATLAS OS: the approved splash, without a browser or desktop session.
+# The 1.2-second bar is an opening animation, NOT measured system readiness.
+# Plymouth owns the lifetime; reaching the end does not delay or end boot.
+
+Window.SetBackgroundTopColor(0.004, 0.012, 0.043);
+Window.SetBackgroundBottomColor(0.004, 0.012, 0.043);
+
+art = Image("atlas-splash.png");
+shutdown_art = Image("atlas-powering-off.png");
+rail_image = Image("bar-track.png");
+fill_image = Image("bar-fill.png");
+art_sprite = Sprite();
+shutdown_art_sprite = Sprite();
+rail_sprite = Sprite();
+fill_sprite = Sprite();
+notice_sprite = Sprite();
+frame = 0;
+last_width = -1;
+screen_width = -1;
+screen_height = -1;
+prompt_active = 0;
+
+fun layout() {
+    global.screen_width = Window.GetWidth();
+    global.screen_height = Window.GetHeight();
+    global.scale = screen_width / 1024;
+    if (screen_height / 600 < scale) global.scale = screen_height / 600;
+    global.origin_x = Window.GetX() + (screen_width - 1024 * scale) / 2;
+    global.origin_y = Window.GetY() + (screen_height - 600 * scale) / 2;
+    art_sprite.SetImage(art.Scale(Math.Int(1024 * scale), Math.Int(600 * scale)));
+    art_sprite.SetPosition(origin_x, origin_y, 0);
+    shutdown_art_sprite.SetImage(shutdown_art.Scale(Math.Int(1024 * scale), Math.Int(600 * scale)));
+    shutdown_art_sprite.SetPosition(origin_x, origin_y, 0);
+    global.bar_width = Math.Int(180 * scale);
+    global.bar_height = Math.Int(4 * scale);
+    if (bar_width < 1) global.bar_width = 1;
+    if (bar_height < 1) global.bar_height = 1;
+    rail_sprite.SetImage(rail_image.Scale(bar_width, bar_height));
+    rail_sprite.SetPosition(origin_x + 422 * scale, origin_y + 546 * scale, 1);
+    fill_sprite.SetPosition(origin_x + 422 * scale, origin_y + 546 * scale, 2);
+    global.last_width = -1;
+}
+
+fun refresh() {
+    if (Window.GetWidth() != screen_width || Window.GetHeight() != screen_height) layout();
+    # The script renderer runs at 50 Hz. 60 frames = approximately 1.2 seconds.
+    if (frame < 60) global.frame++;
+    fraction = (1 - Math.Cos(3.141592653589793 * frame / 60)) / 2;
+    width = Math.Int(bar_width * fraction);
+    if (frame >= 60) width = bar_width;
+    if (width != last_width) {
+        if (width > 0) {
+            fill_sprite.SetImage(fill_image.Scale(width, bar_height));
+            fill_sprite.SetOpacity(1);
+        } else fill_sprite.SetOpacity(0);
+        global.last_width = width;
+    }
+}
+
+# Keep boot questions and failures readable. Escape still switches to details.
+fun notice(text) {
+    notice_sprite.SetImage(Image.Text(text, 1, 1, 1));
+    notice_sprite.SetPosition(Window.GetX() + 16, Window.GetY() + 16, 1000);
+    notice_sprite.SetOpacity(1);
+}
+
+fun normal() {
+    global.prompt_active = 0;
+    notice_sprite.SetOpacity(0);
+}
+
+fun password(prompt, bullets) {
+    global.prompt_active = 1;
+    text = prompt + "  ";
+    for (index = 0; index < bullets; index++) text += "*";
+    notice(text);
+}
+
+fun question(prompt, answer) {
+    global.prompt_active = 1;
+    notice(prompt + "  " + answer);
+}
+
+fun message(text) {
+    if (!prompt_active) notice(text);
+}
+
+fun hide_message(text) {
+    if (!prompt_active) notice_sprite.SetOpacity(0);
+}
+
+layout();
+shutdown_art_sprite.SetOpacity(0);
+fill_sprite.SetOpacity(0);
+notice_sprite.SetOpacity(0);
+if (Plymouth.GetMode() == "boot") {
+    Plymouth.SetRefreshRate(50);
+    Plymouth.SetRefreshFunction(refresh);
+} else if (Plymouth.GetMode() == "shutdown" || Plymouth.GetMode() == "reboot") {
+    art_sprite.SetOpacity(0);
+    rail_sprite.SetOpacity(0);
+    fill_sprite.SetOpacity(0);
+    shutdown_art_sprite.SetOpacity(1);
+} else {
+    # Unknown modes stay blank rather than borrowing boot or farewell artwork.
+    art_sprite.SetOpacity(0);
+    shutdown_art_sprite.SetOpacity(0);
+    rail_sprite.SetOpacity(0);
+    fill_sprite.SetOpacity(0);
+}
+Plymouth.SetDisplayNormalFunction(normal);
+Plymouth.SetDisplayPasswordFunction(password);
+Plymouth.SetDisplayQuestionFunction(question);
+Plymouth.SetDisplayMessageFunction(message);
+Plymouth.SetHideMessageFunction(hide_message);

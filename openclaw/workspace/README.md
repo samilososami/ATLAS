@@ -14,7 +14,8 @@ Este directorio contiene la base de contexto que convierte una instalación de O
 - `ENVIRONMENT.md`: template para describir el dispositivo y sus servicios.
 - `HEARTBEAT.md`: template para comprobaciones periódicas.
 - `VARIABLES.md`: constantes no secretas de cada instalación.
-- `ADB_CONTROL.md`: template de control de dispositivos autorizados.
+- `ADB.md`: reglas de conexión, inventario automático y control de dispositivos Android autorizados.
+- `NMAP.md`: descubrimiento acotado de red y uso del informe privado automático.
 - `atlas-commands/`: documentación actual de cada comando para el agente.
 
 El runtime de voz y pantalla vive en [`../../.atlas`](../../.atlas), separado de la identidad y memoria de OpenClaw.

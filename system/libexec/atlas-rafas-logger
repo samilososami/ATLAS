@@ -1,0 +1,234 @@
+#!/bin/bash
+
+set -u
+umask 0027
+
+state_dir=${ATLAS_RAFAS_STATE_DIR:-/home/atlas/.atlas/atlas-rafas}
+log_dir="$state_dir/logs"
+power_log="$log_dir/power.log"
+rafas_log="$log_dir/rafas.log"
+marker="$state_dir/boot-active.state"
+last_clean="$state_dir/last-clean-shutdown.state"
+lock_file="$state_dir/logger.lock"
+owner=${ATLAS_RAFAS_OWNER:-root}
+group=${ATLAS_RAFAS_GROUP:-sami}
+boot_id_file=${ATLAS_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}
+poll_seconds=${ATLAS_POWER_POLL_SECONDS:-15}
+
+if ! getent group "$group" >/dev/null 2>&1; then
+  group=root
+fi
+
+ensure_layout() {
+  install -d -o "$owner" -g "$group" -m 0750 "$state_dir" "$log_dir"
+  touch "$power_log" "$rafas_log" "$lock_file"
+  chown "$owner:$group" "$power_log" "$rafas_log" "$lock_file"
+  chmod 0640 "$power_log" "$rafas_log" "$lock_file"
+}
+
+timestamp() {
+  date --iso-8601=seconds
+}
+
+boot_id() {
+  tr -d '\n' < "$boot_id_file" 2>/dev/null || printf unknown
+}
+
+marker_field() {
+  local field=$1
+  sed -n "s/^${field}=//p" "$marker" 2>/dev/null | head -n 1
+}
+
+write_marker() {
+  local current_id=$1 state=$2 temporary
+  temporary="$state_dir/.boot-active.state.$$"
+  {
+    printf 'BOOT_ID=%s\n' "$current_id"
+    printf 'STATE=%s\n' "$state"
+    printf 'UPDATED_AT=%s\n' "$(timestamp)"
+  } > "$temporary"
+  chown "$owner:$group" "$temporary"
+  chmod 0640 "$temporary"
+  mv -f "$temporary" "$marker"
+}
+
+append_log() {
+  local destination=$1 event=$2
+  shift 2
+  (
+    flock -x 9
+    printf '%s event=%s boot_id=%s' "$(timestamp)" "$event" "$(boot_id)"
+    if (($#)); then
+      printf ' %s' "$@"
+    fi
+    printf '\n'
+  ) 9>>"$lock_file" >>"$destination"
+}
+
+throttled_raw() {
+  if [[ -n ${ATLAS_THROTTLED_STATE:-} ]]; then
+    printf '%s\n' "$ATLAS_THROTTLED_STATE"
+  elif command -v vcgencmd >/dev/null 2>&1; then
+    vcgencmd get_throttled 2>/dev/null | sed -n 's/^throttled=//p'
+  else
+    printf unavailable
+  fi
+}
+
+decode_throttled() {
+  local raw=$1 value
+  local -a flags=()
+  if [[ ! $raw =~ ^0x[0-9a-fA-F]+$ ]]; then
+    printf unavailable
+    return
+  fi
+  value=$((raw))
+  ((value & (1 << 0))) && flags+=(undervoltage_now)
+  ((value & (1 << 1))) && flags+=(frequency_capped_now)
+  ((value & (1 << 2))) && flags+=(throttled_now)
+  ((value & (1 << 3))) && flags+=(temperature_limit_now)
+  ((value & (1 << 16))) && flags+=(undervoltage_seen)
+  ((value & (1 << 17))) && flags+=(frequency_cap_seen)
+  ((value & (1 << 18))) && flags+=(throttling_seen)
+  ((value & (1 << 19))) && flags+=(temperature_limit_seen)
+  if ((${#flags[@]} == 0)); then
+    printf healthy
+  else
+    local joined
+    joined=$(IFS=,; printf '%s' "${flags[*]}")
+    printf '%s' "$joined"
+  fi
+}
+
+sample_power() {
+  local raw decoded
+  raw=$(throttled_raw)
+  decoded=$(decode_throttled "$raw")
+  printf '%s|%s\n' "$raw" "$decoded"
+}
+
+record_boot() {
+  ensure_layout
+  local current_id previous_id previous_state raw decoded
+  current_id=$(boot_id)
+  previous_id=$(marker_field BOOT_ID)
+  previous_state=$(marker_field STATE)
+
+  if [[ -n $previous_id && $previous_id == "$current_id" ]]; then
+    append_log "$power_log" MONITOR_RESTARTED "previous_state=${previous_state:-unknown}"
+  elif [[ -n $previous_id && $previous_state == active ]]; then
+    append_log "$power_log" UNCLEAN_PREVIOUS_SHUTDOWN \
+      "previous_boot_id=$previous_id" \
+      'reason=power_loss_forced_reset_or_crash'
+  elif [[ -n $previous_id ]]; then
+    append_log "$power_log" PREVIOUS_SHUTDOWN_UNKNOWN \
+      "previous_boot_id=$previous_id" \
+      "reason=monitor_was_${previous_state:-inactive}"
+  elif [[ -f $last_clean ]]; then
+    append_log "$power_log" MONITOR_STARTED 'previous=clean_shutdown'
+  else
+    append_log "$power_log" MONITOR_STARTED 'previous=unknown_first_observation'
+  fi
+
+  write_marker "$current_id" active
+  IFS='|' read -r raw decoded < <(sample_power)
+  append_log "$power_log" POWER_STATE "throttled=$raw" "status=$decoded"
+}
+
+system_state() {
+  if [[ -n ${ATLAS_SYSTEM_STATE:-} ]]; then
+    printf '%s\n' "$ATLAS_SYSTEM_STATE"
+  else
+    timeout 2 systemctl is-system-running 2>/dev/null || true
+  fi
+}
+
+shutdown_kind() {
+  if [[ -n ${ATLAS_SHUTDOWN_KIND:-} ]]; then
+    printf '%s\n' "$ATLAS_SHUTDOWN_KIND"
+    return
+  fi
+  local jobs
+  jobs=$(timeout 2 systemctl list-jobs --no-legend 2>/dev/null || true)
+  if grep -q 'reboot.target' <<<"$jobs"; then
+    printf reboot
+  elif grep -q 'poweroff.target' <<<"$jobs"; then
+    printf poweroff
+  elif grep -q 'halt.target' <<<"$jobs"; then
+    printf halt
+  else
+    printf orderly_stop
+  fi
+}
+
+record_stop() {
+  ensure_layout
+  local current_id state kind raw decoded temporary
+  current_id=$(boot_id)
+  state=$(system_state)
+  if [[ $state == stopping ]]; then
+    kind=$(shutdown_kind)
+    IFS='|' read -r raw decoded < <(sample_power)
+    append_log "$power_log" CLEAN_SHUTDOWN "kind=$kind" \
+      "throttled=$raw" "status=$decoded"
+    temporary="$state_dir/.last-clean-shutdown.state.$$"
+    {
+      printf 'BOOT_ID=%s\n' "$current_id"
+      printf 'STOPPED_AT=%s\n' "$(timestamp)"
+      printf 'KIND=%s\n' "$kind"
+    } > "$temporary"
+    chown "$owner:$group" "$temporary"
+    chmod 0640 "$temporary"
+    mv -f "$temporary" "$last_clean"
+    rm -f "$marker"
+  else
+    append_log "$power_log" MONITOR_STOPPED "system_state=${state:-unknown}"
+    write_marker "$current_id" monitor_stopped
+  fi
+}
+
+monitor_loop() {
+  local last_sample current_sample
+  record_boot
+  last_sample=$(sample_power)
+  trap 'record_stop; exit 0' TERM INT
+  while sleep "$poll_seconds"; do
+    current_sample=$(sample_power)
+    if [[ $current_sample != "$last_sample" ]]; then
+      local raw decoded
+      IFS='|' read -r raw decoded <<<"$current_sample"
+      append_log "$power_log" POWER_STATE_CHANGED "throttled=$raw" "status=$decoded"
+      last_sample=$current_sample
+    fi
+  done
+}
+
+case ${1:-} in
+  run) monitor_loop ;;
+  boot) record_boot ;;
+  stop) record_stop ;;
+  power-sample)
+    ensure_layout
+    IFS='|' read -r raw decoded < <(sample_power)
+    append_log "$power_log" POWER_STATE "throttled=$raw" "status=$decoded"
+    ;;
+  rafas-open)
+    ensure_layout
+    append_log "$rafas_log" RAFAS_OPEN 'tty=tty8' 'user=root'
+    ;;
+  rafas-close)
+    ensure_layout
+    append_log "$rafas_log" RAFAS_CLOSE \
+      "service_result=${SERVICE_RESULT:-unknown}" \
+      "exit_code=${EXIT_CODE:-unknown}" \
+      "exit_status=${EXIT_STATUS:-unknown}"
+    ;;
+  rafas-request)
+    ensure_layout
+    append_log "$rafas_log" RAFAS_REQUEST "source=${2:-unknown}"
+    ;;
+  *)
+    printf 'Usage: %s {run|boot|stop|power-sample|rafas-open|rafas-close|rafas-request SOURCE}\n' "$0" >&2
+    exit 2
+    ;;
+esac

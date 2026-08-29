@@ -4,5 +4,6 @@ StartLimitIntervalSec=0
 
 [Service]
 Type=oneshot
-ExecStart=/usr/local/bin/atlas-screen --rafas --on
+ExecStartPre=/usr/local/libexec/atlas-rafas-logger rafas-request hotkey
+ExecStart=/usr/local/bin/atlas-screen --rafas
 TimeoutStartSec=25

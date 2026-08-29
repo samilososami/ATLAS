@@ -1,0 +1,62 @@
+#!/usr/bin/env python3
+"""Detect newly attached ADB devices, including USB transports."""
+
+from __future__ import annotations
+
+import os
+import pwd
+import subprocess
+import tempfile
+from pathlib import Path
+
+
+REAL_ADB = "/usr/bin/adb"
+INVENTORY = "/usr/local/libexec/atlas-adb-inventory"
+ROOT = Path(os.environ.get("ATLAS_ADB_ROOT", "/home/atlas/.atlas/atlas-adb"))
+STATE = ROOT / ".connected-devices"
+
+
+def connected_devices() -> set[str]:
+    completed = subprocess.run(
+        [REAL_ADB, "devices"], check=False, capture_output=True, text=True, timeout=10
+    )
+    devices: set[str] = set()
+    for line in completed.stdout.replace("\r", "").splitlines()[1:]:
+        serial, separator, state = line.partition("\t")
+        if separator and state.strip() == "device":
+            devices.add(serial.strip())
+    return devices
+
+
+def previous_devices() -> set[str]:
+    try:
+        return {line.strip() for line in STATE.read_text(encoding="utf-8").splitlines() if line.strip()}
+    except OSError:
+        return set()
+
+
+def save_state(devices: set[str]) -> None:
+    ROOT.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=ROOT, delete=False) as stream:
+        stream.write("\n".join(sorted(devices)) + ("\n" if devices else ""))
+        temporary = Path(stream.name)
+    os.chmod(temporary, 0o640)
+    if os.geteuid() == 0:
+        try:
+            account = pwd.getpwnam("sami")
+            os.chown(temporary, account.pw_uid, account.pw_gid)
+        except KeyError:
+            pass
+    os.replace(temporary, STATE)
+
+
+def main() -> int:
+    current = connected_devices()
+    for serial in sorted(current - previous_devices()):
+        subprocess.run([INVENTORY, serial], check=False, timeout=45)
+    save_state(current)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

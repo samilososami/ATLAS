@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -uo pipefail
+
+REAL_ADB=/usr/bin/adb
+INVENTORY=/usr/local/libexec/atlas-adb-inventory
+MONITOR=/usr/local/libexec/atlas-adb-monitor
+
+if [ ! -x "$REAL_ADB" ]; then
+  echo "adb: /usr/bin/adb is not installed" >&2
+  exit 127
+fi
+
+"$REAL_ADB" "$@"
+status=$?
+
+if [ "$status" -eq 0 ] && [ -x "$INVENTORY" ]; then
+  case "${1:-}" in
+    connect)
+      if [ -n "${2:-}" ]; then
+        nohup "$INVENTORY" "${2}" >/dev/null 2>&1 &
+      fi
+      ;;
+    devices)
+      if [ -x "$MONITOR" ]; then
+        nohup "$MONITOR" >/dev/null 2>&1 &
+      fi
+      ;;
+  esac
+fi
+
+exit "$status"

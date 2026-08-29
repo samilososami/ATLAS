@@ -56,7 +56,7 @@ Las API keys y los Voice IDs privados no están incluidos en este repositorio. D
 
 ## `atlas-screen`
 
-Controla la pantalla física SunFounder TS7 Pro, no el escritorio virtual de `atlas-desktop`. Sin argumentos muestra encendido, modo seleccionado y superficie activa. El arranque por defecto permanece apagado.
+Controla la pantalla física SunFounder TS7 Pro, no el escritorio virtual de `atlas-desktop`. Sin argumentos muestra encendido, modo seleccionado, superficie activa y configuración del arranque.
 
 ```bash
 atlas-screen
@@ -64,16 +64,20 @@ atlas-screen --terminal
 atlas-screen on
 atlas-screen off
 atlas-screen --desktop
-atlas-screen --atlas --on
-atlas-screen --desktop --on
-atlas-screen --rafas --on
+atlas-screen --atlas
+atlas-screen --rafas
+atlas-screen enable --atlas
+atlas-screen enable --last
+atlas-screen disable
 ```
 
 El modo terminal abre una shell root Zsh con autocompletado, highlighting, zoom y ATLAS TOUCH TYPE. Doble toque abre el teclado; un toque lo cierra; dos dedos desplazan el historial. El zoom cambia los caracteres y reajusta las líneas sin redimensionar la ventana. Requiere las configuraciones de [`system`](../system) y los helpers de [`misc/atlas-touch-type`](../misc/atlas-touch-type).
 
 El modo `--rafas` abre la consola nativa de recuperación, blanca y sin entorno gráfico, como root en `/home/atlas`. También se activa manteniendo Ctrl y pulsando W, O, W en un teclado USB. Está disponible incluso con la pantalla apagada, pero sigue necesitando un kernel y hardware funcionales. Esta versión no pide contraseña local. [Funcionamiento y límites](../misc/rafas/README.md).
 
-El modo `--atlas` abre WebScreen en Google Chrome kiosko sobre `localhost:5000`, como usuario normal y con sandbox. El cursor solo aparece cuando hay un ratón USB/Bluetooth conectado. Las opciones de modo y encendido se pueden combinar en cualquier orden; los modos por sí solos no encienden la pantalla. El kiosko no sustituye la autenticación ni protege contra acceso físico al equipo.
+El modo `--atlas` abre WebScreen en Google Chrome kiosko sobre `localhost:5000`, como usuario normal y con sandbox. El cursor solo aparece cuando hay un ratón USB/Bluetooth conectado. Cada modo cambia la pantalla inmediatamente; `on` abre el último seleccionado y `off` apaga la salida. Se pueden combinar, por ejemplo `--atlas on`; ya no se usan `--on` ni `--off`. El kiosko no sustituye la autenticación ni protege contra acceso físico al equipo.
+
+`enable --atlas`, `--desktop`, `--terminal` o `--rafas` configura un modo fijo de arranque. `enable --last` usa el último modo seleccionado antes de apagar el sistema. `enable` sin modo recupera la elección guardada y `disable` vuelve al arranque con pantalla apagada. Activar o desactivar esta política no interrumpe la pantalla actual.
 
 ## `atlas-webscreen`
 

@@ -30,4 +30,4 @@ TTYVTDisallocate=yes
 UtmpIdentifier=tty1
 UtmpMode=user
 
-# Deliberately no Install section: the display always boots off.
+# Activated by atlas-screen, including its optional boot-on policy.

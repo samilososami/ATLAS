@@ -1,6 +1,7 @@
 [Unit]
 Description=Keep the ATLAS physical screen off after boot
 After=systemd-user-sessions.service getty@tty1.service
+Conflicts=atlas-screen-boot-on.service
 
 [Service]
 Type=oneshot

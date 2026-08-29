@@ -1,0 +1,28 @@
+#!/bin/bash
+
+set -u
+
+screen_is_on() {
+  local connector status enabled dpms
+  for connector in /sys/class/drm/card*-HDMI-A-1; do
+    [[ -r $connector/status ]] || continue
+    status=$(<"$connector/status")
+    enabled=$(cat "$connector/enabled" 2>/dev/null || true)
+    dpms=$(cat "$connector/dpms" 2>/dev/null || true)
+    if [[ $status == connected && $enabled == enabled && $dpms == On ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+if [[ ${1:-} == screen-is-on ]]; then
+  screen_is_on
+  exit $?
+fi
+
+/usr/bin/plymouth show-splash || true
+
+# This delay belongs to the shutdown unit's ExecStartPost, so systemd cannot
+# reach the final power-off operation before the artwork has had its moment.
+/usr/bin/sleep 1.5

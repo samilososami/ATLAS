@@ -1,0 +1,3 @@
+logs/
+*.state
+logger.lock

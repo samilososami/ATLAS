@@ -1,0 +1,13 @@
+[Unit]
+Description=Refresh the ATLAS network report every ten minutes
+
+[Timer]
+OnBootSec=2m
+OnUnitActiveSec=10m
+AccuracySec=30s
+RandomizedDelaySec=20s
+Persistent=true
+Unit=atlas-nmap-report.service
+
+[Install]
+WantedBy=timers.target

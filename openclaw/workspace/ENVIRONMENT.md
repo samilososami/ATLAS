@@ -9,7 +9,6 @@ Documenta aquí el entorno físico y de software de la instalación.
 - Display:
 - Audio:
 - Microphone:
-- Sensors:
 
 ## Operating System
 

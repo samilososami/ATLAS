@@ -1,6 +1,6 @@
 [Unit]
 Description=RAFAS USB recovery hotkey (event-driven)
-After=local-fs.target systemd-udevd.service atlas-screen-boot-off.service
+After=local-fs.target systemd-udevd.service atlas-screen-boot-off.service atlas-screen-boot-on.service
 StartLimitIntervalSec=0
 
 [Service]

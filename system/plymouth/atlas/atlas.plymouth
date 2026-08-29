@@ -1,0 +1,8 @@
+[Plymouth Theme]
+Name=ATLAS OS
+Description=ATLAS boot artwork with a single 1.2-second fill animation.
+ModuleName=script
+
+[script]
+ImageDir=/usr/share/plymouth/themes/atlas
+ScriptFile=/usr/share/plymouth/themes/atlas/atlas.script

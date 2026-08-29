@@ -9,7 +9,9 @@ Type=simple
 User=root
 WorkingDirectory=/home/atlas
 Environment=TERM=linux
+ExecStartPre=/usr/local/libexec/atlas-rafas-logger rafas-open
 ExecStart=/usr/local/libexec/atlas-rafas-console
+ExecStopPost=/usr/local/libexec/atlas-rafas-logger rafas-close
 Restart=always
 RestartSec=1
 TimeoutStopSec=3

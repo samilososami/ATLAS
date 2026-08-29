@@ -77,7 +77,7 @@ La voz Realtime y el agente de herramientas son dos capas del mismo ATLAS, no do
 
 ### Pantalla y terminal local
 
-`atlas-screen` muestra el estado y permite elegir `--desktop`, `--terminal`, `--atlas` o `--rafas`. `on` abre el modo seleccionado y `off` apaga la salida; la pantalla permanece apagada por defecto al reiniciar. Las opciones se pueden combinar: `atlas-screen --atlas --on` abre WebScreen en Google Chrome kiosko sobre localhost, conservando el acceso por red. El cursor se oculta cuando no hay un ratón USB/Bluetooth conectado.
+`atlas-screen` muestra el estado y cambia inmediatamente entre `--desktop`, `--terminal`, `--atlas` y `--rafas`. `on` abre el modo seleccionado y `off` apaga la salida, sin guiones. `atlas-screen enable --atlas` fija ATLAS para el arranque; también admite los otros modos. `enable --last` recupera el último modo seleccionado antes de apagar el sistema y `disable` vuelve al arranque con pantalla apagada. `atlas-screen --atlas` abre WebScreen en Google Chrome kiosko sobre localhost, conservando el acceso por red. El cursor se oculta cuando no hay un ratón USB/Bluetooth conectado.
 
 La terminal usa Zsh con autocompletado, highlighting y **ATLAS TOUCH TYPE**, el teclado táctil oscuro. Un doble toque abre el teclado sin tapar la zona de escritura; un toque lo cierra y dos dedos permiten recorrer el historial. El zoom cambia la letra y reajusta las líneas sin cambiar la ventana. Esta terminal tiene acceso root local: úsala únicamente en un dispositivo bajo tu control. RAFAS es su alternativa de recuperación sin entorno gráfico.
 
@@ -88,7 +88,13 @@ El directorio [`openclaw/workspace`](openclaw/workspace) contiene la base públi
 - `AGENTS.md`, `IDENTITY.md` y `SOUL.md` conservan el comportamiento e identidad definidos para ATLAS.
 - `USER.md`, `MEMORY.md`, `TDR.md`, `ENVIRONMENT.md` y `HEARTBEAT.md` se distribuyen como templates sin datos personales.
 - `TOOLS.md` sirve como guía local para documentar hardware, rutas y herramientas de cada instalación.
-- `VARIABLES.md` y `ADB_CONTROL.md` son templates; `atlas-commands/` contiene las instrucciones de los comandos para el agente.
+- `VARIABLES.md`, `ADB.md` y `NMAP.md` son templates; `atlas-commands/` contiene las instrucciones de los comandos para el agente.
+
+### Dispositivos Android y red local
+
+ATLAS puede utilizar ADB para conectarse a teléfonos, televisores y otros dispositivos Android autorizados. Un wrapper transparente conserva el comando `adb` habitual y, después de una conexión correcta, crea en segundo plano una ficha privada y reproducible con la identidad, versión de Android, codename, build, pantalla, batería y almacenamiento del dispositivo. Las reconexiones actualizan la ficha identificada por MAC en vez de duplicarla.
+
+Un temporizador independiente mantiene cada diez minutos un informe privado de los hosts activos y de los servicios TCP más comunes de la red local. ATLAS consulta primero ese informe para responder preguntas rápidas o localizar una IP. Los escaneos completos de todos los puertos se reservan para un objetivo privado concreto y una petición que realmente los necesite.
 
 Los tokens, API keys, sesiones, credenciales, historiales, datos personales y configuraciones privadas no forman parte del repositorio ni de las imágenes publicadas.
 
@@ -108,7 +114,7 @@ ATLAS/
 ├── docs/                   Notas de versiones y documentación técnica
 ├── misc/                   ATLAS TOUCH TYPE, RAFAS y herramientas misceláneas
 ├── openclaw/workspace/     Identidad pública y templates de OpenClaw
-├── system/                 Helpers, servicios, terminal, HDMI y personalización
+├── system/                 Helpers, servicios, ADB, Nmap, terminal, HDMI y personalización
 ├── README.md               Presentación del proyecto
 └── SECURITY.md             Política de publicación segura
 ```
@@ -127,7 +133,7 @@ Durante el desarrollo de ATLAS A1 fueron apareciendo errores e incidencias. Habi
 
 Hasta entonces, la alternativa era conectarse por SSH a la terminal de ATLAS OS y resolverlo manualmente. Esto se volvía especialmente complicado si el fallo estaba relacionado con la conectividad: si la Raspberry Pi no conseguía conectarse a Internet, tampoco era posible acceder a ella por red.
 
-Con la incorporación de la pantalla al ATLAS A1 surgió RAFAS. Con un teclado USB, mantén Ctrl y pulsa W, O, W. La pantalla se enciende y muestra el logo de ATLAS y el título R.A.F.A.S. en blanco, junto a una shell root en `/home/atlas`. También se abre con `atlas-screen --rafas --on`. Funciona desde los modos apagado, desktop, terminal o Atlas; no necesita Chrome ni Xorg.
+Con la incorporación de la pantalla al ATLAS A1 surgió RAFAS. Con un teclado USB, mantén Ctrl y pulsa W, O, W. La pantalla se enciende y muestra el logo de ATLAS y el título R.A.F.A.S. en blanco, junto a una shell root en `/home/atlas`. También se abre con `atlas-screen --rafas`. Funciona desde los modos apagado, desktop, terminal o Atlas; no necesita Chrome ni Xorg.
 
 Un pequeño servicio espera eventos del teclado, sin sondeo periódico ni registro de pulsaciones. Se inicia con el sistema y se reinicia si falla. No es un sistema operativo alternativo: necesita que Linux, systemd, el teclado y la pantalla sigan funcionando.
 

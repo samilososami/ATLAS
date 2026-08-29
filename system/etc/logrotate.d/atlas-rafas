@@ -1,0 +1,10 @@
+/home/atlas/.atlas/atlas-rafas/logs/*.log {
+    weekly
+    rotate 8
+    compress
+    delaycompress
+    missingok
+    notifempty
+    su root sami
+    create 0640 root sami
+}

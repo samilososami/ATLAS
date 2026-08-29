@@ -15,9 +15,33 @@ It reports:
 - whether the physical display is on or off
 - the selected mode for the next `on`
 - the surface currently using the display
-- the fixed boot default, which is always off
+- the boot policy: off, a fixed mode, or the last selected mode
 
-The screen stays off after every reboot. Waking it is an explicit decision, not a sunrise it invents for itself.
+Automatic startup is an explicit decision, not a sunrise you invent for yourself.
+Use `enable` or `disable` to change it; ordinary power and mode changes leave it alone.
+
+## Automatic startup
+
+```bash
+atlas-screen enable --atlas
+atlas-screen enable --desktop
+atlas-screen enable --terminal
+atlas-screen enable --rafas
+atlas-screen enable --last
+atlas-screen disable
+```
+
+A named mode fixes the next boots to that mode. `--last` instead follows
+whichever mode was most recently selected before shutdown; `off` does not erase
+that selection. `enable` without a mode reuses the saved boot choice, or `last`
+if none exists. These commands only configure startup, without interrupting the
+current screen. To change the screen now, use a mode flag directly.
+
+The separate files `/home/atlas/.atlas/atlas-screen/mode` and `boot-mode` hold
+the runtime selection and startup choice. `atlas-screen-boot-on.service` opens
+the configured surface after Plymouth; `disable` enables the existing
+`atlas-screen-boot-off.service` instead. Do not enable the four surface services
+independently. There is one steering wheel, not four drivers.
 
 ## Power
 
@@ -38,14 +62,18 @@ atlas-screen off
 ## ATLAS mode
 
 ```bash
-atlas-screen --atlas --on
+atlas-screen --atlas
 ```
 
 This opens `http://localhost:5000/?kiosk=1` in fullscreen Google Chrome on the physical screen. No desktop is hiding underneath. Google Chrome runs as `sami`, with its sandbox enabled and its own private profile under `/home/atlas/.atlas/atlas-screen/chrome-profile`.
 
 Use the official `google-chrome-stable` ARM64 package. The launcher calls that binary directly; the system policy lives at `/etc/opt/chrome/policies/managed/atlas-webscreen.json`. Keep the profile private and out of the public repository. Your browser luggage is not release material.
 
-Mode and power options can be combined in either order: `--desktop --on`, `--terminal --on`, or `--atlas --off`. Plain `on` and `off` still work. A mode on its own only selects what should appear next; it does not wake the screen. Conflicting options are rejected before anything changes.
+A mode on its own switches immediately and wakes the display if needed.
+Mode and power can still be combined in either order: `--desktop on`,
+`on --terminal`, or `--atlas off` to select ATLAS and leave the screen off.
+Use plain `on` and `off`; `--on` and `--off` are no longer accepted.
+Conflicting options are rejected before anything changes.
 
 The cursor is hidden for touch-only use. Connecting a USB or Bluetooth mouse makes it visible; unplugging the mouse hides it again. A wireless receiver that advertises a mouse counts as a connected mouse, even if its companion is asleep.
 
@@ -62,7 +90,7 @@ Browser TTS uses Speech Dispatcher with the installed eSpeak NG voices on this L
 
 ## RAFAS recovery mode
 
-`atlas-screen --rafas --on` opens the native monochrome recovery console on `tty8`.
+`atlas-screen --rafas` opens the native monochrome recovery console on `tty8`.
 It does not need a graphical session. Hold Ctrl and tap W, O, W on a USB keyboard
 to open it from any display mode, including off. See `ATLAS-RAFAS.md` for the
 service model and the deliberate local-root access without a password.
@@ -76,7 +104,6 @@ Select the lightweight LXDE desktop:
 
 ```bash
 atlas-screen --desktop
-atlas-screen on
 ```
 
 This starts LightDM and LXDE on the physical X11 display `:0` at `1024x600`. The ATLAS wallpaper comes from the shared desktop wallpaper directory.
@@ -87,7 +114,6 @@ Select the local recovery terminal:
 
 ```bash
 atlas-screen --terminal
-atlas-screen on
 ```
 
 This opens a single fullscreen LXTerminal on the physical X11 display `:0`. There is no panel, wallpaper, or desktop underneath it: just the recovery shell and its sharp little teeth.

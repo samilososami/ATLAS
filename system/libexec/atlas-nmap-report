@@ -1,0 +1,260 @@
+#!/usr/bin/env python3
+"""Refresh ATLAS' private LAN inventory using bounded Nmap probes."""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import fcntl
+import ipaddress
+import json
+import os
+import pwd
+import re
+import subprocess
+import sys
+import tempfile
+import xml.etree.ElementTree as ET
+from pathlib import Path
+
+
+ROOT = Path(os.environ.get("ATLAS_NMAP_ROOT", "/home/atlas/.atlas/atlas-nmap"))
+REPORT = ROOT / "REPORT.md"
+LOCK = ROOT / ".scan.lock"
+NMAP = "/usr/bin/nmap"
+IP = "/usr/sbin/ip"
+
+
+def run(arguments: list[str], timeout: float) -> str:
+    completed = subprocess.run(
+        arguments, check=False, capture_output=True, text=True, timeout=timeout
+    )
+    if completed.returncode != 0:
+        message = completed.stderr.strip() or completed.stdout.strip() or f"exit {completed.returncode}"
+        raise RuntimeError(message[:800])
+    return completed.stdout
+
+
+def local_networks() -> list[str]:
+    routes = json.loads(run([IP, "-j", "-4", "route", "show", "scope", "link"], 5))
+    networks: set[str] = set()
+    for route in routes:
+        destination = route.get("dst", "")
+        device = str(route.get("dev", ""))
+        if not destination or device == "lo" or device.startswith(("docker", "br-", "veth")):
+            continue
+        try:
+            network = ipaddress.ip_network(destination, strict=False)
+        except ValueError:
+            continue
+        if not network.is_private or network.is_link_local:
+            continue
+        if network.num_addresses > 1024:
+            source = route.get("prefsrc")
+            if not source:
+                continue
+            network = ipaddress.ip_network(f"{source}/24", strict=False)
+        networks.add(str(network))
+    return sorted(networks)
+
+
+def host_records(xml_text: str) -> dict[str, dict]:
+    records: dict[str, dict] = {}
+    root = ET.fromstring(xml_text)
+    for host in root.findall("host"):
+        status = host.find("status")
+        if status is None or status.get("state") != "up":
+            continue
+        addresses = {node.get("addrtype", ""): node for node in host.findall("address")}
+        ipv4 = addresses.get("ipv4")
+        if ipv4 is None:
+            continue
+        ip = ipv4.get("addr", "")
+        mac_node = addresses.get("mac")
+        hostnames = [node.get("name", "") for node in host.findall("./hostnames/hostname") if node.get("name")]
+        ports = []
+        for port in host.findall("./ports/port"):
+            state = port.find("state")
+            if state is None or state.get("state") != "open":
+                continue
+            service = port.find("service")
+            details = []
+            if service is not None:
+                for key in ("name", "product", "version", "extrainfo"):
+                    value = service.get(key)
+                    if value and value not in details:
+                        details.append(value)
+            ports.append({
+                "port": port.get("portid", ""),
+                "protocol": port.get("protocol", ""),
+                "service": " ".join(details) or "unknown",
+            })
+        records[ip] = {
+            "ip": ip,
+            "mac": mac_node.get("addr", "") if mac_node is not None else "",
+            "vendor": mac_node.get("vendor", "") if mac_node is not None else "",
+            "hostnames": hostnames,
+            "ports": ports,
+        }
+    return records
+
+
+def merge(base: dict[str, dict], details: dict[str, dict]) -> dict[str, dict]:
+    for ip, record in details.items():
+        current = base.setdefault(ip, record)
+        for key in ("mac", "vendor"):
+            if record.get(key):
+                current[key] = record[key]
+        current["hostnames"] = sorted(set(current.get("hostnames", [])) | set(record.get("hostnames", [])))
+        if record.get("ports"):
+            current["ports"] = record["ports"]
+    return base
+
+
+def likely_device(record: dict) -> str:
+    ports = {item["port"] for item in record.get("ports", [])}
+    services = " ".join(item["service"] for item in record.get("ports", [])).lower()
+    vendor = (record.get("vendor") or "").lower()
+    # Routers often expose Samba for shared storage, so the gateway pattern
+    # must win over the otherwise useful Windows ports heuristic.
+    if "53" in ports and ({"80", "443"} & ports):
+        return "probable router or network appliance"
+    if {"135", "139", "445", "3389"} & ports or "microsoft" in services:
+        return "probable Windows system"
+    if "5555" in ports or "android" in services:
+        return "probable Android/ADB device"
+    if {"8008", "8009", "8443"} & ports and "cast" in services:
+        return "probable Cast device"
+    if "62078" in ports or "apple" in vendor:
+        return "probable Apple device"
+    if "22" in ports:
+        return "probable Unix-like system"
+    return "unclassified"
+
+
+def safe(value: str) -> str:
+    return " ".join((value or "").replace("|", "\\|").split()) or "unknown"
+
+
+def owner_ids() -> tuple[int, int] | None:
+    try:
+        account = pwd.getpwnam("sami")
+    except KeyError:
+        return None
+    return account.pw_uid, account.pw_gid
+
+
+def write_atomic(path: Path, content: str) -> None:
+    ROOT.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=ROOT, delete=False) as stream:
+        stream.write(content)
+        temporary = Path(stream.name)
+    os.chmod(temporary, 0o640)
+    ids = owner_ids()
+    if ids and os.geteuid() == 0:
+        os.chown(temporary, *ids)
+    os.replace(temporary, path)
+
+
+def render_report(networks: list[str], records: dict[str, dict], profile: str) -> str:
+    now = dt.datetime.now().astimezone().isoformat(timespec="seconds")
+    lines = [
+        "# ATLAS Network Report",
+        "",
+        "> Private runtime inventory generated automatically by Nmap. "
+        "It is overwritten on refresh and must never be committed to Git.",
+        "",
+        f"- **Generated:** {now}",
+        f"- **Networks:** {', '.join(networks)}",
+        f"- **Profile:** {profile}",
+        f"- **Active hosts:** {len(records)}",
+        "",
+        "## Hosts",
+        "",
+        "| IP | Hostname | MAC | Vendor | Likely device | Open services |",
+        "|---|---|---|---|---|---|",
+    ]
+    for ip in sorted(records, key=ipaddress.ip_address):
+        record = records[ip]
+        services = ", ".join(
+            f"{item['port']}/{item['protocol']} {item['service']}" for item in record.get("ports", [])
+        ) or "none detected in bounded scan"
+        lines.append(
+            "| " + " | ".join([
+                safe(ip),
+                safe(", ".join(record.get("hostnames", []))),
+                safe(record.get("mac", "")),
+                safe(record.get("vendor", "")),
+                safe(likely_device(record)),
+                safe(services),
+            ]) + " |"
+        )
+    lines.extend([
+        "",
+        "## Reading this report",
+        "",
+        "This is a low-impact cache for quick questions, not proof that a host is absent. "
+        "Sleeping devices and hosts that ignore discovery probes may be missing. "
+        "Use a focused manual scan when the requested device is not listed.",
+        "",
+    ])
+    return "\n".join(lines)
+
+
+def automatic_scan() -> Path:
+    networks = local_networks()
+    if not networks:
+        raise RuntimeError("No bounded private IPv4 network is currently connected")
+    discovery_xml = run(
+        [NMAP, "-sn", "-PR", "-T4", "--max-retries", "1", "--host-timeout", "5s", "-oX", "-", *networks],
+        90,
+    )
+    records = host_records(discovery_xml)
+    active_ips = sorted(records, key=ipaddress.ip_address)
+    if active_ips:
+        service_xml = run(
+            [NMAP, "-sT", "-sV", "--version-light", "--top-ports", "100", "-T4",
+             "--max-retries", "1", "--host-timeout", "20s", "-n", "-oX", "-", *active_ips],
+            240,
+        )
+        merge(records, host_records(service_xml))
+    write_atomic(REPORT, render_report(networks, records, "host discovery + top 100 TCP services"))
+    return REPORT
+
+
+def deep_scan(target: str) -> Path:
+    address = ipaddress.ip_address(target)
+    if not address.is_private:
+        raise RuntimeError("Deep scans are restricted to private IP addresses")
+    xml_text = run(
+        [NMAP, "-sT", "-sV", "--version-all", "-p-", "-T4", "--max-retries", "1",
+         "--host-timeout", "8m", "-n", "-oX", "-", str(address)],
+        540,
+    )
+    records = host_records(xml_text)
+    destination = ROOT / f"DEEP_{address}.md"
+    write_atomic(destination, render_report([f"focused target {address}"], records, "all 65535 TCP ports + version detection"))
+    return destination
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--deep", metavar="PRIVATE_IP")
+    args = parser.parse_args()
+    ROOT.mkdir(parents=True, exist_ok=True)
+    with LOCK.open("a+") as stream:
+        try:
+            fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return 0
+        try:
+            destination = deep_scan(args.deep) if args.deep else automatic_scan()
+        except (RuntimeError, subprocess.TimeoutExpired, ValueError, ET.ParseError) as error:
+            print(f"atlas-nmap-report: {error}", file=sys.stderr)
+            return 1
+    print(destination)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

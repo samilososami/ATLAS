@@ -1,0 +1,255 @@
+#!/usr/bin/env python3
+"""Create or refresh a read-only Markdown inventory for one ADB device."""
+
+from __future__ import annotations
+
+import datetime as dt
+import ipaddress
+import os
+import pwd
+import re
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+
+REAL_ADB = Path(os.environ.get("ATLAS_REAL_ADB", "/usr/bin/adb"))
+ROOT = Path(os.environ.get("ATLAS_ADB_ROOT", "/home/atlas/.atlas/atlas-adb"))
+DEVICES_DIR = ROOT / "devices"
+
+
+def run(arguments: list[str], timeout: float = 8.0) -> str:
+    try:
+        completed = subprocess.run(
+            arguments,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    if completed.returncode != 0:
+        return ""
+    return completed.stdout.replace("\r", "").strip()
+
+
+def adb(serial: str, *arguments: str, timeout: float = 8.0) -> str:
+    return run([str(REAL_ADB), "-s", serial, *arguments], timeout=timeout)
+
+
+def parse_properties(raw: str) -> dict[str, str]:
+    properties: dict[str, str] = {}
+    for line in raw.splitlines():
+        match = re.match(r"^\[([^]]+)\]: \[(.*)\]$", line.strip())
+        if match:
+            properties[match.group(1)] = match.group(2).strip()
+    return properties
+
+
+def first(*values: str) -> str:
+    return next((value.strip() for value in values if value and value.strip()), "unknown")
+
+
+def clean_filename(value: str, fallback: str) -> str:
+    value = value.strip().replace("_", "-")
+    value = re.sub(r"[^A-Za-z0-9.+-]+", "-", value).strip("-.")
+    return value[:80] or fallback
+
+
+def valid_mac(value: str) -> str:
+    match = re.search(r"\b([0-9a-fA-F]{2}(?::[0-9a-fA-F]{2}){5})\b", value or "")
+    if not match:
+        return ""
+    mac = match.group(1).upper()
+    if mac in {"00:00:00:00:00:00", "02:00:00:00:00:00", "FF:FF:FF:FF:FF:FF"}:
+        return ""
+    return mac
+
+
+def target_ip(serial: str) -> str:
+    candidate = serial.rsplit(":", 1)[0].strip("[]")
+    try:
+        return str(ipaddress.ip_address(candidate))
+    except ValueError:
+        return ""
+
+
+def neighbour_mac(serial: str) -> str:
+    ip = target_ip(serial)
+    if not ip:
+        return ""
+    return valid_mac(run(["/usr/sbin/ip", "neigh", "show", ip], timeout=2.0))
+
+
+def shell_mac(serial: str) -> tuple[str, str]:
+    raw = adb(
+        serial,
+        "shell",
+        "sh",
+        "-c",
+        "for n in wlan0 eth0; do "
+        "if [ -r /sys/class/net/$n/address ]; then "
+        "printf '%s=' $n; cat /sys/class/net/$n/address; fi; done",
+    )
+    for line in raw.splitlines():
+        interface, _, value = line.partition("=")
+        mac = valid_mac(value)
+        if mac:
+            return mac, interface.strip()
+    return "", ""
+
+
+def wait_for_device(serial: str) -> bool:
+    for _ in range(8):
+        if adb(serial, "get-state", timeout=3.0) == "device":
+            return True
+        time.sleep(0.5)
+    return False
+
+
+def infer_type(characteristics: str, model: str) -> str:
+    text = f"{characteristics} {model}".lower()
+    if "television" in text or re.search(r"\btv\b", text):
+        return "tv"
+    if "watch" in text:
+        return "watch"
+    if "automotive" in text or "car" in text:
+        return "automotive"
+    if "tablet" in text:
+        return "tablet"
+    if "phone" in text or "mobile" in text:
+        return "phone"
+    return "android-device"
+
+
+def compact(value: str) -> str:
+    return " ".join((value or "").split()) or "unknown"
+
+
+def field(lines: list[str], label: str, value: str) -> None:
+    lines.append(f"- **{label}:** {compact(value)}")
+
+
+def owner_ids() -> tuple[int, int] | None:
+    try:
+        account = pwd.getpwnam("sami")
+    except KeyError:
+        return None
+    return account.pw_uid, account.pw_gid
+
+
+def write_atomic(path: Path, content: str) -> None:
+    DEVICES_DIR.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=DEVICES_DIR, delete=False) as stream:
+        stream.write(content)
+        temporary = Path(stream.name)
+    os.chmod(temporary, 0o640)
+    ids = owner_ids()
+    if ids and os.geteuid() == 0:
+        os.chown(temporary, *ids)
+    os.replace(temporary, path)
+
+
+def inventory(serial: str) -> Path:
+    if not wait_for_device(serial):
+        raise RuntimeError(f"ADB device is not ready: {serial}")
+
+    properties = parse_properties(adb(serial, "shell", "getprop", timeout=12.0))
+    manufacturer = first(properties.get("ro.product.manufacturer", ""), properties.get("ro.product.brand", ""))
+    model = first(properties.get("ro.product.marketname", ""), properties.get("ro.config.marketing_name", ""), properties.get("ro.product.model", ""))
+    product_model = first(properties.get("ro.product.model", ""), model)
+    characteristics = properties.get("ro.build.characteristics", "")
+    device_type = infer_type(characteristics, model)
+    adb_serial = first(adb(serial, "get-serialno"), properties.get("ro.serialno", ""), serial)
+    mac = neighbour_mac(serial)
+    mac_source = "local neighbour table" if mac else ""
+    if not mac:
+        mac, interface = shell_mac(serial)
+        if mac:
+            mac_source = f"Android interface {interface}"
+    identifier = mac or f"NO-MAC-{clean_filename(adb_serial, 'unknown')}"
+
+    display_size = adb(serial, "shell", "wm", "size")
+    display_density = adb(serial, "shell", "wm", "density")
+    battery = adb(serial, "shell", "dumpsys", "battery", timeout=10.0)
+    foreground = adb(
+        serial,
+        "shell",
+        "sh",
+        "-c",
+        "dumpsys window windows 2>/dev/null | grep -m1 -E 'mCurrentFocus|mFocusedApp'",
+        timeout=10.0,
+    )
+    data_storage = adb(serial, "shell", "df", "-h", "/data", timeout=8.0)
+    locale = first(properties.get("persist.sys.locale", ""), properties.get("ro.product.locale", ""))
+    timestamp = dt.datetime.now().astimezone().isoformat(timespec="seconds")
+
+    lines = [
+        f"# {compact(manufacturer)} {compact(model)}",
+        "",
+        "> Generated automatically by ATLAS ADB using read-only commands. "
+        "It is refreshed when the device reconnects; do not use it as a place for manual notes.",
+        "",
+        "## Identity",
+        "",
+    ]
+    field(lines, "Last inventory", timestamp)
+    field(lines, "Connection target", serial)
+    field(lines, "ADB serial", adb_serial)
+    field(lines, "MAC address", mac or "not exposed by the device")
+    field(lines, "MAC source", mac_source or "unavailable")
+    field(lines, "Device type", device_type)
+    field(lines, "Manufacturer", manufacturer)
+    field(lines, "Brand", properties.get("ro.product.brand", ""))
+    field(lines, "Market name", model)
+    field(lines, "Model", product_model)
+    field(lines, "Product", properties.get("ro.product.name", ""))
+    field(lines, "Codename", properties.get("ro.product.device", ""))
+    field(lines, "Board", properties.get("ro.product.board", ""))
+    field(lines, "Hardware", properties.get("ro.hardware", ""))
+    field(lines, "Build characteristics", characteristics)
+    lines.extend(["", "## Android and build", ""])
+    field(lines, "Android version", properties.get("ro.build.version.release", ""))
+    field(lines, "SDK level", properties.get("ro.build.version.sdk", ""))
+    field(lines, "Security patch", properties.get("ro.build.version.security_patch", ""))
+    field(lines, "Build ID", properties.get("ro.build.id", ""))
+    field(lines, "Build type", properties.get("ro.build.type", ""))
+    field(lines, "Build fingerprint", properties.get("ro.build.fingerprint", ""))
+    field(lines, "ABI", properties.get("ro.product.cpu.abi", ""))
+    field(lines, "Locale", locale)
+    field(lines, "Timezone", properties.get("persist.sys.timezone", ""))
+    lines.extend(["", "## Display and runtime state", ""])
+    field(lines, "Display size", display_size)
+    field(lines, "Display density", display_density)
+    field(lines, "Foreground activity at inventory time", foreground)
+    lines.extend(["", "### Battery", "", "```text", battery or "unavailable", "```"])
+    lines.extend(["", "### Data filesystem", "", "```text", data_storage or "unavailable", "```", ""])
+
+    safe_model = clean_filename(model, "Android")
+    destination = DEVICES_DIR / f"{identifier}_{safe_model}_{device_type}.md"
+    write_atomic(destination, "\n".join(lines))
+
+    for previous in DEVICES_DIR.glob(f"{identifier}_*.md"):
+        if previous != destination:
+            previous.unlink(missing_ok=True)
+    return destination
+
+
+def main() -> int:
+    if len(sys.argv) != 2 or not sys.argv[1].strip():
+        print("usage: atlas-adb-inventory <adb-serial-or-ip:port>", file=sys.stderr)
+        return 2
+    try:
+        path = inventory(sys.argv[1].strip())
+    except RuntimeError as error:
+        print(error, file=sys.stderr)
+        return 1
+    print(path)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

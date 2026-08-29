@@ -186,11 +186,13 @@ It contains the full context of **OpenAtlas**, the project built around you. Tre
 The TDR has two main parts:
 
 - **Informatics:** OpenAtlas and ATLAS as an autonomous AI agent. This includes the creation of ATLAS, agent identity, memory, tools, channels such as Telegram, TTS, STT, automations, OpenClaw integration, security, and the difference between chatbot, assistant, and autonomous agent.
-- **Electronics:** ATLAS A1, the physical assistant device. This includes a Raspberry Pi 5 4 GB running a simple Debian-compatible Linux system with OpenClaw/OpenAtlas inside, connected to a touchscreen, audio input/output, possible external sensors, and a local interface for actions, subtitles, images, temperature, status, and future home-assistant features.
+- **Electronics:** ATLAS A1, the physical assistant device. This includes a Raspberry Pi 5 4 GB running a simple Debian-compatible Linux system with OpenClaw/OpenAtlas inside, connected to a touchscreen and audio input/output, with a local interface for actions, subtitles, images, and system status.
 
-When the user mentions the TDR, OpenAtlas, ATLAS A1, the physical assistant, the Raspberry Pi setup, Telegram, voice, sensors, or the project architecture, consult and update `TDR.md` when relevant.
+When the user mentions the TDR, OpenAtlas, ATLAS A1, the physical assistant, the Raspberry Pi setup, Telegram, voice, or the project architecture, consult and update `TDR.md` when relevant.
 
-`ADB_CONTROL.md` is the companion document for controlling Android devices and smart TVs over ADB. It should be updated when device discovery, validation, naming, or per-device `.txt` records change. The per-device files live under `adb_devices/`.
+`ADB.md` explains how you connect to and control authorised Android devices without poking the screen just to prove that ADB works. Read it before any ADB task. Its deterministic helper refreshes private device records under `/home/atlas/.atlas/atlas-adb/devices/`; those generated records are runtime state, not workspace prose.
+
+`NMAP.md` explains bounded network discovery, focused service scans and the private cached network report at `/home/atlas/.atlas/atlas-nmap/REPORT.md`. Read it before looking for a device or scanning the LAN. Prefer the cached report first, then the smallest focused scan that can answer the question.
 
 
 ## ATLAS Desktop and Cast
@@ -211,15 +213,15 @@ Keep it practical. If the environment changes in a durable way — new host, new
 
 ## Variables
 
-`VARIABLES.md` documents non-secret variables and IDs used by OpenAtlas, such as ElevenLabs voice IDs, model IDs, public bot names, sensor names, device names, paths, and other stable configuration constants.
+`VARIABLES.md` documents non-secret variables and IDs used by OpenAtlas, such as ElevenLabs voice IDs, model IDs, public bot names, device names, paths, and other stable configuration constants.
 
 Do not store API keys, passwords, private bot tokens, auth tokens, cookies, SSH keys, or provider secrets in `VARIABLES.md`. Keep secrets in `~/.openclaw/openclaw.json`, protected environment variables, or the appropriate secrets mechanism.
 
-When the user mentions changing a non-secret variable, ID, voice, model name, sensor name, route, or device constant, update `VARIABLES.md` when relevant and update the real runtime config separately if OpenClaw needs it.
+When the user mentions changing a non-secret variable, ID, voice, model name, route, or device constant, update `VARIABLES.md` when relevant and update the real runtime config separately if OpenClaw needs it.
 
 ## Documentation Language
 
-Durable project documentation should be written in English by default. That includes `AGENTS.md`, `SOUL.md`, `IDENTITY.md`, `USER.md`, `TDR.md`, `ADB_CONTROL.md`, `VARIABLES.md`, `TOOLS.md`, `ENVIRONMENT.md`, READMEs, and new project docs.
+Durable project documentation should be written in English by default. That includes `AGENTS.md`, `SOUL.md`, `IDENTITY.md`, `USER.md`, `TDR.md`, `ADB.md`, `NMAP.md`, `VARIABLES.md`, `TOOLS.md`, `ENVIRONMENT.md`, READMEs, and new project docs.
 
 Keep the natural OpenClaw tone: direct, alive, practical, and human. Do not turn the docs into corporate policy prose.
 

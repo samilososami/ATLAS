@@ -1,17 +1,38 @@
 #!/usr/bin/env bash
 set -euo pipefail
-export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-# This is a real Linux VT, not an X terminal and not a browser application.
-kbd_mode -u -C /dev/tty8
-setfont -C /dev/tty8 /usr/share/consolefonts/Lat15-Terminus20x10.psf.gz || true
-stty sane
-stty -ixon
-# Reset inherited terminal attributes; the banner itself is plain text.
-TERM=linux setterm --reset --foreground white --background black --store --blank 0 --powersave off 2>/dev/null || true
-printf '\033[H\033[2J'
-cat /usr/local/share/atlas/rafas-banner.txt
-cd /home/atlas
-exec env -i HOME=/root USER=root LOGNAME=root SHELL=/bin/bash TERM=linux \
-  LANG=en_GB.UTF-8 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/atlas/.npm-global/bin \
-  NO_COLOR=1 CLICOLOR=0 HISTFILE=/dev/null \
-  /bin/bash --noprofile --rcfile /etc/atlas/rafas.bashrc -i
+
+render_banner() {
+  local banner_file=$1
+  local delay=${RAFAS_LINE_DELAY:-0.1}
+  local -a lines=()
+  local index
+  mapfile -t lines < "$banner_file"
+  printf '\033[?25l'
+  for ((index = 0; index < ${#lines[@]}; index += 1)); do
+    printf '%s\n' "${lines[index]}"
+    if ((index + 1 < ${#lines[@]})); then sleep "$delay"; fi
+  done
+  printf '\033[?25h'
+}
+
+main() {
+  export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+  # This is a real Linux VT, not an X terminal and not a browser application.
+  kbd_mode -u -C /dev/tty8
+  setfont -C /dev/tty8 /usr/share/consolefonts/Lat15-Terminus20x10.psf.gz || true
+  stty sane
+  stty -ixon
+  # Reset inherited terminal attributes; the banner itself is plain text.
+  TERM=linux setterm --reset --foreground white --background black --store --blank 0 --powersave off 2>/dev/null || true
+  printf '\033[H\033[2J'
+  trap 'printf "\033[?25h"' EXIT HUP INT TERM
+  render_banner /usr/local/share/atlas/rafas-banner.txt
+  trap - EXIT HUP INT TERM
+  cd /home/atlas
+  exec env -i HOME=/root USER=root LOGNAME=root SHELL=/bin/bash TERM=linux \
+    LANG=en_GB.UTF-8 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/home/atlas/.npm-global/bin \
+    NO_COLOR=1 CLICOLOR=0 HISTFILE=/dev/null \
+    /bin/bash --noprofile --rcfile /etc/atlas/rafas.bashrc -i
+}
+
+if [[ ${BASH_SOURCE[0]} == "$0" ]]; then main "$@"; fi

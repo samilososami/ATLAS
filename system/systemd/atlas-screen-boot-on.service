@@ -1,0 +1,12 @@
+[Unit]
+Description=Start the selected ATLAS physical screen surface after boot
+After=systemd-user-sessions.service plymouth-quit.service
+Conflicts=atlas-screen-boot-off.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/atlas-screen boot
+TimeoutStartSec=75s
+
+[Install]
+WantedBy=multi-user.target

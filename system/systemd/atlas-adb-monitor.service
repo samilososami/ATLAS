@@ -1,0 +1,16 @@
+[Unit]
+Description=Refresh ATLAS ADB device records for newly connected transports
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=sami
+Group=sami
+Environment=HOME=/home/atlas
+ExecStart=/usr/local/libexec/atlas-adb-monitor
+Nice=10
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/atlas/.atlas/atlas-adb

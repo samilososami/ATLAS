@@ -1,0 +1,16 @@
+[Unit]
+Description=ATLAS power and RAFAS event logger
+After=local-fs.target
+RequiresMountsFor=/home/atlas/.atlas/atlas-rafas
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+ExecStart=/usr/local/libexec/atlas-rafas-logger run
+Restart=always
+RestartSec=2
+TimeoutStopSec=10
+OOMScoreAdjust=-850
+
+[Install]
+WantedBy=multi-user.target

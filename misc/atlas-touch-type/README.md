@@ -23,6 +23,6 @@ uses a physical keyboard and deliberately does not load Tk, X11 or this keyboard
 
 Install all three helpers with mode `0755`, owned by root. Dependencies: Python 3,
 Tkinter, python3-evdev, Xorg/XInput, xprop, xdotool and wmctrl. The controller is started
-automatically by `atlas-screen --terminal --on`, from either the normal user or
+automatically by `atlas-screen --terminal`, from either the normal user or
 root through the existing screen command. This root terminal is a local
 development tool, not an authenticated recovery screen.

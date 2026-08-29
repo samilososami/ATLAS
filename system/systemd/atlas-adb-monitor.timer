@@ -1,0 +1,12 @@
+[Unit]
+Description=Watch quietly for newly connected ADB devices
+
+[Timer]
+OnBootSec=20s
+OnUnitActiveSec=15s
+AccuracySec=3s
+Persistent=true
+Unit=atlas-adb-monitor.service
+
+[Install]
+WantedBy=timers.target

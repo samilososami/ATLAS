@@ -6,10 +6,13 @@ TERMINAL_SERVICE="atlas-screen-terminal.service"
 KIOSK_SERVICE="atlas-screen-kiosk.service"
 RAFAS_SERVICE="atlas-rafas.service"
 GETTY_SERVICE="getty@tty1.service"
+BOOT_ON_SERVICE="atlas-screen-boot-on.service"
+BOOT_OFF_SERVICE="atlas-screen-boot-off.service"
 DISPLAY_ID=":0"
 XAUTHORITY_FILE="/home/atlas/.Xauthority"
 MODE_DIR="/home/atlas/.atlas/atlas-screen"
 MODE_FILE="$MODE_DIR/mode"
+BOOT_MODE_FILE="$MODE_DIR/boot-mode"
 
 if [[ "${EUID}" -ne 0 && "${BASH_SOURCE[0]}" == "$0" ]]; then
   exec sudo -n "$0" "$@"
@@ -35,11 +38,16 @@ Usage:
   atlas-screen --terminal
   atlas-screen --atlas
   atlas-screen --rafas
-  atlas-screen --rafas --on
-  atlas-screen --atlas --on
-  atlas-screen --desktop --on
-  atlas-screen --terminal --off
-Modes select the next surface. Combine a mode with on/--on to open it now.
+  atlas-screen --atlas off
+  atlas-screen enable
+  atlas-screen enable --desktop
+  atlas-screen enable --terminal
+  atlas-screen enable --atlas
+  atlas-screen enable --rafas
+  atlas-screen enable --last
+  atlas-screen disable
+Modes switch immediately. "on" opens the selected mode; "off" powers down.
+"enable" configures an automatic boot surface; "disable" restores boot-off.
 USAGE
   exit 2
 }
@@ -74,6 +82,31 @@ save_mode() {
   mv -f "$temporary" "$MODE_FILE"
 }
 
+selected_boot_mode() {
+  local mode
+  ensure_mode_store
+  if [ ! -f "$BOOT_MODE_FILE" ]; then
+    printf 'last\n'
+    return
+  fi
+  mode="$(tr -d '[:space:]' < "$BOOT_MODE_FILE")"
+  case "$mode" in
+    desktop|terminal|atlas|rafas|last) printf '%s\n' "$mode" ;;
+    *) printf 'last\n' ;;
+  esac
+}
+
+save_boot_mode() {
+  local mode="$1"
+  local temporary
+  ensure_mode_store
+  temporary="$(mktemp "$MODE_DIR/.boot-mode.XXXXXX")"
+  printf '%s\n' "$mode" > "$temporary"
+  chown root:sami "$temporary"
+  chmod 644 "$temporary"
+  mv -f "$temporary" "$BOOT_MODE_FILE"
+}
+
 connector_path() {
   local path
   local _
@@ -106,9 +139,29 @@ set_framebuffer_blank() {
   fi
 }
 
-keep_boot_default_off() {
+keep_native_boot_minimal() {
   systemctl disable "$LIGHTDM_SERVICE" >/dev/null 2>&1 || true
   systemctl set-default multi-user.target >/dev/null 2>&1
+}
+
+enable_boot_screen() {
+  local mode="$1"
+  keep_native_boot_minimal
+  save_boot_mode "$mode"
+  systemctl enable "$BOOT_ON_SERVICE" >/dev/null
+  systemctl disable "$BOOT_OFF_SERVICE" >/dev/null
+  if [ "$mode" = last ]; then
+    echo "ATLAS screen will boot on in the last selected mode."
+  else
+    echo "ATLAS screen will boot on in ${mode} mode."
+  fi
+}
+
+disable_boot_screen() {
+  keep_native_boot_minimal
+  systemctl enable "$BOOT_OFF_SERVICE" >/dev/null
+  systemctl disable "$BOOT_ON_SERVICE" >/dev/null
+  echo "ATLAS screen will stay off after boot."
 }
 
 start_desktop() {
@@ -191,7 +244,7 @@ start_rafas() {
 
 screen_on() {
   local mode
-  keep_boot_default_off
+  keep_native_boot_minimal
   mode="$(selected_mode)"
   force_connector on
   set_framebuffer_blank 0
@@ -207,7 +260,7 @@ screen_on() {
 }
 
 screen_off() {
-  keep_boot_default_off
+  keep_native_boot_minimal
   systemctl stop "$RAFAS_SERVICE" >/dev/null 2>&1 || true
 
   if systemctl is-active --quiet "$LIGHTDM_SERVICE"; then
@@ -225,11 +278,32 @@ screen_off() {
   echo "ATLAS screen is off."
 }
 
+boot_screen_on() {
+  local boot_mode mode
+  boot_mode="$(selected_boot_mode)"
+  if [ "$boot_mode" = last ]; then
+    mode="$(selected_mode)"
+  else
+    mode="$boot_mode"
+    save_mode "$mode"
+  fi
+  screen_on
+}
+
 print_status() {
-  local mode power active_surface connector connector_status connector_enabled connector_dpms
+  local mode power active_surface connector connector_status connector_enabled connector_dpms boot_mode boot_default
   mode="$(selected_mode)"
   power="off"
   active_surface="none"
+  boot_mode="$(selected_boot_mode)"
+  boot_default="off"
+  if systemctl is-enabled --quiet "$BOOT_ON_SERVICE" 2>/dev/null; then
+    if [ "$boot_mode" = last ]; then
+      boot_default="on (last -> $mode)"
+    else
+      boot_default="on ($boot_mode)"
+    fi
+  fi
 
   if connector="$(connector_path 2>/dev/null)"; then
     connector_status="$(cat "$connector/status" 2>/dev/null || true)"
@@ -256,11 +330,11 @@ print_status() {
   printf 'Power: %s\n' "$power"
   printf 'Selected mode: %s\n' "$mode"
   printf 'Active surface: %s\n' "$active_surface"
-  printf 'Boot default: off\n'
+  printf 'Boot default: %s\n' "$boot_default"
 }
 
 main() {
-  local mode="" action="" argument value
+  local mode="" action="" boot_mode="" argument value
   # Validate the complete request before changing files, services or HDMI.
   for argument in "$@"; do
     case "$argument" in
@@ -273,8 +347,12 @@ main() {
         [ -z "$mode" ] || [ "$mode" = rafas ] || usage
         mode=rafas
         ;;
-      on|--on|off|--off)
-        value="${argument#--}"
+      --last)
+        [ -z "$boot_mode" ] || [ "$boot_mode" = last ] || usage
+        boot_mode=last
+        ;;
+      on|off|enable|disable|boot)
+        value="$argument"
         [ -z "$action" ] || [ "$action" = "$value" ] || usage
         action="$value"
         ;;
@@ -282,19 +360,42 @@ main() {
       *) usage ;;
     esac
   done
+  case "$action" in
+    enable)
+      if [ -n "$mode" ] && [ -z "$boot_mode" ]; then
+        boot_mode="$mode"
+      elif [ -n "$mode" ]; then
+        usage
+      fi
+      ;;
+    disable)
+      [ -z "$mode" ] && [ -z "$boot_mode" ] || usage
+      ;;
+    boot)
+      [ -z "$mode" ] && [ -z "$boot_mode" ] || usage
+      ;;
+    on|off|"")
+      [ -z "$boot_mode" ] || usage
+      ;;
+  esac
+  if [ -n "$mode" ] && [ -z "$action" ]; then
+    action=on
+  fi
   # A mode switch can stop the very terminal that invoked it. Hand the action
   # to systemd first, so killing that session cannot kill the switch halfway.
-  if [ -n "$action" ] && grep -Eq '/(atlas-rafas|atlas-screen-terminal|atlas-screen-kiosk)\.service' "/proc/$$/cgroup"; then
+  if [[ "$action" == on || "$action" == off ]] && grep -Eq '/(atlas-rafas|atlas-screen-terminal|atlas-screen-kiosk)\.service' "/proc/$$/cgroup"; then
     systemd-run --quiet --collect --no-block --unit="atlas-screen-action-$$" /usr/local/bin/atlas-screen "$@"
     return
   fi
-  if [ -n "$mode" ]; then
+  if [ -n "$mode" ] && [ "$action" != enable ]; then
     save_mode "$mode"
-    echo "ATLAS screen mode selected: $mode."
   fi
   case "$action" in
     on) screen_on ;;
     off) screen_off ;;
+    enable) enable_boot_screen "${boot_mode:-$(selected_boot_mode)}" ;;
+    disable) disable_boot_screen ;;
+    boot) boot_screen_on ;;
     "") print_status ;;
   esac
 }
