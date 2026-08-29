@@ -84,6 +84,10 @@ AGENT_FAST_MODE = os.environ.get("ATLAS_WEBSCREEN_FAST_MODE", "1").lower() not i
 }
 REALTIME_MODEL = os.environ.get("ATLAS_REALTIME_MODEL", "gpt-realtime-2.1").strip()
 REALTIME_VOICE = os.environ.get("ATLAS_REALTIME_VOICE", "marin").strip()
+REALTIME_VOICES = (
+    "alloy", "ash", "ballad", "cedar", "coral",
+    "echo", "marin", "sage", "shimmer", "verse",
+)
 REALTIME_VAD_THRESHOLD = float(os.environ.get("ATLAS_REALTIME_VAD_THRESHOLD", "0.45"))
 REALTIME_SILENCE_MS = int(os.environ.get("ATLAS_REALTIME_SILENCE_MS", "500"))
 REALTIME_PREFIX_PADDING_MS = int(os.environ.get("ATLAS_REALTIME_PREFIX_PADDING_MS", "300"))
@@ -817,16 +821,33 @@ def get_webscreen_settings() -> dict[str, Any]:
         except (OSError, json.JSONDecodeError):
             stored = {}
     _, effective_voice_id = get_tts_settings()
+    realtime_voice = str(stored.get("realtimeVoice") or REALTIME_VOICE).strip().lower()
+    if realtime_voice not in REALTIME_VOICES:
+        realtime_voice = REALTIME_VOICE if REALTIME_VOICE in REALTIME_VOICES else "marin"
     return {
         "elevenlabsVoiceId": effective_voice_id,
         "voiceIdOverride": bool(stored.get("elevenlabsVoiceId")),
+        "realtimeVoice": realtime_voice,
     }
 
 
-def save_webscreen_voice_id(voice_id: str) -> None:
+def save_webscreen_settings(*, elevenlabs_voice_id: str | None = None,
+                            realtime_voice: str | None = None) -> None:
     RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
-    payload = {"elevenlabsVoiceId": voice_id} if voice_id else {}
     with SETTINGS_LOCK:
+        try:
+            payload = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+        if elevenlabs_voice_id is not None:
+            if elevenlabs_voice_id:
+                payload["elevenlabsVoiceId"] = elevenlabs_voice_id
+            else:
+                payload.pop("elevenlabsVoiceId", None)
+        if realtime_voice is not None:
+            payload["realtimeVoice"] = realtime_voice
         SETTINGS_FILE.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
@@ -1835,7 +1856,8 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
                                   "language": "es-ES"},
                 "realtime": {"ready": bool(bridge_health.get("ready")),
                              "provider": "openai", "model": REALTIME_MODEL,
-                             "voice": REALTIME_VOICE, "transport": "webrtc",
+                             "voice": get_webscreen_settings()["realtimeVoice"],
+                             "transport": "webrtc",
                              "brain": "agent-consult", "legacyFallback": True},
                 "whisper": {"ready": MODEL is not None, "model": WHISPER_MODEL_NAME,
                             "engine": WHISPER_ENGINE, "error": MODEL_ERROR},
@@ -1980,14 +2002,21 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
     def handle_settings(self) -> None:
         try:
             payload = self.read_json_payload(maximum=4096)
-            voice_id = str(payload.get("elevenlabsVoiceId") or "").strip()
+            voice_id = (str(payload.get("elevenlabsVoiceId") or "").strip()
+                        if "elevenlabsVoiceId" in payload else None)
+            realtime_voice = (str(payload.get("realtimeVoice") or "").strip().lower()
+                              if "realtimeVoice" in payload else None)
         except ValueError as error:
             self.send_json(400, {"error": str(error)})
             return
         if voice_id and not re.fullmatch(r"[A-Za-z0-9_-]{8,128}", voice_id):
             self.send_json(400, {"error": "El Voice ID no tiene un formato válido"})
             return
-        save_webscreen_voice_id(voice_id)
+        if realtime_voice is not None and realtime_voice not in REALTIME_VOICES:
+            self.send_json(400, {"error": "La voz Realtime no está disponible"})
+            return
+        save_webscreen_settings(elevenlabs_voice_id=voice_id,
+                                realtime_voice=realtime_voice)
         api_key, effective_voice_id = get_tts_settings()
         self.send_json(200, {
             **get_webscreen_settings(),
@@ -2001,9 +2030,10 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
         except ValueError:
             payload = {}
         session_key, _, _ = current_session()
-        voice = str(payload.get("voice") or REALTIME_VOICE).strip().lower()
-        if voice not in {"alloy", "ash", "ballad", "coral", "echo", "marin", "sage", "shimmer", "verse"}:
-            voice = REALTIME_VOICE
+        configured_voice = get_webscreen_settings()["realtimeVoice"]
+        voice = str(payload.get("voice") or configured_voice).strip().lower()
+        if voice not in REALTIME_VOICES:
+            voice = configured_voice
         params = {
             "mode": "realtime", "sessionKey": session_key,
             "provider": "openai", "model": REALTIME_MODEL,

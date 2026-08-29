@@ -143,8 +143,9 @@ let realtimeController = null;
 let realtimeFallbackActive = false;
 
 function selectedVoiceProvider() {
-  if (voiceProviderSelect.value === "realtime") return "realtime";
-  return voiceProviderSelect.value === "elevenlabs" ? "elevenlabs" : "browser";
+  if (REALTIME_PRIMARY && !realtimeFallbackActive) return "realtime";
+  return localStorage.getItem("atlas-webscreen-voice") === "elevenlabs"
+    ? "elevenlabs" : "browser";
 }
 
 function voiceProviderLabel(provider = selectedVoiceProvider()) {
@@ -413,6 +414,9 @@ async function loadSettings() {
     const response = await accessFetch("/api/settings", { cache: "no-store" });
     const settings = await response.json();
     if (!response.ok) throw new Error(settings.error || "No se pudieron cargar los ajustes");
+    if ([...voiceProviderSelect.options].some((option) => option.value === settings.realtimeVoice)) {
+      voiceProviderSelect.value = settings.realtimeVoice;
+    }
     voiceIdInput.value = settings.elevenlabsVoiceId || "";
     settingsResult.className = "tool-result";
     settingsResult.textContent = settings.voiceIdOverride
@@ -1797,7 +1801,9 @@ realtimeController = window.AtlasRealtime?.create({
       enableButton.hidden = true;
       recordButton.hidden = true;
       cancelButton.hidden = false;
-      voiceProviderSelect.value = "realtime";
+      if ([...voiceProviderSelect.options].some((option) => option.value === voice)) {
+        voiceProviderSelect.value = voice;
+      }
       healthDot.className = "ready";
       healthLabel.textContent = `${model} · WebRTC · ${voice}`;
     },
@@ -1846,13 +1852,29 @@ cancelButton.addEventListener("click", () => {
   if (REALTIME_PRIMARY && !realtimeFallbackActive) realtimeController?.cancel();
   else void cancelInteraction();
 });
-voiceProviderSelect.value = REALTIME_PRIMARY ? "realtime"
-  : (localStorage.getItem("atlas-webscreen-voice") === "elevenlabs" ? "elevenlabs" : "browser");
-voiceProviderSelect.addEventListener("change", () => {
-  if (selectedVoiceProvider() === "realtime") return;
-  localStorage.setItem("atlas-webscreen-voice", selectedVoiceProvider());
-  healthLabel.textContent = healthLabel.textContent.replace(/voz del navegador|ElevenLabs$/, voiceProviderLabel());
-  addLog(`Motor de voz: ${voiceProviderLabel()}`);
+voiceProviderSelect.addEventListener("change", async () => {
+  if (!REALTIME_PRIMARY || !hasControl()) return;
+  const previousVoice = realtimeController?.session?.voice || "marin";
+  const requestedVoice = voiceProviderSelect.value;
+  voiceProviderSelect.disabled = true;
+  addLog(`Cambiando la voz Realtime a ${requestedVoice}`);
+  try {
+    const response = await accessFetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ realtimeVoice: requestedVoice }),
+    });
+    const settings = await response.json();
+    if (!response.ok) throw new Error(settings.error || "No se pudo guardar la voz Realtime");
+    voiceProviderSelect.value = settings.realtimeVoice;
+    realtimeController?.stop(false);
+    await activatePrimaryMicrophone();
+  } catch (error) {
+    voiceProviderSelect.value = previousVoice;
+    addLog(`No se pudo cambiar la voz Realtime: ${error.message}`, null, "error");
+  } finally {
+    voiceProviderSelect.disabled = false;
+  }
 });
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") scheduleRecognitionRestart(100);

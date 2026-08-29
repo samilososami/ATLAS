@@ -117,7 +117,10 @@
         const reservationResponse = await this.fetch("/api/realtime/session", {
           method: "POST", cache: "no-store",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ voice: DEFAULT_VOICE }),
+          // The backend owns the persisted voice selection. A Realtime voice
+          // cannot be changed after audio has been generated, so app.js creates
+          // a fresh session whenever the selector changes.
+          body: JSON.stringify({}),
         });
         const reservation = await reservationResponse.json();
         if (!reservationResponse.ok) throw new Error(reservation.error || "OpenAI Realtime no está disponible");
