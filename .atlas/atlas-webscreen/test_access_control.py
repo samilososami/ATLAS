@@ -24,10 +24,6 @@ class AccessTests(unittest.TestCase):
             fn(*args)
         self.assertEqual(result.exception.status, status)
 
-    def request(self):
-        self.control.claim(self.b)
-        return self.control.heartbeat(self.a, True)['pendingRequest']
-
     def test_owner_only_and_no_tokens_in_status(self):
         self.control.authorize(self.a)
         self.error(423, self.control.authorize, self.b)
@@ -36,36 +32,28 @@ class AccessTests(unittest.TestCase):
         self.assertNotIn(self.a, snapshot)
         self.assertNotIn(self.b, snapshot)
 
-    def test_delegation_and_reverse(self):
-        request = self.request()
-        self.error(423, self.control.delegate, self.b, request, True)
-        self.error(409, self.control.delegate, self.a, request, False)
-        self.control.delegate(self.a, request, True)
+    def test_direct_takeover_and_reverse(self):
+        result = self.control.takeover(self.b)
+        self.assertTrue(result['owner'])
+        self.assertTrue(result['replacedOwner'])
         self.error(423, self.control.authorize, self.a)
         self.control.authorize(self.b)
-        self.control.claim(self.a)
-        pending = self.control.heartbeat(self.b, True)['pendingRequest']
-        self.control.delegate(self.b, pending, True)
+        result = self.control.takeover(self.a)
+        self.assertTrue(result['owner'])
+        self.assertTrue(result['replacedOwner'])
         self.control.authorize(self.a)
 
-    def test_busy_cannot_be_overridden_by_client(self):
-        request = self.request()
+    def test_takeover_is_immediate_even_during_work(self):
         self.control.authorize(self.a, begin=True)
         self.control.heartbeat(self.a, True)
-        self.error(409, self.control.delegate, self.a, request, True)
+        result = self.control.takeover(self.b)
+        self.assertTrue(result['owner'])
+        self.assertTrue(result['replacedOwner'])
+        self.error(423, self.control.authorize, self.a)
         self.control.finish()
         self.busy = True
-        self.error(409, self.control.delegate, self.a, request, True)
-        self.busy = False
-        self.control.delegate(self.a, request, True)
-
-    def test_request_rate_limit(self):
-        self.control.claim(self.b)
-        self.error(429, self.control.claim, self.b)
-        self.now += 9.99
-        self.error(429, self.control.claim, self.b)
-        self.now += .01
-        self.control.claim(self.b)
+        result = self.control.takeover(self.a)
+        self.assertTrue(result['owner'])
 
     def test_close_idle_owner_releases_immediately(self):
         self.control.release(self.a)
@@ -81,13 +69,9 @@ class AccessTests(unittest.TestCase):
         self.control.finish()
         self.assertTrue(self.control.heartbeat(self.b)['owner'])
 
-    def test_expiry_and_stale_claim(self):
-        request = self.request()
-        self.now += 19
-        self.control.heartbeat(self.a, True)
-        self.now += 2
-        self.error(409, self.control.delegate, self.a, request, True)
+    def test_expiry_rejects_stale_takeover(self):
         self.now += 21
+        self.error(401, self.control.takeover, self.b)
         new = self.control.connect()
         self.assertTrue(new['owner'])
         self.error(401, self.control.authorize, self.a)
@@ -135,16 +119,13 @@ class HTTPAccessTests(unittest.TestCase):
         for path in ('settings', 'codex-usage'):
             self.assertEqual(self.request('/api/' + path, self.b, method='GET')[0], 423)
 
-    def test_real_http_handoff_and_rate_limit(self):
-        self.assertEqual(self.request('/api/access/claim', self.b)[0], 200)
-        self.assertEqual(self.request('/api/access/claim', self.b)[0], 429)
-        status = self.request('/api/access/heartbeat', self.a, {'idle': True})[1]
-        self.assertTrue(status['canDelegate'])
-        result = self.request('/api/access/delegate', self.a,
-                              {'idle': True, 'requestId': status['pendingRequest']})
+    def test_real_http_direct_takeover(self):
+        result = self.request('/api/access/takeover', self.b)
         self.assertEqual(result[0], 200)
-        self.assertFalse(result[1]['owner'])
+        self.assertTrue(result[1]['owner'])
+        self.assertTrue(result[1]['replacedOwner'])
         self.assertEqual(self.request('/api/settings', self.a, method='GET')[0], 423)
+        self.assertEqual(self.request('/api/settings', self.b, method='GET')[0], 200)
 
     def test_cross_origin_and_browser_internal_route(self):
         self.assertEqual(self.request('/api/access/connect', extra={'Origin': 'http://other.test'})[0], 403)

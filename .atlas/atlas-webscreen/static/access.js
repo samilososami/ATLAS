@@ -4,14 +4,11 @@
   const blocked = document.querySelector('#access-blocked');
   const title = document.querySelector('#access-title');
   const detail = document.querySelector('#access-detail');
-  const claim = document.querySelector('#access-claim');
-  const notice = document.querySelector('#access-notice');
-  const delegate = document.querySelector('#access-delegate');
-  const noticeDetail = document.querySelector('#access-notice-detail');
-  let token = '', owner = false, transferring = false, updating = false;
-  let lastReply = 0, retryAt = 0, adapter = null, state = {}, released = false;
+  const takeover = document.querySelector('#access-takeover');
+  let token = '', owner = false, updating = false;
+  let lastReply = 0, adapter = null, state = {}, released = false;
   let message = '';
-  const hasControl = () => owner && !transferring && performance.now() - lastReply < 8000;
+  const hasControl = () => owner && performance.now() - lastReply < 8000;
   const idle = () => Boolean(adapter?.isIdle());
 
   function render() {
@@ -19,19 +16,11 @@
     content.hidden = !control;
     content.inert = !control;
     blocked.hidden = control;
-    const seconds = Math.max(0, Math.ceil((retryAt - performance.now()) / 1000));
     title.textContent = !token ? 'Conectando con ATLAS…' : 'ATLAS está siendo utilizado por otro usuario.';
     detail.textContent = message || (state.waitingForTurn
-      ? 'Esperando a que termine el trabajo en curso.'
-      : state.requestPending ? 'Solicitud enviada. Esperando a que el usuario actual delegue el acceso.'
-        : 'Puedes solicitar el control de esta pantalla.');
-    claim.textContent = seconds ? `Reclamar acceso (${seconds} s)` : 'Reclamar acceso';
-    claim.disabled = !token || updating || seconds > 0;
-    notice.hidden = !control || !state.pendingRequest;
-    delegate.disabled = updating || !idle() || !state.canDelegate;
-    noticeDetail.textContent = delegate.disabled
-      ? 'Podrás delegar cuando ATLAS esté en espera en la pestaña ATLAS.'
-      : 'Al delegar, esta pantalla dejará de tener el control.';
+      ? 'ATLAS está terminando una operación anterior. Puedes tomar el control igualmente.'
+      : 'Toma el control para utilizar ATLAS en este dispositivo.');
+    takeover.disabled = !token || updating;
   }
 
   function setOwner(value) {
@@ -47,21 +36,15 @@
 
   async function update(action = 'heartbeat') {
     if (updating || released || !adapter) return;
-    if (action === 'delegate' && (!hasControl() || !idle() || !state.canDelegate)) return;
     updating = true;
     const actual = token ? action : 'connect';
     const wasIdle = idle();
-    if (actual === 'delegate') {
-      // Stop wake-word recognition before awaiting the handoff: no new turn can race it.
-      transferring = true;
-      adapter.suspend();
-    }
     render();
     try {
       const response = await fetch(`/api/access/${actual}`, {
         method: 'POST', cache: 'no-store', signal: AbortSignal.timeout(4000),
         headers: { 'Content-Type': 'application/json', 'X-Atlas-Access': '1', 'X-Atlas-Client': token },
-        body: JSON.stringify({ idle: wasIdle, requestId: state.pendingRequest }),
+        body: JSON.stringify({ idle: wasIdle }),
       });
       const result = await response.json();
       if (!response.ok) {
@@ -72,16 +55,13 @@
       token = result.token || token;
       state = result;
       lastReply = performance.now();
-      retryAt = performance.now() + result.retryAfter * 1000;
-      message = result.delegated ? 'Acceso delegado.' : '';
-      transferring = false;
+      message = '';
       setOwner(result.owner);
     } catch (error) {
       message = error.name === 'TimeoutError' || error.name === 'TypeError'
         ? 'Sin conexión con la Pi. Reintentando…' : error.message;
-      if (['heartbeat', 'connect', 'delegate'].includes(actual)) setOwner(false);
+      if (['heartbeat', 'connect', 'takeover'].includes(actual)) setOwner(false);
     } finally {
-      transferring = false;
       updating = false;
       render();
     }
@@ -102,9 +82,8 @@
       return response;
     },
   };
-  claim.addEventListener('click', () => { message = ''; void update('claim'); });
-  delegate.addEventListener('click', () => void update('delegate'));
-  setInterval(() => void update(), 2000);
+  takeover.addEventListener('click', () => { message = ''; void update('takeover'); });
+  setInterval(() => void update(), 500);
   setInterval(() => {
     if (owner && performance.now() - lastReply >= 8000) setOwner(false);
     render();

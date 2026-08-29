@@ -1,5 +1,4 @@
 """Ephemeral, per-page control leases. This is not user authentication."""
-import math
 import secrets
 import threading
 import time
@@ -12,9 +11,9 @@ class AccessError(Exception):
 
 
 class AccessControl:
-    def __init__(self, clock=time.monotonic, busy=lambda: False, lease=20, cooldown=10):
+    def __init__(self, clock=time.monotonic, busy=lambda: False, lease=20):
         self.clock, self.busy = clock, busy
-        self.lease, self.cooldown = lease, cooldown
+        self.lease = lease
         self.lock = threading.RLock()
         self.clients = {}
         self.owner = None
@@ -40,19 +39,11 @@ class AccessControl:
     def _assign_if_free(self, token):
         if self.owner is None and not self._occupied():
             self.owner = token
-            self.clients[token]['request'] = None
 
     def _snapshot(self, token):
-        client = self.clients[token]
         owner = self.owner == token
-        pending = next((c['request'] for t, c in self.clients.items()
-                        if t != token and c['request']), None) if owner else None
         return {
             'owner': owner,
-            'pendingRequest': pending,
-            'canDelegate': bool(owner and client['idle'] and not self._occupied() and pending),
-            'requestPending': bool(client['request']),
-            'retryAfter': max(0, math.ceil(client['next_claim'] - self.clock())),
             'waitingForTurn': self.owner is None and self._occupied(),
         }
 
@@ -62,8 +53,7 @@ class AccessControl:
             if len(self.clients) >= 128:
                 raise AccessError(503, 'Demasiadas conexiones. Inténtalo más tarde.')
             token = secrets.token_urlsafe(32)
-            self.clients[token] = {'seen': self.clock(), 'idle': False,
-                                   'next_claim': 0, 'request': None}
+            self.clients[token] = {'seen': self.clock(), 'idle': False}
             self._assign_if_free(token)
             return {'token': token, **self._snapshot(token)}
 
@@ -74,37 +64,18 @@ class AccessControl:
             self._assign_if_free(token)
             return self._snapshot(token)
 
-    def claim(self, token):
+    def takeover(self, token):
         with self.lock:
             client = self._client(token)
             client['seen'] = self.clock()
-            if self.owner == token:
-                return self._snapshot(token)
-            remaining = client['next_claim'] - self.clock()
-            if remaining > 0:
-                raise AccessError(429, f'Espera {math.ceil(remaining)} segundos para solicitarlo de nuevo.')
-            client['next_claim'] = self.clock() + self.cooldown
-            self._assign_if_free(token)
-            if self.owner != token:
-                client['request'] = client['request'] or secrets.token_urlsafe(16)
-            return self._snapshot(token)
-
-    def delegate(self, token, request_id, idle=False):
-        with self.lock:
-            client = self._client(token)
-            if self.owner != token:
-                raise AccessError(423, 'Esta pestaña no tiene el control de ATLAS.')
-            if idle is not True or not client['idle'] or self._occupied():
-                raise AccessError(409, 'Solo puedes delegar cuando ATLAS está en espera.')
-            target = next((t for t, c in self.clients.items()
-                           if t != token and c['request'] and c['request'] == request_id), None)
-            if target is None:
-                raise AccessError(409, 'La solicitud ya no está disponible.')
-            self.owner = target
-            self.clients[target]['request'] = None
-            self.clients[target]['idle'] = False
+            previous = self.owner
+            self.owner = token
             client['idle'] = False
-            return {'delegated': True, **self._snapshot(token)}
+            return {
+                'taken': previous != token,
+                'replacedOwner': previous is not None and previous != token,
+                **self._snapshot(token),
+            }
 
     def release(self, token):
         with self.lock:

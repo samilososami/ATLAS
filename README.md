@@ -64,7 +64,7 @@ La versión mostrada utiliza:
 
 El código de [`ATLAS WebScreen`](.atlas/atlas-webscreen) incluye una interfaz de depuración con cuatro vistas: ATLAS, Transcripción, Texto a voz y Ajustes.
 
-Una sola pestaña controla WebScreen a la vez. Otros clientes pueden reclamar acceso cada diez segundos; el propietario recibe una notificación y puede delegarlo cuando ATLAS está en espera. El cambio conserva la conversación y desactiva el micrófono y el audio de la pestaña anterior. Este control de uso no sustituye una futura autenticación.
+Una sola pestaña controla WebScreen a la vez. Las demás muestran **Tomar control**: al pulsarlo, el permiso pasa inmediatamente al nuevo dispositivo, sin solicitud ni confirmación. La pestaña anterior detiene micrófono, audio y trabajo activo y muestra la pantalla bloqueada. La conversación de OpenClaw se conserva; este control de uso no sustituye una futura autenticación.
 
 - La conversación principal usa `gpt-realtime-2.1` mediante OpenClaw y WebRTC. El modelo recibe audio, transcribe y genera la voz nativa `marin` dentro de una misma sesión; Chrome Speech Recognition, TTS del navegador y ElevenLabs quedan como herramientas de laboratorio o fallback, no como la cadena principal.
 - Una conversación nueva debe comenzar con `ATLAS` tras cuatrocientos milisegundos de silencio. Después hay diez segundos de continuación natural sin repetir la wake word. Hablar durante la respuesta aplica barge-in y cancela también el trabajo delegado.

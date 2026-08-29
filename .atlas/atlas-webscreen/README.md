@@ -8,7 +8,7 @@ reversible y documentada en `Backups/WebScreen/legacy-preamble-2026-08-29`.
 
 1. OpenClaw crea una reserva WebRTC efímera para `gpt-realtime-2.1` usando el OAuth configurado en la Pi. El navegador nunca recibe el token persistente ni una API key.
 2. OpenAI Realtime recibe y transcribe el audio, decide el turno y genera directamente la voz nativa `marin`. No hay una cadena separada de Chrome STT, texto intermedio y TTS para la conversación principal.
-3. El filtro local exige que una conversación nueva comience llamando a `ATLAS` después de cuatrocientos milisegundos de silencio. La salida remota se protege durante quinientos cincuenta milisegundos: una mención accidental se cancela antes de llegar al altavoz y se elimina de la conversación del proveedor.
+3. El filtro local exige que una conversación nueva comience llamando a `ATLAS` después de cuatrocientos milisegundos de silencio. Realtime mantiene su VAD y transcripción activos, pero tiene desactivada la respuesta automática: WebScreen solo habilita el audio y envía `response.create` después de validar la wake word. Una mención accidental no genera voz ni necesita un retardo artificial.
 4. Tras una respuesta quedan diez segundos de continuación natural sin repetir la wake word. Hablar durante la respuesta provoca barge-in y cancela también cualquier trabajo delegado que siga activo.
 5. OpenAI Realtime responde directamente a charla, explicaciones, ideas, cálculos sencillos y juegos. Cuando necesita memoria, workspace, archivos, correo, estado real, información actual o acciones, llama a `openclaw_agent_consult`.
 6. Esa consulta usa la sesión persistente del agente principal de OpenClaw, con Luna, sus herramientas y `WEBSCREEN_INSTRUCTIONS.md`. El resultado vuelve a Realtime, que lo expresa con su propia voz sin leer logs ni razonamiento interno.
@@ -21,7 +21,7 @@ motores anteriores únicamente para comparación y depuración.
 
 ## Flujo legacy de respaldo
 
-1. En el Chrome de ATLAS A1, el micrófono se activa automáticamente cuando la pantalla obtiene el control, también tras reiniciar. En otros navegadores se reutiliza un permiso ya concedido; la primera autorización sigue siendo manual. Al delegar el acceso se detiene el micrófono de la pantalla anterior.
+1. En el Chrome de ATLAS A1, el micrófono se activa automáticamente cuando la pantalla obtiene el control, también tras reiniciar. En otros navegadores se reutiliza un permiso ya concedido; la primera autorización sigue siendo manual. Al perder el control se detiene el micrófono de la pantalla anterior.
 2. Chrome mantiene la detección de la wake word `ATLAS`. Un VAD local y efímero comprueba que haya al menos cuatrocientos milisegundos sin voz antes de la llamada y que `ATLAS` sea el comienzo de la nueva intervención. Una mención dentro de una conversación, como `estoy trabajando en el proyecto de ATLAS`, se ignora. El audio previo no se guarda ni se envía.
 3. Al detectarla, conserva cualquier palabra reconocida a continuación y mantiene abierta la misma sesión de escucha. El usuario puede decir `ATLAS, qué hora es` de corrido, sin locución de confirmación ni pausa artificial.
 4. Chrome transcribe la petición de forma nativa y muestra también el texto provisional en tiempo real.
@@ -92,27 +92,25 @@ cualquier llamada que no proceda de
 
 ## Herramientas de depuración
 
-### Acceso exclusivo y delegación
+### Acceso exclusivo y toma de control
 
 Solo una pestaña tiene el control, tanto desde localhost como desde la red.
-Las demás ven una pantalla azul oscuro y el botón **Reclamar acceso**. Cada
-pestaña puede solicitarlo una vez cada diez segundos, también comprobado por
-el servidor. El propietario recibe una notificación y puede pulsar
-**Delegar acceso** únicamente en la vista ATLAS y en estado de espera: sin
-grabación, respuesta, reproducción, continuación pendiente ni trabajo del backend.
+Las demás ven una pantalla negra y el botón **Tomar control**. Al pulsarlo, el
+servidor transfiere inmediatamente el permiso a esa pestaña; no hay solicitud,
+notificación ni confirmación en el dispositivo anterior.
 
-Al delegar se detienen micrófono, reconocimiento y audio de la pestaña anterior.
-La nueva pestaña puede activar su micrófono; se mantiene la sesión de OpenClaw.
-No se crean cuentas ni se reinicia la memoria al cambiar de pantalla.
+La pestaña anterior detecta el cambio en un máximo aproximado de medio segundo,
+detiene micrófono, reconocimiento, audio y cualquier trabajo activo, y pasa a
+mostrar la misma pantalla negra. La nueva pestaña puede activar su micrófono;
+se mantiene la sesión de OpenClaw. No se crean cuentas ni se reinicia la memoria.
 
 `access_control.py` mantiene un permiso aleatorio por página, solo en memoria.
-`static/access.js` renueva la conexión cada dos segundos. Cerrar la pestaña
+`static/access.js` renueva la conexión cada medio segundo. Cerrar la pestaña
 libera el control; si desaparece sin avisar, su permiso caduca a los veinte
 segundos. El cliente se detiene si pasa ocho segundos sin confirmar el acceso.
-Otro cliente no entra mientras quede una petición o trabajo especulativo en
-curso. Una recarga crea un permiso nuevo; si el cierre no llegó al servidor,
-puede esperar hasta que caduque el anterior. Tras actualizar WebScreen hay que
-recargar las pestañas antiguas.
+Una toma de control cancela el trabajo activo del propietario anterior. Una
+recarga crea un permiso nuevo y puede recuperar el control con el mismo botón.
+Tras actualizar WebScreen hay que recargar las pestañas antiguas.
 
 El backend exige `X-Atlas-Client` para las operaciones de voz, texto, preámbulos,
 cancelación, ajustes, eventos y consulta de cuota. No basta con ocultar botones.

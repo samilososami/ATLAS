@@ -3,9 +3,11 @@
 
   const WAKE_PRE_SILENCE_MS = 400;
   const FOLLOW_UP_IDLE_MS = 10000;
-  const OUTPUT_GUARD_DELAY_SECONDS = 0.55;
   const MODEL = "gpt-realtime-2.1";
   const DEFAULT_VOICE = "marin";
+  const VAD_THRESHOLD = 0.45;
+  const SILENCE_DURATION_MS = 500;
+  const PREFIX_PADDING_MS = 300;
 
   const normalized = (value) => String(value || "")
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
@@ -63,10 +65,7 @@
       this.peer = null;
       this.channel = null;
       this.media = null;
-      this.audioContext = null;
-      this.remoteSource = null;
-      this.remoteDelay = null;
-      this.remoteGain = null;
+      this.remoteAudio = null;
       this.session = null;
       this.state = "idle";
       this.closed = true;
@@ -86,6 +85,8 @@
       this.responseStartedAt = 0;
       this.firstOutputSeen = false;
       this.startPromise = null;
+      this.configurationTimer = 0;
+      this.connectionStartedAt = 0;
     }
 
     isIdle() {
@@ -95,7 +96,7 @@
 
     async start() {
       if (this.startPromise) return this.startPromise;
-      if (!this.closed && ["connecting", "ready"].includes(this.state)) return true;
+      if (!this.closed && ["connecting", "configuring", "ready"].includes(this.state)) return true;
       this.startPromise = this.startInternal().finally(() => { this.startPromise = null; });
       return this.startPromise;
     }
@@ -111,6 +112,7 @@
       this.callbacks.setScreen?.("GPT LIVE", "Conectando con ATLAS", "Preparando audio bidireccional…", "listening");
       this.callbacks.addLog?.("Abriendo sesión OpenAI Realtime mediante OpenClaw");
       const started = performance.now();
+      this.connectionStartedAt = started;
       try {
         const reservationResponse = await this.fetch("/api/realtime/session", {
           method: "POST", cache: "no-store",
@@ -140,15 +142,28 @@
         this.channel = this.peer.createDataChannel("oai-events");
         this.channel.addEventListener("open", () => {
           if (this.closed) return;
-          this.state = "ready";
-          this.callbacks.addLog?.(`OpenAI Realtime preparado con voz ${session.voice || DEFAULT_VOICE}`,
-            performance.now() - started);
-          this.callbacks.onReady?.({ model: session.model || MODEL, voice: session.voice || DEFAULT_VOICE });
-          this.showWaiting();
-          this.postEvent("session.ready", "Sesión OpenAI Realtime preparada", {
-            model: session.model || MODEL, voice: session.voice || DEFAULT_VOICE,
-            durationMs: performance.now() - started,
+          this.state = "configuring";
+          this.send({
+            type: "session.update",
+            session: {
+              type: "realtime",
+              audio: {
+                input: {
+                  turn_detection: {
+                    type: "server_vad",
+                    threshold: Number(session.vadThreshold || VAD_THRESHOLD),
+                    silence_duration_ms: Number(session.silenceDurationMs || SILENCE_DURATION_MS),
+                    prefix_padding_ms: Number(session.prefixPaddingMs || PREFIX_PADDING_MS),
+                    create_response: false,
+                    interrupt_response: false,
+                  },
+                },
+              },
+            },
           });
+          this.configurationTimer = window.setTimeout(() => {
+            this.fail(new Error("OpenAI Realtime no confirmó el control manual de turnos"));
+          }, 4000);
         });
         this.channel.addEventListener("message", (event) => this.handleEvent(event.data));
         const offer = await this.peer.createOffer();
@@ -178,22 +193,51 @@
 
     attachRemoteAudio(event) {
       const stream = event.streams?.[0] || new MediaStream([event.track]);
-      this.audioContext = new AudioContext();
-      this.remoteSource = this.audioContext.createMediaStreamSource(stream);
-      this.remoteDelay = this.audioContext.createDelay(2);
-      this.remoteDelay.delayTime.value = OUTPUT_GUARD_DELAY_SECONDS;
-      this.remoteGain = this.audioContext.createGain();
-      this.remoteGain.gain.value = this.conversationActive ? 1 : 0;
-      this.remoteSource.connect(this.remoteDelay).connect(this.remoteGain).connect(this.audioContext.destination);
-      void this.audioContext.resume();
+      const audio = document.querySelector("#realtime-audio") || document.createElement("audio");
+      audio.autoplay = true;
+      audio.playsInline = true;
+      audio.volume = 1;
+      // Start the WebRTC sink muted. Muted autoplay is reliable on every Chrome
+      // surface; wake validation unmutes it before response.create is sent.
+      audio.muted = !this.conversationActive;
+      audio.srcObject = stream;
+      if (!audio.isConnected) {
+        audio.hidden = true;
+        document.body.append(audio);
+      }
+      this.remoteAudio = audio;
+      void audio.play().then(() => {
+        this.callbacks.addLog?.("Salida de audio WebRTC conectada");
+        this.postEvent("audio.ready", "El navegador conectó la salida de audio Realtime");
+      }).catch((error) => {
+        this.callbacks.addLog?.(`Chrome bloqueó el audio Realtime: ${error.message}`, null, "error");
+        this.postEvent("audio.blocked", "Chrome bloqueó la salida de audio Realtime",
+          { status: error.message || String(error) });
+      });
     }
 
     setOutputEnabled(enabled) {
-      if (!this.remoteGain || !this.audioContext) return;
-      const at = this.audioContext.currentTime;
-      this.remoteGain.gain.cancelScheduledValues(at);
-      this.remoteGain.gain.setValueAtTime(this.remoteGain.gain.value, at);
-      this.remoteGain.gain.linearRampToValueAtTime(enabled ? 1 : 0, at + 0.025);
+      if (!this.remoteAudio) return;
+      this.remoteAudio.muted = !enabled;
+      if (enabled && this.remoteAudio.paused) {
+        void this.remoteAudio.play().catch((error) => {
+          this.callbacks.addLog?.(`No se pudo reanudar el audio Realtime: ${error.message}`, null, "error");
+        });
+      }
+    }
+
+    markReady() {
+      if (this.closed || this.state !== "configuring") return;
+      window.clearTimeout(this.configurationTimer);
+      this.configurationTimer = 0;
+      this.state = "ready";
+      const model = this.session?.model || MODEL;
+      const voice = this.session?.voice || DEFAULT_VOICE;
+      const durationMs = performance.now() - this.connectionStartedAt;
+      this.callbacks.addLog?.(`OpenAI Realtime preparado con voz ${voice}`, durationMs);
+      this.callbacks.onReady?.({ model, voice });
+      this.showWaiting();
+      this.postEvent("session.ready", "Sesión OpenAI Realtime preparada", { model, voice, durationMs });
     }
 
     send(payload) {
@@ -205,6 +249,9 @@
       let event;
       try { event = JSON.parse(String(raw)); } catch { return; }
       switch (event.type) {
+        case "session.updated":
+          this.markReady();
+          return;
         case "input_audio_buffer.speech_started":
           this.beginSpeech();
           return;
@@ -308,6 +355,7 @@
         this.postEvent("wake.accepted", "Wake word ATLAS validada", { text });
       }
       this.callbacks.setScreen?.("PROCESANDO", "ATLAS lo está procesando", "La conversación sigue en la misma sesión.", "working");
+      this.send({ type: "response.create" });
     }
 
     handleAssistantText(value, final) {
@@ -450,7 +498,10 @@
     }
 
     cancelProviderResponse() {
-      if (this.responseActive) this.send({ type: "response.cancel" });
+      if (this.responseActive) {
+        this.send({ type: "response.cancel" });
+        this.send({ type: "output_audio_buffer.clear" });
+      }
       this.responseActive = false;
     }
 
@@ -496,6 +547,8 @@
 
     stop(notify = true) {
       window.clearTimeout(this.followUpTimer);
+      window.clearTimeout(this.configurationTimer);
+      this.configurationTimer = 0;
       this.consultController?.abort();
       this.consultController = null;
       this.closed = true;
@@ -509,14 +562,12 @@
       this.peer = null;
       this.media?.getTracks().forEach((track) => track.stop());
       this.media = null;
-      this.remoteSource?.disconnect();
-      this.remoteDelay?.disconnect();
-      this.remoteGain?.disconnect();
-      this.remoteSource = null;
-      this.remoteDelay = null;
-      this.remoteGain = null;
-      void this.audioContext?.close();
-      this.audioContext = null;
+      if (this.remoteAudio) {
+        this.remoteAudio.pause();
+        this.remoteAudio.srcObject = null;
+        this.remoteAudio.muted = true;
+      }
+      this.remoteAudio = null;
       this.toolBuffers.clear();
       if (notify) this.callbacks.onStopped?.();
     }

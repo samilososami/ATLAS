@@ -8,7 +8,7 @@
     <meta name="google" content="notranslate" />
     <title>ATLAS WebScreen</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/styles.css?v=2026-08-28-access-1" />
+    <link rel="stylesheet" href="/styles.css?v=2026-08-29-takeover-1" />
   </head>
   <body>
     <section class="access-blocked" id="access-blocked" aria-labelledby="access-title">
@@ -16,14 +16,10 @@
         <p class="access-brand">ATLAS</p>
         <h1 id="access-title">Conectando con ATLAS…</h1>
         <p id="access-detail" role="status">Comprobando quién tiene el control.</p>
-        <button class="primary" id="access-claim" type="button" disabled>Reclamar acceso</button>
+        <button class="primary" id="access-takeover" type="button" disabled>Tomar control</button>
       </div>
     </section>
-    <aside class="access-notice" id="access-notice" role="region" aria-label="Solicitud de acceso" hidden>
-      <p>Otro usuario quiere acceder a ATLAS WebScreen. ¿Delegar?</p>
-      <span id="access-notice-detail" role="status"></span>
-      <button class="primary" id="access-delegate" type="button" disabled>Delegar acceso</button>
-    </aside>
+    <audio id="realtime-audio" autoplay playsinline hidden></audio>
     <div id="webscreen-content" hidden inert>
     <button class="menu-toggle" id="menu-toggle" type="button" aria-label="Abrir herramientas" aria-expanded="false">
       <span></span><span></span><span></span>
@@ -165,10 +161,10 @@
     </section>
 
     </div>
-    <script src="/access.js?v=2026-08-28-access-1"></script>
+    <script src="/access.js?v=2026-08-29-takeover-1"></script>
     <script src="/kiosk.js?v=2026-08-28-kiosk-1"></script>
-    <script src="/realtime.js?v=2026-08-29-realtime-2-1"></script>
-    <script src="/app.js?v=2026-08-29-realtime-2-1"></script>
+    <script src="/realtime.js?v=2026-08-29-realtime-audio-1"></script>
+    <script src="/app.js?v=2026-08-29-realtime-audio-1"></script>
     <script src="/quota.js?v=2026-08-28-access-1"></script>
   </body>
 </html>

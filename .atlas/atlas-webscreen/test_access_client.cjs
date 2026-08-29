@@ -8,7 +8,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
 
 function client() {
   let now = 100, idle = true, suspended = 0;
-  let reply = { owner: true, token: 'page-token', retryAfter: 0 };
+  let reply = { owner: true, token: 'page-token' };
   const calls = [], timers = [], events = new Map(), nodes = new Map();
   const node = id => {
     if (!nodes.has(id)) nodes.set(id, { events: {}, addEventListener(name, fn) { this.events[name] = fn; } });
@@ -32,8 +32,8 @@ test('loss of ownership hides controls, suspends audio/mic and rejects API calls
   assert.equal(c.node('#webscreen-content').hidden, false);
   await c.window.atlasAccess.fetch('/api/settings');
   assert.equal(c.calls.at(-1).options.headers.get('X-Atlas-Client'), 'page-token');
-  c.setReply({ owner: false, retryAfter: 0 });
-  c.timers.find(t => t.delay === 2000).fn(); await tick();
+  c.setReply({ owner: false });
+  c.timers.find(t => t.delay === 500).fn(); await tick();
   assert.equal(c.suspended, 1);
   assert.equal(c.node('#webscreen-content').hidden, true);
   assert.equal(c.node('#webscreen-content').inert, true);
@@ -41,20 +41,14 @@ test('loss of ownership hides controls, suspends audio/mic and rejects API calls
   await assert.rejects(c.window.atlasAccess.fetch('/api/text'));
 });
 
-test('delegate is blocked locally during a turn and suspends before the request', async () => {
+test('takeover is immediate and does not require approval from the current owner', async () => {
   const c = client(); await tick();
-  c.setReply({ owner: true, pendingRequest: 'request', canDelegate: true, retryAfter: 0 });
-  c.timers.find(t => t.delay === 2000).fn(); await tick();
-  c.setIdle(false);
-  c.node('#access-delegate').events.click(); await tick();
-  assert.equal(c.calls.filter(call => call.url.endsWith('/delegate')).length, 0);
-  c.setIdle(true);
-  c.setReply({ owner: false, delegated: true, retryAfter: 0 });
-  c.node('#access-delegate').events.click();
-  assert.equal(c.suspended, 1);
-  assert.equal(c.window.atlasAccess.hasControl(), false);
+  c.setReply({ owner: true, taken: true, replacedOwner: true });
+  c.node('#access-takeover').events.click();
   await tick();
-  assert.equal(c.node('#access-detail').textContent, 'Acceso delegado.');
+  assert.equal(c.calls.at(-1).url, '/api/access/takeover');
+  assert.equal(c.window.atlasAccess.hasControl(), true);
+  assert.equal(c.node('#webscreen-content').hidden, false);
 });
 
 test('lease watchdog stops a disconnected client before the server lease expires', async () => {

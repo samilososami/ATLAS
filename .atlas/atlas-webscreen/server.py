@@ -1894,10 +1894,10 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
                 result = ACCESS.connect()
             elif action == "heartbeat":
                 result = ACCESS.heartbeat(token, payload.get("idle"))
-            elif action == "claim":
-                result = ACCESS.claim(token)
-            elif action == "delegate":
-                result = ACCESS.delegate(token, payload.get("requestId"), payload.get("idle"))
+            elif action == "takeover":
+                result = ACCESS.takeover(token)
+                if result.get("replacedOwner"):
+                    cancel_run(None)
             elif action == "release":
                 ACCESS.release(token)
                 result = {"released": True}
