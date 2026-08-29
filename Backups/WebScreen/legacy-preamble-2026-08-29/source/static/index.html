@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#080b10" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="google" content="notranslate" />
+    <title>ATLAS WebScreen</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/styles.css?v=2026-08-28-access-1" />
+  </head>
+  <body>
+    <section class="access-blocked" id="access-blocked" aria-labelledby="access-title">
+      <div>
+        <p class="access-brand">ATLAS</p>
+        <h1 id="access-title">Conectando con ATLAS…</h1>
+        <p id="access-detail" role="status">Comprobando quién tiene el control.</p>
+        <button class="primary" id="access-claim" type="button" disabled>Reclamar acceso</button>
+      </div>
+    </section>
+    <aside class="access-notice" id="access-notice" role="region" aria-label="Solicitud de acceso" hidden>
+      <p>Otro usuario quiere acceder a ATLAS WebScreen. ¿Delegar?</p>
+      <span id="access-notice-detail" role="status"></span>
+      <button class="primary" id="access-delegate" type="button" disabled>Delegar acceso</button>
+    </aside>
+    <div id="webscreen-content" hidden inert>
+    <button class="menu-toggle" id="menu-toggle" type="button" aria-label="Abrir herramientas" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="panel-backdrop" id="panel-backdrop" hidden></div>
+    <aside class="side-panel" id="side-panel" aria-label="Herramientas de WebScreen" aria-hidden="true">
+      <div class="panel-heading">
+        <span>ATLAS</span>
+        <button id="panel-close" type="button" aria-label="Cerrar herramientas">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+      <nav class="tool-tabs" aria-label="Secciones">
+        <button class="tool-tab active" type="button" data-view="atlas" aria-selected="true">ATLAS</button>
+        <button class="tool-tab" type="button" data-view="transcription" aria-selected="false">Transcripción</button>
+        <button class="tool-tab" type="button" data-view="tts" aria-selected="false">Texto a voz</button>
+        <button class="tool-tab" type="button" data-view="settings" aria-selected="false">Ajustes</button>
+      </nav>
+    </aside>
+
+    <section class="app-view active" id="view-atlas" data-view-panel="atlas">
+      <main class="shell">
+        <header class="topbar">
+          <div class="topbar-status">
+          <span class="brand">ATLAS WebScreen</span>
+          <span class="connection"><i id="health-dot"></i><span id="health-label">Comprobando sistema</span></span>
+          </div>
+          <section class="codex-usage" id="codex-usage" aria-label="Límites de Codex">
+            <div class="usage-heading"><span>CODEX</span><span>Disponible</span></div>
+            <div class="usage-row" id="quota-five-hour">
+              <span class="usage-label">5 h</span>
+              <progress max="100" value="0" aria-label="Cuota disponible de cinco horas"></progress>
+              <strong class="usage-value">—</strong>
+              <span class="usage-reset">Consultando…</span>
+            </div>
+            <div class="usage-row" id="quota-weekly">
+              <span class="usage-label">Semanal</span>
+              <progress max="100" value="0" aria-label="Cuota semanal disponible"></progress>
+              <strong class="usage-value">—</strong>
+              <span class="usage-reset">Consultando…</span>
+            </div>
+            <span class="usage-status" id="quota-status" role="status">Consultando límites…</span>
+          </section>
+        </header>
+
+        <section class="hero" aria-labelledby="main-status">
+          <div class="state-mark" id="state-mark" data-state="idle" aria-hidden="true"></div>
+          <p class="eyebrow" id="phase-label">EN ESPERA</p>
+          <h1 id="main-status">Esperando a ATLAS</h1>
+          <p class="hint" id="status-detail">La escucha se activa automáticamente en ATLAS A1. En otro navegador, autoriza el micrófono la primera vez.</p>
+          <div class="timer" id="timer" aria-live="polite">00:00.0</div>
+          <div class="actions">
+            <button class="primary" id="enable-button" type="button">Activar micrófono</button>
+            <button class="secondary" id="record-button" type="button" hidden>Hablar ahora</button>
+            <button class="danger" id="cancel-button" type="button" hidden>Cancelar</button>
+          </div>
+          <label class="voice-picker" for="voice-provider">
+            <span>Motor de voz</span>
+            <select id="voice-provider">
+              <option value="browser" selected>Navegador · gratis</option>
+              <option value="elevenlabs">ElevenLabs</option>
+            </select>
+          </label>
+        </section>
+
+        <section class="conversation" aria-label="Conversación actual">
+          <article>
+            <span>TÚ</span>
+            <p id="transcript">Todavía no hay ninguna transcripción.</p>
+          </article>
+          <article>
+            <span>ATLAS</span>
+            <p id="response">La respuesta aparecerá aquí antes de reproducirse por voz.</p>
+          </article>
+        </section>
+
+        <section class="diagnostics" aria-labelledby="log-title">
+          <div class="section-heading">
+            <h2 id="log-title">Actividad</h2>
+            <span>Chrome STT · wake: 0,4 s de silencio · fin: 0,7 s · seguimiento: 10 s · sesión: 30 min</span>
+          </div>
+          <ol id="activity-log" aria-live="polite"></ol>
+        </section>
+      </main>
+    </section>
+
+    <section class="app-view" id="view-transcription" data-view-panel="transcription" hidden>
+      <main class="tool-shell transcription-shell">
+        <header class="tool-header">
+          <span class="brand">Transcripción</span>
+          <span id="dictation-status">Preparado</span>
+        </header>
+        <div class="transcription-paper" aria-live="polite">
+          <span id="dictation-final"></span><span id="dictation-interim"></span>
+          <span class="empty-copy" id="dictation-empty">Pulsa el micrófono y empieza a hablar.</span>
+        </div>
+        <button class="record-fab" id="dictation-toggle" type="button" aria-label="Empezar transcripción" data-recording="false">
+          <svg class="mic-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a4 4 0 0 0 4-4V6a4 4 0 1 0-8 0v5a4 4 0 0 0 4 4Z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v4M8 22h8"/></svg>
+          <svg class="stop-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
+        </button>
+      </main>
+    </section>
+
+    <section class="app-view" id="view-tts" data-view-panel="tts" hidden>
+      <main class="tool-shell compact-tool">
+        <header class="tool-header">
+          <span class="brand">Texto a voz</span>
+          <span>Laboratorio de voz</span>
+        </header>
+        <form class="tool-form" id="tts-form">
+          <label for="tts-text">Texto</label>
+          <textarea id="tts-text" rows="9" maxlength="4000" placeholder="Escribe lo que quieres escuchar…"></textarea>
+          <div class="form-row">
+            <label for="tts-provider">Motor de voz</label>
+            <select id="tts-provider">
+              <option value="browser" selected>Navegador · gratis</option>
+              <option value="elevenlabs">ElevenLabs</option>
+            </select>
+          </div>
+          <button class="primary tool-submit" id="tts-submit" type="submit">Reproducir</button>
+          <output class="tool-result" id="tts-result" aria-live="polite">Esperando texto.</output>
+        </form>
+      </main>
+    </section>
+
+    <section class="app-view" id="view-settings" data-view-panel="settings" hidden>
+      <main class="tool-shell compact-tool">
+        <header class="tool-header">
+          <span class="brand">Ajustes</span>
+          <span>Configuración de WebScreen</span>
+        </header>
+        <form class="tool-form" id="settings-form">
+          <label for="elevenlabs-voice-id">Voice ID de ElevenLabs</label>
+          <input id="elevenlabs-voice-id" name="voiceId" type="text" maxlength="128" autocomplete="off" spellcheck="false" placeholder="Voice ID" />
+          <p class="field-help">Déjalo vacío para volver a usar la voz configurada en OpenClaw.</p>
+          <button class="primary tool-submit" id="settings-submit" type="submit">Guardar</button>
+          <output class="tool-result" id="settings-result" aria-live="polite">Cargando configuración…</output>
+        </form>
+      </main>
+    </section>
+
+    </div>
+    <script src="/access.js?v=2026-08-28-access-1"></script>
+    <script src="/kiosk.js?v=2026-08-28-kiosk-1"></script>
+    <script src="/app.js?v=2026-08-29-contextual-wake-3"></script>
+    <script src="/quota.js?v=2026-08-28-access-1"></script>
+  </body>
+</html>

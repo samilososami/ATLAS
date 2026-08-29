@@ -1,0 +1,23 @@
+{
+  "id": "atlas-webscreen-runtime",
+  "name": "ATLAS WebScreen Runtime",
+  "description": "Keeps the WebScreen agent connected to its live voice turn.",
+  "version": "0.3.0",
+  "contracts": {
+    "tools": ["atlas_webscreen_wait"]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "baseUrl": {
+        "type": "string",
+        "default": "http://127.0.0.1:5000"
+      },
+      "sessionKey": {
+        "type": "string",
+        "default": "agent:main:subagent:atlas-webscreen-hot-listener"
+      }
+    }
+  }
+}

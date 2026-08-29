@@ -1,0 +1,13 @@
+{
+  "name": "atlas-webscreen-runtime",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Resident OpenClaw bridge tools for ATLAS WebScreen",
+  "peerDependencies": {
+    "openclaw": ">=2026.7.1"
+  },
+  "openclaw": {
+    "extensions": ["./index.js"]
+  }
+}
