@@ -1,5 +1,6 @@
 const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
-const CLIENT_BUILD = "2026-08-28-access-1";
+const CLIENT_BUILD = "2026-08-29-realtime-2-1";
+const REALTIME_PRIMARY = Boolean(window.AtlasRealtime);
 const accessFetch = (url, options) => window.atlasAccess.fetch(url, options);
 const hasControl = () => window.atlasAccess.hasControl();
 const LANGUAGE = "es-ES";
@@ -11,10 +12,20 @@ const FOLLOW_UP_ECHO_SETTLE_MS = 900;
 const FOLLOW_UP_ECHO_REJECT_WINDOW_MS = 1800;
 const MAX_RECORDING_MS = 60000;
 const SPECULATIVE_STABLE_MS = 250;
-const SPECULATIVE_MIN_CHARS = 8;
-const SPECULATIVE_MIN_WORDS = 2;
+const SPECULATIVE_MIN_CHARS = 12;
+const SPECULATIVE_MIN_WORDS = 3;
 const WAKE_ECHO_MUTE_MS = 2000;
 const WAKE_ECHO_TAIL_MS = 1200;
+const WAKE_PRE_SILENCE_MS = 400;
+const VOICE_SAMPLE_MS = 25;
+const VOICE_START_MS = 90;
+const VOICE_END_MS = 120;
+// El ruido de fondo no debe reiniciar continuamente la ventana de silencio.
+// Exigimos a la vez energía media y un pico propio de voz cercana; el umbral
+// sigue subiendo con el ruido real de la sala.
+const VOICE_MIN_RMS = 0.05;
+const VOICE_MIN_PEAK = 0.14;
+const VOICE_NOISE_MULTIPLIER = 3.4;
 
 const menuToggle = document.querySelector("#menu-toggle");
 const panelBackdrop = document.querySelector("#panel-backdrop");
@@ -53,6 +64,26 @@ const settingsSubmit = document.querySelector("#settings-submit");
 const settingsResult = document.querySelector("#settings-result");
 
 let microphoneStream = null;
+let microphoneInitializing = false;
+let microphoneGeneration = 0;
+let voiceAudioContext = null;
+let voiceAnalyser = null;
+let voiceMonitorTimer = 0;
+let voiceSamples = null;
+let voiceGateReady = false;
+let voiceActive = false;
+let voiceCandidateStartedAt = 0;
+let voiceQuietStartedAt = 0;
+let voiceLastEndedAt = 0;
+let wakeBurstStartedAt = 0;
+let wakeBurstSilenceBeforeMs = 0;
+let wakeContextResultIndex = 0;
+let lastRecognitionResultCount = 0;
+let ignoredWakeResultIndex = -1;
+let voiceNoiseFloor = 0.008;
+let voiceLastRms = 0;
+let voiceLastPeak = 0;
+let voiceLastThreshold = VOICE_MIN_RMS;
 let recognition = null;
 let recognitionRunning = false;
 let recognitionEnabled = false;
@@ -85,6 +116,7 @@ let followUpEchoReference = "";
 let interruptMonitoring = false;
 let interruptHandling = false;
 let recordingMode = "wake";
+let wakePendingResultIndex = -1;
 let parentInteractionId = "";
 let replyExpected = false;
 let interactionToken = 0;
@@ -107,12 +139,16 @@ let dictationInsertBreak = false;
 let ttsLabAudio = null;
 let ttsLabToken = 0;
 let ttsLabBusy = false;
+let realtimeController = null;
+let realtimeFallbackActive = false;
 
 function selectedVoiceProvider() {
+  if (voiceProviderSelect.value === "realtime") return "realtime";
   return voiceProviderSelect.value === "elevenlabs" ? "elevenlabs" : "browser";
 }
 
 function voiceProviderLabel(provider = selectedVoiceProvider()) {
+  if (provider === "realtime") return "OpenAI Realtime";
   return provider === "elevenlabs" ? "ElevenLabs" : "voz del navegador";
 }
 
@@ -149,8 +185,10 @@ function switchView(view) {
     tab.setAttribute("aria-selected", String(selected));
   }
   if (view === "atlas") {
-    scheduleRecognitionRestart(100);
+    if (REALTIME_PRIMARY && !realtimeFallbackActive) void activatePrimaryMicrophone();
+    else scheduleRecognitionRestart(100);
   } else {
+    realtimeController?.stop();
     stopRecognition();
   }
   setPanelOpen(false);
@@ -444,8 +482,10 @@ function setWaiting() {
   setScreen("EN ESPERA", "Esperando a ATLAS", "Di “ATLAS” para comenzar a grabar.", "idle");
   timer.textContent = "00:00.0";
   cancelButton.hidden = true;
-  recordButton.hidden = false;
-  if (activeView === "atlas") scheduleRecognitionRestart(350);
+  recordButton.hidden = REALTIME_PRIMARY && !realtimeFallbackActive;
+  if (activeView === "atlas" && (!REALTIME_PRIMARY || realtimeFallbackActive)) {
+    scheduleRecognitionRestart(350);
+  }
 }
 
 function formatTimer(milliseconds) {
@@ -467,8 +507,139 @@ function stopTimer() {
   timerInterval = 0;
 }
 
+function beginVoiceBurst(startedAt) {
+  voiceActive = true;
+  voiceCandidateStartedAt = 0;
+  voiceQuietStartedAt = 0;
+  wakeBurstStartedAt = startedAt;
+  wakeBurstSilenceBeforeMs = Math.max(0, startedAt - voiceLastEndedAt);
+  wakeContextResultIndex = lastRecognitionResultCount;
+  ignoredWakeResultIndex = -1;
+}
+
+function endVoiceBurst(endedAt) {
+  voiceActive = false;
+  voiceCandidateStartedAt = 0;
+  voiceQuietStartedAt = 0;
+  voiceLastEndedAt = Math.max(voiceLastEndedAt, endedAt);
+}
+
+function sampleVoiceActivity() {
+  if (!voiceAnalyser || !voiceSamples) return;
+  voiceAnalyser.getFloatTimeDomainData(voiceSamples);
+  let energy = 0;
+  let peak = 0;
+  for (const sample of voiceSamples) {
+    energy += sample * sample;
+    peak = Math.max(peak, Math.abs(sample));
+  }
+  const rms = Math.sqrt(energy / Math.max(1, voiceSamples.length));
+  const now = performance.now();
+  const threshold = Math.max(
+    VOICE_MIN_RMS,
+    Math.min(0.12, voiceNoiseFloor * VOICE_NOISE_MULTIPLIER),
+  );
+  const peakThreshold = Math.max(VOICE_MIN_PEAK, Math.min(0.38, threshold * 2.8));
+  const looksLikeNearbySpeech = rms >= threshold && peak >= peakThreshold;
+  voiceLastRms = rms;
+  voiceLastPeak = peak;
+  voiceLastThreshold = threshold;
+  if (!voiceActive) {
+    if (!looksLikeNearbySpeech) {
+      // Los sonidos continuos y moderados alimentan el suelo de ruido en vez
+      // de quedar atrapados para siempre como una falsa conversación.
+      if (rms < 0.07) {
+        voiceNoiseFloor = Math.max(
+          0.003,
+          Math.min(0.035, voiceNoiseFloor * 0.96 + rms * 0.04),
+        );
+      }
+      voiceCandidateStartedAt = 0;
+      return;
+    }
+    if (!voiceCandidateStartedAt) voiceCandidateStartedAt = now;
+    if (now - voiceCandidateStartedAt >= VOICE_START_MS) beginVoiceBurst(voiceCandidateStartedAt);
+    return;
+  }
+  if (rms >= threshold * 0.72 && peak >= peakThreshold * 0.65) {
+    voiceQuietStartedAt = 0;
+    return;
+  }
+  if (!voiceQuietStartedAt) voiceQuietStartedAt = now;
+  if (now - voiceQuietStartedAt >= VOICE_END_MS) endVoiceBurst(voiceQuietStartedAt);
+}
+
+function stopVoiceActivityGate() {
+  window.clearInterval(voiceMonitorTimer);
+  voiceMonitorTimer = 0;
+  try { voiceAnalyser?.disconnect(); } catch {}
+  try { voiceAudioContext?.close(); } catch {}
+  voiceAudioContext = null;
+  voiceAnalyser = null;
+  voiceSamples = null;
+  voiceGateReady = false;
+  voiceActive = false;
+  voiceCandidateStartedAt = 0;
+  voiceQuietStartedAt = 0;
+  wakeBurstStartedAt = 0;
+  wakeBurstSilenceBeforeMs = 0;
+  wakeContextResultIndex = 0;
+  lastRecognitionResultCount = 0;
+  ignoredWakeResultIndex = -1;
+  voiceLastRms = 0;
+  voiceLastPeak = 0;
+  voiceLastThreshold = VOICE_MIN_RMS;
+}
+
+function startVoiceActivityGate(stream) {
+  stopVoiceActivityGate();
+  voiceLastEndedAt = performance.now();
+  const AudioContextAPI = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextAPI) return;
+  try {
+    voiceAudioContext = new AudioContextAPI();
+    const source = voiceAudioContext.createMediaStreamSource(stream);
+    voiceAnalyser = voiceAudioContext.createAnalyser();
+    voiceAnalyser.fftSize = 1024;
+    voiceAnalyser.smoothingTimeConstant = 0;
+    source.connect(voiceAnalyser);
+    voiceSamples = new Float32Array(voiceAnalyser.fftSize);
+    voiceGateReady = true;
+    void voiceAudioContext.resume?.().catch(() => {});
+    voiceMonitorTimer = window.setInterval(sampleVoiceActivity, VOICE_SAMPLE_MS);
+  } catch (error) {
+    stopVoiceActivityGate();
+    addLog(`El filtro local de voz no pudo iniciarse: ${error.message}`, null, "error");
+  }
+}
+
+function parseWakeUtterance(text) {
+  const source = String(text || "");
+  const match = /(?:^|[\s,.!?¡¿])atlas(?=$|[\s,.!?¡¿:;—-])/i.exec(source);
+  if (!match) return null;
+  const atlasOffset = match[0].toLowerCase().lastIndexOf("atlas");
+  const atlasIndex = match.index + atlasOffset;
+  return {
+    prefix: source.slice(0, atlasIndex).replace(/[\s,.!?¡¿:;—-]+$/g, "").trim(),
+    request: source
+      .slice(atlasIndex + "atlas".length)
+      .replace(/^[\s,.!?¡¿:;—-]+/, "")
+      .trim(),
+  };
+}
+
 function includesWakeWord(text) {
-  return /(?:^|\s|[,.!?¡¿])atlas(?:$|\s|[,.!?¡¿])/i.test(text.normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
+  return extractWakeRequest(text) !== null;
+}
+
+function extractWakeRequest(text) {
+  return parseWakeUtterance(text)?.request ?? null;
+}
+
+function wakeVoiceGateAllows(prefix) {
+  if (String(prefix || "").trim()) return false;
+  if (!voiceGateReady) return true;
+  return wakeBurstStartedAt > 0 && wakeBurstSilenceBeforeMs >= WAKE_PRE_SILENCE_MS;
 }
 
 function includesInterruptCommand(text) {
@@ -678,7 +849,28 @@ function configureRecognition() {
   recognition.onstart = () => {
     if (!hasControl()) { recognition.abort(); return; }
     recognitionRunning = true;
+    lastRecognitionResultCount = 0;
+    wakeContextResultIndex = 0;
+    ignoredWakeResultIndex = -1;
+    if (voiceGateReady && voiceActive) {
+      // A recognition restart in the middle of speech must not manufacture a
+      // fresh, apparently silent wake-word window.
+      wakeBurstStartedAt = performance.now();
+      wakeBurstSilenceBeforeMs = 0;
+    }
     if (!interactionActive) setWaiting();
+  };
+  recognition.onspeechstart = () => {
+    // SpeechRecognition solo sustituye al medidor acústico cuando Web Audio
+    // no está disponible. Si el analizador funciona, manda el umbral local:
+    // Chrome puede confundir ventiladores o audio lejano con habla.
+    if (!voiceAnalyser) {
+      if (!voiceActive) beginVoiceBurst(performance.now());
+      voiceGateReady = true;
+    }
+  };
+  recognition.onspeechend = () => {
+    if (!voiceAnalyser && voiceActive) endVoiceBurst(performance.now());
   };
   recognition.onend = () => {
     recognitionRunning = false;
@@ -690,6 +882,12 @@ function configureRecognition() {
     addLog(`Reconocimiento de Chrome: ${event.error}`, null, "error");
     if (["not-allowed", "service-not-allowed", "audio-capture"].includes(event.error)) {
       recognitionEnabled = false;
+      stopVoiceActivityGate();
+      microphoneStream?.getTracks().forEach(track => track.stop());
+      microphoneStream = null;
+      enableButton.hidden = false;
+      enableButton.disabled = false;
+      recordButton.hidden = true;
       setScreen("ERROR", "No puedo escuchar", "Revisa el permiso del micrófono en Chrome.", "error");
     } else if (nativeTranscribing) {
       failInteraction("La transcripción nativa de Chrome se ha interrumpido.");
@@ -698,6 +896,7 @@ function configureRecognition() {
   recognition.onresult = (event) => {
     if (!hasControl()) return;
     if (performance.now() < recognitionMutedUntil) return;
+    lastRecognitionResultCount = event.results.length;
     if (nativeTranscribing) {
       let newInterim = "";
       let receivedText = false;
@@ -705,7 +904,12 @@ function configureRecognition() {
       let receivedInterim = false;
       for (let index = event.resultIndex; index < event.results.length; index += 1) {
         const result = event.results[index];
-        const text = String(result[0]?.transcript || "").trim();
+        let text = String(result[0]?.transcript || "").trim();
+        if (index === wakePendingResultIndex) {
+          const updatedWakeTail = extractWakeRequest(text);
+          if (updatedWakeTail !== null) text = updatedWakeTail;
+          if (result.isFinal) wakePendingResultIndex = -1;
+        }
         if (!text) continue;
         const candidate = `${finalTranscript} ${text}`.replace(/\s+/g, " ").trim();
         if (
@@ -737,58 +941,110 @@ function configureRecognition() {
       scheduleSpeculativeStarter(liveTranscript);
       return;
     }
+    const changedResults = [];
     for (let index = event.resultIndex; index < event.results.length; index += 1) {
-      const result = event.results[index][0];
-      const recognizedText = String(result?.transcript || "").trim();
-      if (!recognizedText) continue;
-      if (isLocalSilenceCommand(recognizedText)) {
-        addLog("Orden local de silencio detectada");
-        if (interactionActive) void silenceAndReturnToWake();
-        else setWaiting();
+      const result = event.results[index];
+      const text = String(result[0]?.transcript || "").trim();
+      if (text) changedResults.push({ index, text, isFinal: Boolean(result.isFinal) });
+    }
+    let evaluationResults = changedResults;
+    if (!interactionActive) {
+      evaluationResults = [];
+      const contextStart = Math.min(wakeContextResultIndex, event.results.length);
+      for (let index = contextStart; index < event.results.length; index += 1) {
+        const result = event.results[index];
+        const text = String(result[0]?.transcript || "").trim();
+        if (text) evaluationResults.push({ index, text, isFinal: Boolean(result.isFinal) });
+      }
+    }
+    const recognizedText = evaluationResults.map(result => result.text).join(" ");
+    if (!recognizedText) return;
+    if (isLocalSilenceCommand(recognizedText)) {
+      addLog("Orden local de silencio detectada");
+      if (interactionActive) void silenceAndReturnToWake();
+      else setWaiting();
+      return;
+    }
+    if (interactionActive && interruptMonitoring && includesInterruptCommand(recognizedText)) {
+      addLog("Interrupción por voz “ATLAS” detectada");
+      void interruptAndListen();
+      return;
+    }
+    const wakeResultPosition = evaluationResults.findIndex(result => parseWakeUtterance(result.text) !== null);
+    if (wakeResultPosition >= 0 && !interactionActive) {
+      const wakeResult = evaluationResults[wakeResultPosition];
+      const parsedWake = parseWakeUtterance(wakeResult.text);
+      const prefix = [
+        ...evaluationResults.slice(0, wakeResultPosition).map(result => result.text),
+        parsedWake.prefix,
+      ].filter(Boolean).join(" ");
+      if (!wakeVoiceGateAllows(prefix)) {
+        if (ignoredWakeResultIndex !== wakeResult.index) {
+          ignoredWakeResultIndex = wakeResult.index;
+          addLog(prefix
+            ? "Mención de ATLAS ignorada: formaba parte de una frase ya empezada"
+            : `Mención de ATLAS ignorada: no hubo 0,4 segundos de silencio de voz `
+              + `(RMS ${voiceLastRms.toFixed(3)}, pico ${voiceLastPeak.toFixed(3)}, `
+              + `umbral ${voiceLastThreshold.toFixed(3)})`);
+        }
         return;
       }
-      if (interactionActive && interruptMonitoring && includesInterruptCommand(recognizedText)) {
-        addLog("Interrupción por voz “ATLAS” detectada");
-        void interruptAndListen();
-        return;
-      }
-      if (includesWakeWord(recognizedText)) {
-        if (interactionActive) continue;
-        wakeDetectedIso = new Date().toISOString();
-        addLog("Wake word “ATLAS” detectada");
-        void beginWakeRecording();
-        return;
-      }
+      const initialRequest = [
+        parsedWake.request,
+        ...evaluationResults.slice(wakeResultPosition + 1).map(result => result.text),
+      ]
+        .filter(Boolean)
+        .join(" ");
+      const initialRequestFinal = evaluationResults
+        .slice(wakeResultPosition)
+        .every(result => result.isFinal);
+      wakeDetectedIso = new Date().toISOString();
+      addLog(initialRequest
+        ? "Wake word “ATLAS” y comienzo de la petición detectados sin pausa"
+        : "Wake word “ATLAS” detectada");
+      void beginWakeRecording(initialRequest, {
+        initialTranscriptFinal: initialRequestFinal,
+        wakePendingResultIndex: wakeResult.isFinal ? -1 : wakeResult.index,
+      });
     }
   };
 }
 
-async function beginWakeRecording() {
+async function beginWakeRecording(initialRequest = "", options = {}) {
   if (!hasControl()) return;
   if (interactionActive) return;
-  stopRecognition();
   setScreen("ACTIVADO", "Te escucho", "ATLAS ha detectado la wake word. Puedes hablar.", "listening");
-  await startRecording("wake");
+  await startRecording("wake", "", {
+    initialTranscript: initialRequest,
+    initialTranscriptFinal: options.initialTranscriptFinal,
+    wakePendingResultIndex: options.wakePendingResultIndex,
+    preserveRecognition: true,
+  });
 }
 
-async function startRecording(mode = "wake", parentId = "") {
+async function startRecording(mode = "wake", parentId = "", options = {}) {
   if (!hasControl()) return;
   if (interactionActive || !microphoneStream) return;
+  const initialTranscript = String(options.initialTranscript || "").trim();
+  const initialTranscriptFinal = Boolean(options.initialTranscriptFinal);
+  const preserveRecognition = Boolean(options.preserveRecognition && recognitionRunning);
   window.clearTimeout(followUpStartTimer);
   followUpStartTimer = 0;
   interactionActive = true;
   interactionToken += 1;
   interruptMonitoring = false;
-  stopRecognition();
-  transcriptElement.textContent = "Escuchando…";
+  if (!preserveRecognition) stopRecognition();
+  transcriptElement.textContent = initialTranscript || "Escuchando…";
   if (!(["followup", "interrupt"].includes(mode))) {
     responseElement.textContent = "Esperando la respuesta de ATLAS…";
   }
-  finalTranscript = "";
-  interimTranscript = "";
-  speechDetected = false;
+  finalTranscript = initialTranscriptFinal ? initialTranscript : "";
+  interimTranscript = initialTranscriptFinal ? "" : initialTranscript;
+  speechDetected = Boolean(initialTranscript);
   nativeTranscribing = true;
   recordingMode = mode;
+  wakePendingResultIndex = Number.isInteger(options.wakePendingResultIndex)
+    ? options.wakePendingResultIndex : -1;
   parentInteractionId = parentId || "";
   replyExpected = false;
   currentRequestId = crypto.randomUUID();
@@ -814,7 +1070,7 @@ async function startRecording(mode = "wake", parentId = "") {
   recordButton.hidden = true;
   addLog(followUp ? "Escucha de continuación iniciada" : "Transcripción nativa iniciada");
   beginTimer();
-  scheduleRecognitionRestart(20);
+  if (!preserveRecognition) scheduleRecognitionRestart(20);
   monitorFrame = window.requestAnimationFrame(monitorRecording);
 }
 
@@ -1259,6 +1515,7 @@ function resetInteractionState() {
   interimTranscript = "";
   currentRequestId = null;
   recordingMode = "wake";
+  wakePendingResultIndex = -1;
   parentInteractionId = "";
   replyExpected = false;
   speculativeCandidate = "";
@@ -1414,25 +1671,36 @@ async function cancelInteraction() {
   setWaiting();
 }
 
-async function initializeMicrophone() {
-  if (!hasControl()) return;
+async function initializeMicrophone(forceLegacy = false) {
+  if (REALTIME_PRIMARY && !forceLegacy && !realtimeFallbackActive) {
+    await activatePrimaryMicrophone();
+    return;
+  }
+  if (!hasControl() || microphoneInitializing || microphoneStream) return;
   if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
     setScreen("MICRÓFONO BLOQUEADO", "Chrome no permite el micrófono", "Marca esta URL HTTP como origen seguro en Chrome.", "error");
     addLog("El origen HTTP no está autorizado como contexto seguro", null, "error");
     return;
   }
   if (!SpeechRecognitionAPI) {
-    failInteraction("Este navegador no soporta la transcripción nativa. Usa Google Chrome.");
+    setScreen("ERROR", "No puedo escuchar", "Este navegador no soporta la transcripción nativa. Usa Google Chrome.", "error");
     return;
   }
+  const generation = ++microphoneGeneration;
+  microphoneInitializing = true;
   enableButton.disabled = true;
+  setScreen("MICRÓFONO", "Activando micrófono", "Preparando la escucha de ATLAS…", "listening");
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
       video: false,
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
     });
-    if (!hasControl()) { stream.getTracks().forEach(track => track.stop()); return; }
+    if (!hasControl() || generation !== microphoneGeneration) {
+      stream.getTracks().forEach(track => track.stop());
+      return;
+    }
     microphoneStream = stream;
+    startVoiceActivityGate(stream);
     recognitionEnabled = true;
     configureRecognition();
     enableButton.hidden = true;
@@ -1440,8 +1708,44 @@ async function initializeMicrophone() {
     addLog("Micrófono activado");
     setWaiting();
   } catch (error) {
-    enableButton.disabled = false;
-    failInteraction(error.name === "NotAllowedError" ? "Permiso de micrófono denegado." : "No se pudo abrir el micrófono.");
+    if (!hasControl() || generation !== microphoneGeneration) return;
+    recognitionEnabled = false;
+    stopVoiceActivityGate();
+    microphoneStream?.getTracks().forEach(track => track.stop());
+    microphoneStream = null;
+    enableButton.hidden = false;
+    recordButton.hidden = true;
+    const message = error.name === "NotAllowedError"
+      ? "Permiso de micrófono denegado. Autorízalo en Chrome y vuelve a intentarlo."
+      : "No se pudo abrir el micrófono. Comprueba que esté conectado y vuelve a intentarlo.";
+    addLog(message, null, "error");
+    setScreen("ERROR", "No puedo escuchar", message, "error");
+  } finally {
+    if (generation === microphoneGeneration) {
+      microphoneInitializing = false;
+      enableButton.disabled = false;
+    }
+  }
+}
+
+async function restoreMicrophone() {
+  if (!hasControl()) return;
+  const generation = microphoneGeneration;
+  // Only the physical kiosk has a managed, origin-specific microphone grant.
+  const kiosk = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname)
+    && new URLSearchParams(location.search).get("kiosk") === "1";
+  if (kiosk) {
+    await initializeMicrophone();
+    return;
+  }
+  // Other browsers resume an existing grant, never silently bypass a denial.
+  try {
+    const permission = await navigator.permissions?.query({ name: "microphone" });
+    if (permission?.state === "granted" && hasControl() && generation === microphoneGeneration) {
+      await initializeMicrophone();
+    }
+  } catch {
+    // Unsupported Permissions API: retain the manual activation button.
   }
 }
 
@@ -1451,7 +1755,9 @@ async function checkHealth() {
     const health = await response.json();
     healthDot.className = health.ready ? "ready" : "error";
     healthLabel.textContent = health.ready
-      ? `${health.openclaw.model} · Chrome STT · ${voiceProviderLabel()}`
+      ? (health.realtime?.ready
+        ? `${health.realtime.model} · WebRTC · ${health.realtime.voice}`
+        : `${health.openclaw.model} · ruta legacy`)
       : "Backend incompleto";
     addLog(health.ready ? "Backend preparado" : "Backend degradado", null, health.ready ? "normal" : "error");
   } catch {
@@ -1460,6 +1766,55 @@ async function checkHealth() {
     addLog("No se pudo consultar el backend", null, "error");
   }
 }
+
+async function activatePrimaryMicrophone() {
+  if (!REALTIME_PRIMARY || !hasControl() || activeView !== "atlas") return;
+  try {
+    await realtimeController?.start();
+  } catch (error) {
+    if (!hasControl() || activeView !== "atlas") return;
+    realtimeFallbackActive = true;
+    addLog(`OpenAI Realtime no pudo iniciar; activo el pipeline legacy: ${error.message}`, null, "error");
+    await initializeMicrophone(true);
+  }
+}
+
+realtimeController = window.AtlasRealtime?.create({
+  fetch: accessFetch,
+  callbacks: {
+    addLog,
+    setScreen,
+    setTranscript(text) {
+      transcriptElement.textContent = text;
+      transcriptElement.classList.remove("placeholder");
+    },
+    setResponse(text) {
+      responseElement.textContent = text || "ATLAS está preparando la respuesta.";
+      responseElement.classList.toggle("placeholder", !text);
+    },
+    onReady({ model, voice }) {
+      realtimeFallbackActive = false;
+      enableButton.hidden = true;
+      recordButton.hidden = true;
+      cancelButton.hidden = false;
+      voiceProviderSelect.value = "realtime";
+      healthDot.className = "ready";
+      healthLabel.textContent = `${model} · WebRTC · ${voice}`;
+    },
+    onWaiting() {
+      timer.textContent = "00:00.0";
+      cancelButton.hidden = false;
+      recordButton.hidden = true;
+    },
+    onFallback() {
+      realtimeFallbackActive = true;
+      if (hasControl() && activeView === "atlas") void initializeMicrophone(true);
+    },
+    onStopped() {
+      enableButton.hidden = false;
+    },
+  },
+});
 
 menuToggle.addEventListener("click", () => setPanelOpen(!sidePanel.classList.contains("open")));
 panelClose.addEventListener("click", () => setPanelOpen(false));
@@ -1477,16 +1832,24 @@ dictationToggle.addEventListener("click", () => {
 ttsForm.addEventListener("submit", runTtsLab);
 settingsForm.addEventListener("submit", saveSettings);
 
-enableButton.addEventListener("click", initializeMicrophone);
+enableButton.addEventListener("click", () => void initializeMicrophone());
 recordButton.addEventListener("click", () => {
+  if (REALTIME_PRIMARY && !realtimeFallbackActive) {
+    void activatePrimaryMicrophone();
+    return;
+  }
   wakeDetectedIso = new Date().toISOString();
   addLog("Transcripción manual iniciada");
   void startRecording("manual");
 });
-cancelButton.addEventListener("click", cancelInteraction);
-voiceProviderSelect.value = localStorage.getItem("atlas-webscreen-voice") === "elevenlabs"
-  ? "elevenlabs" : "browser";
+cancelButton.addEventListener("click", () => {
+  if (REALTIME_PRIMARY && !realtimeFallbackActive) realtimeController?.cancel();
+  else void cancelInteraction();
+});
+voiceProviderSelect.value = REALTIME_PRIMARY ? "realtime"
+  : (localStorage.getItem("atlas-webscreen-voice") === "elevenlabs" ? "elevenlabs" : "browser");
 voiceProviderSelect.addEventListener("change", () => {
+  if (selectedVoiceProvider() === "realtime") return;
   localStorage.setItem("atlas-webscreen-voice", selectedVoiceProvider());
   healthLabel.textContent = healthLabel.textContent.replace(/voz del navegador|ElevenLabs$/, voiceProviderLabel());
   addLog(`Motor de voz: ${voiceProviderLabel()}`);
@@ -1495,8 +1858,12 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") scheduleRecognitionRestart(100);
 });
 window.addEventListener("beforeunload", () => {
+  realtimeController?.stop(false);
+  microphoneGeneration += 1;
+  microphoneInitializing = false;
   recognitionEnabled = false;
   stopRecognition();
+  stopVoiceActivityGate();
   microphoneStream?.getTracks().forEach((track) => track.stop());
   requestController?.abort();
   stopCurrentPlayback();
@@ -1507,11 +1874,16 @@ window.addEventListener("beforeunload", () => {
 transcriptElement.classList.add("placeholder");
 responseElement.classList.add("placeholder");
 window.atlasAccess.bind({
-  isIdle: () => activeView === "atlas" && stateMark.dataset.state === "idle"
+  isIdle: () => (REALTIME_PRIMARY && !realtimeFallbackActive
+    ? activeView === "atlas" && Boolean(realtimeController?.isIdle())
+    : activeView === "atlas" && stateMark.dataset.state === "idle"
     && !interactionActive && !nativeTranscribing && !followUpStartTimer
     && !currentAudio && !streamedSpeechActive && !dictationRunning
-    && !dictationShouldRestart && !ttsLabBusy && !settingsSubmit.disabled,
+    && !dictationShouldRestart && !ttsLabBusy && !settingsSubmit.disabled),
   suspend() {
+    realtimeController?.stop(false);
+    microphoneGeneration += 1;
+    microphoneInitializing = false;
     interactionToken += 1;
     recognitionEnabled = false;
     interruptHandling = false;
@@ -1520,6 +1892,7 @@ window.atlasAccess.bind({
     window.cancelAnimationFrame(monitorFrame);
     stopRecognition();
     recognitionRunning = false;
+    stopVoiceActivityGate();
     microphoneStream?.getTracks().forEach(track => track.stop());
     microphoneStream = null;
     requestController?.abort();
@@ -1539,5 +1912,6 @@ window.atlasAccess.bind({
     setScreen("EN ESPERA", "Esperando a ATLAS", "Activa el micrófono para comenzar.", "idle");
     void checkHealth();
     void loadSettings();
+    if (!REALTIME_PRIMARY) void restoreMicrophone();
   },
 });

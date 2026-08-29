@@ -66,16 +66,14 @@ El código de [`ATLAS WebScreen`](.atlas/atlas-webscreen) incluye una interfaz d
 
 Una sola pestaña controla WebScreen a la vez. Otros clientes pueden reclamar acceso cada diez segundos; el propietario recibe una notificación y puede delegarlo cuando ATLAS está en espera. El cambio conserva la conversación y desactiva el micrófono y el audio de la pestaña anterior. Este control de uso no sustituye una futura autenticación.
 
-- Wake word `ATLAS`, sin locución de confirmación, y cierre del turno tras setecientos milisegundos de silencio.
-- Transcripción nativa del navegador mediante Speech Recognition. Su disponibilidad depende del navegador y puede utilizar servicios remotos; no se presenta como STT offline. Whisper sigue disponible para los demás canales y como fallback.
-- TTS del navegador o ElevenLabs, con Voice ID configurable y texto preparado para voz en español.
-- Una conexión persistente al Gateway y un oyente caliente del mismo agente OpenClaw, actualmente con GPT-5.6 Luna.
-- Respuesta directa para conversación sencilla, juegos y conocimiento general cuando Luna tiene suficiente contexto. Si necesita herramientas, información privada o acciones, delega al turno principal.
-- Historial breve compartido y estado de juego para mantener la continuidad. Hora y fecha simples se resuelven con el reloj del sistema en Europe/Madrid.
-- Preámbulos y avances de trabajo, reproducción por frases con TTS del navegador, interrupción mediante `ATLAS` y continuación automática cuando se espera una respuesta.
-- Cancelaciones sencillas sin LLM y logs por interacción para medir tiempos y depurar.
+- La conversación principal usa `gpt-realtime-2.1` mediante OpenClaw y WebRTC. El modelo recibe audio, transcribe y genera la voz nativa `marin` dentro de una misma sesión; Chrome Speech Recognition, TTS del navegador y ElevenLabs quedan como herramientas de laboratorio o fallback, no como la cadena principal.
+- Una conversación nueva debe comenzar con `ATLAS` tras cuatrocientos milisegundos de silencio. Después hay diez segundos de continuación natural sin repetir la wake word. Hablar durante la respuesta aplica barge-in y cancela también el trabajo delegado.
+- OpenAI Realtime responde directamente a conversación, juegos, ideas y conocimiento estable. Para memoria, workspace, correo, estado real, información actual, herramientas o acciones llama a `openclaw_agent_consult`, que conserva como agente principal a OpenClaw con GPT-5.6 Luna.
+- Las reservas WebRTC son efímeras. El OAuth persistente y las credenciales permanecen en la Raspberry Pi y no se entregan al navegador.
+- Cada interacción directa o delegada se registra en JSON Lines con tiempos, transcripción, modelo, voz, tool calls y resultado, sin incluir secretos.
+- Si Realtime o WebRTC fallan, WebScreen reactiva la arquitectura anterior. Su código y explicación están preservados en [`Backups/WebScreen/legacy-preamble-2026-08-29`](Backups/WebScreen/legacy-preamble-2026-08-29).
 
-La vía rápida y el turno principal son ejecuciones distintas del mismo agente, no dos identidades diferentes. El contexto conversacional se renueva tras treinta minutos sin actividad. El historial rápido vive en memoria y se vacía al reiniciar WebScreen; no sustituye la memoria duradera de OpenClaw.
+La voz Realtime y el agente de herramientas son dos capas del mismo ATLAS, no dos personalidades. La primera sostiene la conversación inmediata; Luna conserva el contexto, la memoria y la capacidad de actuar cuando la petición lo exige.
 
 ### Pantalla y terminal local
 

@@ -1,0 +1,9 @@
+.models/
+.runtime/
+.certs/
+.venv/
+logs/
+__pycache__/
+*.pyc
+*.wav
+*.webm

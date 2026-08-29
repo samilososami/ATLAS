@@ -127,7 +127,8 @@ class HTTPAccessTests(unittest.TestCase):
         return status, json.loads(data)
 
     def test_all_control_routes_reject_other_client_before_work(self):
-        for path in ('text', 'voice', 'starter', 'cancel', 'settings', 'tts', 'client-event'):
+        for path in ('text', 'voice', 'starter', 'cancel', 'settings', 'tts', 'client-event',
+                     'realtime/session', 'realtime/consult', 'realtime/event'):
             for token, status in ((self.b, 423), ('', 401)):
                 with self.subTest(path=path, token=bool(token)):
                     self.assertEqual(self.request('/api/' + path, token)[0], status)

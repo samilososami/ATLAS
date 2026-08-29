@@ -325,6 +325,15 @@ async function injectMessage(request) {
   });
 }
 
+async function createTalkSession(request) {
+  if (!request.bridgeRequestId || !request.params || typeof request.params !== "object") {
+    throw new Error("invalid talk session request");
+  }
+  await connectedPromise;
+  const session = await client.request("talk.client.create", request.params);
+  emit({ bridgeRequestId: request.bridgeRequestId, type: "talk_session", session });
+}
+
 async function handleCommand(request) {
   try {
     if (request.command === "run") await startRun(request);
@@ -335,6 +344,7 @@ async function handleCommand(request) {
       const summary = await client.request("usage.status", {});
       emit({ bridgeRequestId: request.bridgeRequestId, type: "usage", summary });
     }
+    else if (request.command === "talk_create") await createTalkSession(request);
     else if (request.command === "ping") emit({ type: "pong", nonce: request.nonce || null, connected });
     else throw new Error("unknown bridge command");
   } catch (error) {

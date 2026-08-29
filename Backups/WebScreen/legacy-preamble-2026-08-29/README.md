@@ -1,6 +1,6 @@
 # ATLAS WebScreen — arquitectura legacy de preámbulo
 
-Esta es la última copia pública de ATLAS WebScreen antes de integrar GPT Live el 29 de agosto de 2026.
+Esta es la última copia pública de ATLAS WebScreen antes de integrar la ruta nativa de OpenAI Realtime el 29 de agosto de 2026.
 
 ## Qué conserva
 
@@ -10,7 +10,7 @@ El objetivo de esta arquitectura era reducir la sensación de espera sin perder 
 
 ## Por qué pasó a ser un backup
 
-El pipeline separaba reconocimiento, preámbulo, agente y síntesis. Aunque cada pieza podía optimizarse, los cambios de fase seguían introduciendo pausas y hacían más difícil conseguir una conversación verdaderamente continua. La implementación principal comienza ahora una migración a `gpt-live-1-codex`, usando audio bidireccional nativo, barge-in y delegación al agente de OpenClaw cuando se necesitan herramientas o contexto profundo.
+El pipeline separaba reconocimiento, preámbulo, agente y síntesis. Aunque cada pieza podía optimizarse, los cambios de fase seguían introduciendo pausas y hacían más difícil conseguir una conversación fluida. La implementación principal comienza ahora una migración a `gpt-realtime-2.1`, usando audio bidireccional nativo, barge-in y delegación al agente de OpenClaw cuando se necesitan herramientas o contexto profundo. GPT‑Live‑1 es un producto posterior de ChatGPT y no se presenta aquí como un identificador público de la API.
 
 Esta copia permite volver al sistema anterior si la nueva ruta Realtime falla o si necesitamos comparar latencia, calidad y estabilidad entre ambas arquitecturas.
 

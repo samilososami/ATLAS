@@ -73,7 +73,7 @@
           <div class="state-mark" id="state-mark" data-state="idle" aria-hidden="true"></div>
           <p class="eyebrow" id="phase-label">EN ESPERA</p>
           <h1 id="main-status">Esperando a ATLAS</h1>
-          <p class="hint" id="status-detail">Activa la transcripción de Chrome una vez. Después di “ATLAS” para comenzar.</p>
+          <p class="hint" id="status-detail">La escucha se activa automáticamente en ATLAS A1. En otro navegador, autoriza el micrófono la primera vez.</p>
           <div class="timer" id="timer" aria-live="polite">00:00.0</div>
           <div class="actions">
             <button class="primary" id="enable-button" type="button">Activar micrófono</button>
@@ -83,8 +83,7 @@
           <label class="voice-picker" for="voice-provider">
             <span>Motor de voz</span>
             <select id="voice-provider">
-              <option value="browser" selected>Navegador · gratis</option>
-              <option value="elevenlabs">ElevenLabs</option>
+              <option value="realtime" selected>OpenAI Realtime · voz nativa</option>
             </select>
           </label>
         </section>
@@ -103,7 +102,7 @@
         <section class="diagnostics" aria-labelledby="log-title">
           <div class="section-heading">
             <h2 id="log-title">Actividad</h2>
-            <span>Chrome STT · silencio: 0,7 s · seguimiento: 10 s · sesión: 30 min</span>
+            <span>OpenAI Realtime 2.1 · WebRTC · wake local: 0,4 s · seguimiento: 10 s · sesión OpenClaw: 30 min</span>
           </div>
           <ol id="activity-log" aria-live="polite"></ol>
         </section>
@@ -168,7 +167,8 @@
     </div>
     <script src="/access.js?v=2026-08-28-access-1"></script>
     <script src="/kiosk.js?v=2026-08-28-kiosk-1"></script>
-    <script src="/app.js?v=2026-08-28-access-1"></script>
+    <script src="/realtime.js?v=2026-08-29-realtime-2-1"></script>
+    <script src="/app.js?v=2026-08-29-realtime-2-1"></script>
     <script src="/quota.js?v=2026-08-28-access-1"></script>
   </body>
 </html>

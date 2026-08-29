@@ -73,7 +73,7 @@ RESIDENT_STARTER_REARM_SECONDS = int(os.environ.get(
     "ATLAS_WEBSCREEN_RESIDENT_STARTER_REARM", "540"
 ))
 RESIDENT_STARTER_DELIVERY_DEADLINE_SECONDS = float(os.environ.get(
-    "ATLAS_WEBSCREEN_RESIDENT_STARTER_DEADLINE", "3.0"
+    "ATLAS_WEBSCREEN_RESIDENT_STARTER_DEADLINE", "0.8"
 ))
 SPECULATIVE_STARTER_TTL_SECONDS = 120
 PROGRESS_MIN_INTERVAL_SECONDS = int(os.environ.get("ATLAS_WEBSCREEN_PROGRESS_INTERVAL", "8"))
@@ -82,6 +82,11 @@ AGENT_MODEL_OVERRIDE = os.environ.get("ATLAS_WEBSCREEN_AGENT_MODEL", "").strip()
 AGENT_FAST_MODE = os.environ.get("ATLAS_WEBSCREEN_FAST_MODE", "1").lower() not in {
     "0", "false", "no", "off"
 }
+REALTIME_MODEL = os.environ.get("ATLAS_REALTIME_MODEL", "gpt-realtime-2.1").strip()
+REALTIME_VOICE = os.environ.get("ATLAS_REALTIME_VOICE", "marin").strip()
+REALTIME_VAD_THRESHOLD = float(os.environ.get("ATLAS_REALTIME_VAD_THRESHOLD", "0.45"))
+REALTIME_SILENCE_MS = int(os.environ.get("ATLAS_REALTIME_SILENCE_MS", "500"))
+REALTIME_PREFIX_PADDING_MS = int(os.environ.get("ATLAS_REALTIME_PREFIX_PADDING_MS", "300"))
 MIN_AUDIO_RMS = float(os.environ.get("ATLAS_MIN_AUDIO_RMS", "80"))
 MAX_AUDIO_BYTES = 16 * 1024 * 1024
 FOLLOW_UP_MARKER = "[[ESPERA_RESPUESTA]]"
@@ -332,6 +337,31 @@ class PersistentGatewayBridge:
             if event.get("type") != "usage":
                 raise RuntimeError("OpenClaw no pudo consultar los límites")
             return event.get("summary") or {}
+        finally:
+            with self.lock:
+                self.pending.pop(bridge_request_id, None)
+
+    def create_talk_session(self, params: dict[str, Any],
+                            timeout: float = 20.0) -> dict[str, Any]:
+        """Reserva una sesión WebRTC efímera sin exponer el OAuth persistente."""
+        bridge_request_id = uuid4().hex
+        events: queue.Queue[dict[str, Any]] = queue.Queue()
+        with self.lock:
+            self.pending[bridge_request_id] = events
+        try:
+            self.send({
+                "command": "talk_create", "bridgeRequestId": bridge_request_id,
+                "params": params,
+            })
+            try:
+                event = events.get(timeout=timeout)
+            except queue.Empty as error:
+                raise RuntimeError("OpenAI Realtime no reservó la sesión a tiempo") from error
+            if event.get("type") == "error":
+                raise RuntimeError(str(event.get("message") or "OpenAI Realtime no está disponible"))
+            if event.get("type") != "talk_session" or not isinstance(event.get("session"), dict):
+                raise RuntimeError("OpenClaw devolvió una sesión Realtime inválida")
+            return event["session"]
         finally:
             with self.lock:
                 self.pending.pop(bridge_request_id, None)
@@ -688,6 +718,36 @@ def append_client_event(payload: dict[str, Any]) -> Path:
     return candidates[0]
 
 
+def append_realtime_event(payload: dict[str, Any]) -> Path:
+    """Registra también los turnos resueltos íntegramente dentro de Realtime."""
+    interaction_id = safe_identifier(str(payload.get("interactionId") or ""), "")
+    if not interaction_id:
+        raise ValueError("Falta interactionId")
+    stage = re.sub(r"[^a-zA-Z0-9_.-]", "", str(payload.get("stage") or ""))[:80]
+    if not stage:
+        raise ValueError("Falta stage")
+    current = datetime.now(ZoneInfo("Europe/Madrid"))
+    folder = LOG_DIR / current.strftime("%Y-%m-%d")
+    folder.mkdir(parents=True, exist_ok=True)
+    candidates = sorted(folder.glob(f"*-{interaction_id}.log"))
+    path = candidates[0] if candidates else folder / f"{current.strftime('%H%M%S')}-{interaction_id}.log"
+    record: dict[str, Any] = {
+        "timestamp": now_iso(), "interaction": interaction_id,
+        "stage": f"realtime.{stage}",
+        "message": str(payload.get("message") or "Evento OpenAI Realtime")[:1000],
+    }
+    for key in ("role", "text", "model", "voice", "status", "source"):
+        value = payload.get(key)
+        if value not in (None, ""):
+            record[key] = str(value)[:8000 if key == "text" else 500]
+    duration = payload.get("durationMs")
+    if isinstance(duration, (int, float)):
+        record["duration_ms"] = round(float(duration), 1)
+    with LOG_LOCK, path.open("a", encoding="utf-8") as log_file:
+        log_file.write(json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n")
+    return path
+
+
 def register_run(request_id: str) -> threading.Event:
     event = threading.Event()
     with ACTIVE_RUNS_LOCK:
@@ -849,14 +909,17 @@ def prepare_voice_text(text: str) -> str:
         (r"\bHDMI\b", "h d m i"),
         (r"\bHTTPS\b", "h t t p s"),
         (r"\bHTTP\b", "h t t p"),
-        (r"\bAPI\b", "a p i"),
+        (r"\bAPI\b", "api"),
+        (r"\bRAFAS\b", "rafas"),
+        (r"\bIDENTITY\b", "identity"),
+        (r"\bSOUL\b", "soul"),
         (r"\bURL\b", "u r l"),
         (r"\bDNS\b", "d n s"),
         (r"\bSSD\b", "s s d"),
         (r"\bHDD\b", "h d d"),
         (r"\bNVMe\b", "n v m e"),
         (r"\bLCD\b", "l c d"),
-        (r"\bLED\b", "l e d"),
+        (r"\bLED\b", "led"),
         (r"\bRAM\b", "ram"),
         (r"\bCPU\b", "ce pe u"),
         (r"\bGPU\b", "ge pe u"),
@@ -869,17 +932,8 @@ def prepare_voice_text(text: str) -> str:
     )
     for pattern, replacement in substitutions:
         text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
-    text = re.sub(
-        r"\b[A-Z]{2,8}\b",
-        lambda match: (
-            match.group(0)
-            if match.group(0) == "ATLAS"
-            else match.group(0).lower()
-            if match.group(0) in {"IDENTITY", "SOUL"}
-            else " ".join(match.group(0).lower())
-        ),
-        text,
-    )
+    # Capitalization is not a pronunciation rule. Preserve other words;
+    # the voice prompt decides which unfamiliar initialisms need spelling out.
     text = re.sub(r"[«»“”„‟\"]", "", text)
     text = re.sub(r"\s*:\s*", " ", text)
     text = re.sub(r"\s*;\s*", ". ", text)
@@ -929,6 +983,7 @@ def requires_main_agent(text: str) -> bool:
     return bool(re.search(
         r"\b(correos?|gmail|bandeja|calendario|agenda|archivos?|carpetas?|"
         r"sistema|almacenamiento|discos?|puertos?|wifi|ram|memoria|monitor|pantalla|"
+        r"audio|sonido|bluetooth|dispositivos?|auriculares?|altavoces?|"
         r"raspberry|openclaw|openatlas|identity|soul|proyecto|herramientas?|"
         r"borr\w*|elimin\w*|instal\w*|reinici\w*|apag\w*|enciend\w*|"
         r"envi\w*|public\w*|ejecut\w*|configur\w*|descarg\w*|guard\w*|"
@@ -1078,16 +1133,19 @@ def can_speculate_read_only(text: str) -> bool:
         r"\b(escrib\w*|guard\w*|muev\w*|mov\w*|copi\w*)\b",
         r"\b(reinici\w*|apag\w*|suspend\w*|enciend\w*)\b",
         r"\b(envi\w*|mand\w*|respond\w*|public\w*|sub\w*)\b",
-        r"\b(descarg\w*|ejecut\w*|lanz\w*|compr\w*)\b",
+        r"\b(descarg\w*|ejecut\w*|lanz\w*|compr\w*|"
+        r"conect(?:ate|alo|ala|ame|anos|ar|emos|en|ad|a)|"
+        r"emparej(?:ate|alo|ala|ame|anos|ar|emos|en|ad|a))\b",
     )
     if any(re.search(pattern, phrase) for pattern in unsafe_patterns):
         return False
     intent_patterns = (
         r"\b(cuanto|cuantos|cuanta|cuantas|cual|cuales|que|quien|cuando|donde|como)\b",
-        r"\b(mira|revisa|comprueba|consulta|busca|lee|lista|muestra|dime|cuentame|averigua|analiza|describe)\b",
+        r"\b(hay|existe|existen|esta conectado|estan conectados)\b",
+        r"\b(mira|revisa|comprueba|consulta|busca|escanea|lee|lista|muestra|dime|cuentame|averigua|analiza|describe)\b",
     )
     subject_patterns = (
-        r"\b(estado|almacenamiento|espacio|ram|memoria|puertos|procesos|temperatura|wifi|correo|correos|calendario|archivos)\b",
+        r"\b(estado|almacenamiento|espacio|ram|memoria|puertos|procesos|temperatura|wifi|correo|correos|calendario|archivos|audio|sonido|bluetooth|dispositivos|auriculares|altavoces)\b",
     )
     has_intent = any(re.search(pattern, phrase) for pattern in intent_patterns)
     has_subject = any(re.search(pattern, phrase) for pattern in subject_patterns)
@@ -1717,7 +1775,8 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
         self.send_header("Permissions-Policy", "microphone=(self)")
         self.send_header("Content-Security-Policy",
             "default-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; "
-            "media-src 'self' blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+            "media-src 'self' blob:; connect-src 'self' https://api.openai.com wss://api.openai.com; "
+            "object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
         super().end_headers()
 
     def log_message(self, message_format: str, *args: object) -> None:
@@ -1774,6 +1833,10 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
                 "ready": bool(bridge_health.get("ready")),
                 "transcription": {"ready": True, "provider": "chrome-native",
                                   "language": "es-ES"},
+                "realtime": {"ready": bool(bridge_health.get("ready")),
+                             "provider": "openai", "model": REALTIME_MODEL,
+                             "voice": REALTIME_VOICE, "transport": "webrtc",
+                             "brain": "agent-consult", "legacyFallback": True},
                 "whisper": {"ready": MODEL is not None, "model": WHISPER_MODEL_NAME,
                             "engine": WHISPER_ENGINE, "error": MODEL_ERROR},
                 "openclaw": {"ready": bool(bridge_health.get("ready")),
@@ -1859,6 +1922,12 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
             self.handle_tts_preview()
         elif self.path == "/api/settings":
             self.handle_settings()
+        elif self.path == "/api/realtime/session":
+            self.handle_realtime_session()
+        elif self.path == "/api/realtime/consult":
+            self.handle_realtime_consult()
+        elif self.path == "/api/realtime/event":
+            self.handle_realtime_event()
         elif self.path == "/api/text":
             self.handle_text()
         elif self.path == "/api/voice":
@@ -1925,6 +1994,111 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
             "elevenlabsReady": bool(api_key and effective_voice_id),
             "saved": True,
         })
+
+    def handle_realtime_session(self) -> None:
+        try:
+            payload = self.read_json_payload(maximum=4096)
+        except ValueError:
+            payload = {}
+        session_key, _, _ = current_session()
+        voice = str(payload.get("voice") or REALTIME_VOICE).strip().lower()
+        if voice not in {"alloy", "ash", "ballad", "coral", "echo", "marin", "sage", "shimmer", "verse"}:
+            voice = REALTIME_VOICE
+        params = {
+            "mode": "realtime", "sessionKey": session_key,
+            "provider": "openai", "model": REALTIME_MODEL,
+            "transport": "webrtc", "brain": "agent-consult", "voice": voice,
+            "vadThreshold": REALTIME_VAD_THRESHOLD,
+            "silenceDurationMs": REALTIME_SILENCE_MS,
+            "prefixPaddingMs": REALTIME_PREFIX_PADDING_MS,
+        }
+        try:
+            session = BRIDGE.create_talk_session(params)
+        except RuntimeError as error:
+            self.send_json(503, {"error": str(error)[:500], "legacyFallback": True})
+            return
+        if session.get("transport") != "webrtc" or not session.get("clientSecret"):
+            self.send_json(502, {"error": "OpenClaw no devolvió una sesión WebRTC utilizable",
+                                 "legacyFallback": True})
+            return
+        self.send_json(200, {"session": session, "sessionKey": session_key,
+                             "legacyFallback": True})
+
+    def handle_realtime_consult(self) -> None:
+        try:
+            payload = self.read_json_payload(maximum=64 * 1024)
+            args = payload.get("args")
+            if isinstance(args, str):
+                args = json.loads(args or "{}")
+            if not isinstance(args, dict):
+                raise ValueError("Argumentos de consulta inválidos")
+            question = str(args.get("question") or args.get("prompt") or
+                           args.get("query") or args.get("task") or "").strip()
+            if not question:
+                raise ValueError("La consulta no contiene una pregunta")
+            context = str(args.get("context") or "").strip()
+            response_style = str(args.get("responseStyle") or "").strip()
+            request_id = safe_identifier(str(payload.get("requestId") or ""))
+            interaction_id = safe_identifier(str(payload.get("interactionId") or ""), request_id)
+        except (ValueError, TypeError, json.JSONDecodeError) as error:
+            self.send_json(400, {"error": str(error)[:300]})
+            return
+        session_key, _, _ = current_session()
+        cancel_event = register_run(request_id)
+        log = InteractionLog(interaction_id)
+        message = question
+        if context:
+            message += f"\n\nContexto de la conversación en directo:\n{context}"
+        if response_style:
+            message += f"\n\nEstilo hablado solicitado:\n{response_style}"
+        self.send_response(200)
+        self.send_header("Content-Type", "application/x-ndjson; charset=utf-8")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.close_connection = True
+        started = time.perf_counter()
+
+        def emit(event_type: str, **data: Any) -> None:
+            self.write_event(event_type, **data)
+
+        try:
+            log.add("realtime.consult.started", "OpenAI Realtime delegó trabajo al agente principal",
+                    question=question, model=configured_model() or "OpenClaw default")
+            emit("state", state="consulting", model=configured_model() or "OpenClaw default")
+            answer, tools, _, _ = stream_openclaw_agent(
+                question, session_key, emit, cancel_event, request_id,
+                prompt_override=build_agent_prompt(message),
+            )
+            elapsed = (time.perf_counter() - started) * 1000
+            log.add("realtime.consult.completed", "El agente principal respondió a OpenAI Realtime",
+                    elapsed, text=answer, tools=len(tools))
+            emit("result", text=answer, durationMs=round(elapsed, 1), tools=len(tools))
+        except CancelledRun:
+            try:
+                emit("cancelled", message="Consulta cancelada")
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+        except (BrokenPipeError, ConnectionResetError):
+            cancel_event.set()
+        except Exception as error:
+            safe_message = str(error).replace("\n", " ")[:500]
+            log.add("realtime.consult.error", "Falló la consulta delegada", error=safe_message)
+            try:
+                emit("error", message=safe_message)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+        finally:
+            with ACTIVE_RUNS_LOCK:
+                ACTIVE_RUNS.pop(request_id, None)
+
+    def handle_realtime_event(self) -> None:
+        try:
+            payload = self.read_json_payload(maximum=16 * 1024)
+            path = append_realtime_event(payload)
+        except (ValueError, OSError) as error:
+            self.send_json(400, {"error": str(error)[:300]})
+            return
+        self.send_json(200, {"saved": True, "log": str(path.relative_to(ROOT_DIR))})
 
     def handle_starter(self) -> None:
         try:
@@ -2339,11 +2513,12 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
                         starter_source = "hot-listener" if resident_claimed else "per-request"
                         if resident_claimed and primed is None:
                             log.add(
-                                "openclaw.starter.resident.omitted",
-                                "El oyente caliente omitió o descartó el preámbulo",
+                                "openclaw.starter.resident.fallback",
+                                "El oyente caliente no llegó a tiempo; activo el preámbulo de respaldo",
                                 (time.perf_counter() - starter_started) * 1000,
                             )
-                            return
+                            resident_claimed = False
+                            starter_source = "resident-fallback"
                         if not resident_claimed:
                             primed = take_speculative_starter(
                                 request_id, transcript, tts_provider, cancel_event)
