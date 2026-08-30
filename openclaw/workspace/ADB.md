@@ -18,6 +18,26 @@ List current transports with:
 adb devices -l
 ```
 
+Several devices may be connected at the same time, and wired USB transports
+can coexist with wireless `IP:PORT` transports. Treat `adb devices -l` as the
+live guest list: a television, a phone and a tablet are separate targets even
+when they are all waiting politely behind the same three letters.
+
+When the user names a device or a device type, match that request against the
+live serials and the records under `/home/atlas/.atlas/atlas-adb/devices/`.
+“Turn on the television” must select the connected television; “raise the
+volume on the phone” must select the phone. Use model, product, saved device
+type, serial and MAC evidence rather than list position. Always pass the chosen
+transport explicitly with `adb -s SERIAL ...` when more than one device is
+connected. Never let bare `adb shell`, `adb push`, `adb install` or an input
+command fall through to whichever transport happens to answer first.
+
+If exactly one connected record matches the user's description, act on it. If
+several plausible targets remain — for example, two televisions — ask one
+short clarifying question before doing anything. A stale saved record is useful
+context, not proof that its device is currently connected; verify it against
+`adb devices -l` before sending a command.
+
 ## Automatic device records
 
 The local `adb` wrapper behaves like the normal Android Debug Bridge, but a successful `adb connect` also launches a silent read-only inventory. A small systemd timer catches newly attached USB devices. Both paths call the same deterministic helper; the agent does not compose these records by hand.

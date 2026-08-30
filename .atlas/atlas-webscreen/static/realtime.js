@@ -8,6 +8,23 @@
   const VAD_THRESHOLD = 0.45;
   const SILENCE_DURATION_MS = 500;
   const PREFIX_PADDING_MS = 300;
+  const ATLAS_REALTIME_FALLBACK_INSTRUCTIONS =
+    "Eres ATLAS. Habla principalmente en español y usa tus herramientas para resolver la petición del usuario.";
+
+  const REALTIME_TOOLS = [{
+    type: "function",
+    name: "atlas_shell",
+    description: "Ejecuta un comando no interactivo en la Raspberry Pi como sami. Úsala para consultar el sistema o realizar la acción solicitada. La salida se devuelve a ATLAS.",
+    parameters: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        command: { type: "string", description: "Comando Bash completo que se debe ejecutar." },
+        timeout_seconds: { type: "integer", minimum: 1, maximum: 30, description: "Tiempo máximo de espera, en segundos." },
+      },
+      required: ["command"],
+    },
+  }];
 
   const normalized = (value) => String(value || "")
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
@@ -71,6 +88,13 @@
       this.closed = true;
       this.conversationActive = false;
       this.responseActive = false;
+      this.externalPlaybackActive = false;
+      this.nativePlaybackActive = false;
+      this.nativePlaybackEventsSeen = false;
+      this.turnInputPending = false;
+      this.speechOverActiveOutput = false;
+      this.responseFinalized = false;
+      this.externalPlaybackText = "";
       this.toolActive = false;
       this.currentInteractionId = "";
       this.currentRequestId = "";
@@ -79,6 +103,8 @@
       this.toolBuffers = new Map();
       this.consultController = null;
       this.followUpTimer = 0;
+      this.inputPendingTimer = 0;
+      this.pendingToolResponse = false;
       this.lastSpeechEndedAt = 0;
       this.preSpeechSilenceMs = Number.POSITIVE_INFINITY;
       this.turnStartedAt = 0;
@@ -91,7 +117,8 @@
 
     isIdle() {
       return this.state === "ready" && !this.conversationActive
-        && !this.responseActive && !this.toolActive;
+        && !this.responseActive && !this.externalPlaybackActive && !this.toolActive
+        && !this.nativePlaybackActive && !this.turnInputPending && !this.pendingToolResponse;
     }
 
     async start() {
@@ -146,10 +173,20 @@
         this.channel.addEventListener("open", () => {
           if (this.closed) return;
           this.state = "configuring";
+          const channelInstructions = String(session.atlasInstructions || "").trim();
+          const workspaceContext = String(session.atlasContext || "").trim();
+          const instructions = [
+            channelInstructions || ATLAS_REALTIME_FALLBACK_INSTRUCTIONS,
+            workspaceContext,
+          ].filter(Boolean).join("\n\n");
           this.send({
             type: "session.update",
             session: {
               type: "realtime",
+              output_modalities: [this.usesExternalTts() ? "text" : "audio"],
+              instructions,
+              tools: REALTIME_TOOLS,
+              tool_choice: "auto",
               audio: {
                 input: {
                   turn_detection: {
@@ -158,12 +195,20 @@
                     silence_duration_ms: Number(session.silenceDurationMs || SILENCE_DURATION_MS),
                     prefix_padding_ms: Number(session.prefixPaddingMs || PREFIX_PADDING_MS),
                     create_response: false,
+                    // The physical A1 uses an HDMI speaker and a separate USB
+                    // microphone. Let the transcript prove that sami actually
+                    // said ATLAS before cutting audio; raw VAD alone can hear
+                    // the loudspeaker and would otherwise interrupt itself.
                     interrupt_response: false,
                   },
                 },
               },
             },
           });
+          // Keep stats for diagnostics, but do not retain a second browser-side
+          // copy of the private Markdown after the session has accepted it.
+          delete this.session.atlasInstructions;
+          delete this.session.atlasContext;
           this.configurationTimer = window.setTimeout(() => {
             this.fail(new Error("OpenAI Realtime no confirmó el control manual de turnos"));
           }, 4000);
@@ -202,7 +247,7 @@
       audio.volume = 1;
       // Start the WebRTC sink muted. Muted autoplay is reliable on every Chrome
       // surface; wake validation unmutes it before response.create is sent.
-      audio.muted = !this.conversationActive;
+      audio.muted = this.usesExternalTts() || !this.conversationActive;
       audio.srcObject = stream;
       if (!audio.isConnected) {
         audio.hidden = true;
@@ -220,6 +265,7 @@
     }
 
     setOutputEnabled(enabled) {
+      if (this.usesExternalTts()) return;
       if (!this.remoteAudio) return;
       this.remoteAudio.muted = !enabled;
       if (enabled && this.remoteAudio.paused) {
@@ -235,10 +281,14 @@
       this.configurationTimer = 0;
       this.state = "ready";
       const model = this.session?.model || MODEL;
-      const voice = this.session?.voice || DEFAULT_VOICE;
+      const voice = this.session?.atlasSelection || this.session?.voice || DEFAULT_VOICE;
       const durationMs = performance.now() - this.connectionStartedAt;
       this.callbacks.addLog?.(`OpenAI Realtime preparado con voz ${voice}`, durationMs);
-      this.callbacks.onReady?.({ model, voice });
+      const contextTokens = Number(this.session?.atlasContextStats?.estimatedTokens || 0);
+      if (contextTokens) {
+        this.callbacks.addLog?.(`Contexto privado cargado: aproximadamente ${contextTokens} tokens`);
+      }
+      this.callbacks.onReady?.({ model, voice, output: this.outputMode() });
       this.showWaiting();
       this.postEvent("session.ready", "Sesión OpenAI Realtime preparada", { model, voice, durationMs });
     }
@@ -260,6 +310,19 @@
           return;
         case "input_audio_buffer.speech_stopped":
           this.endSpeech();
+          return;
+        case "output_audio_buffer.started":
+          this.nativePlaybackEventsSeen = true;
+          this.nativePlaybackActive = true;
+          this.postEvent("audio.playback_started", "Comenzó la reproducción del búfer WebRTC");
+          return;
+        case "output_audio_buffer.stopped":
+        case "output_audio_buffer.cleared":
+          this.nativePlaybackEventsSeen = true;
+          this.nativePlaybackActive = false;
+          this.postEvent("audio.playback_stopped", "Terminó la reproducción del búfer WebRTC");
+          this.flushPendingToolResponse();
+          if (this.responseFinalized) this.scheduleFollowUp();
           return;
         case "conversation.item.input_audio_transcription.completed":
           this.handleUserTranscript(event);
@@ -283,10 +346,16 @@
           return;
         case "response.created":
           this.responseActive = true;
+          this.responseFinalized = false;
+          this.externalPlaybackText = "";
           this.responseStartedAt = performance.now();
           this.firstOutputSeen = false;
-          this.currentAssistantText = withTurnSeparator(this.currentAssistantText);
-          this.callbacks.setScreen?.("RESPONDIENDO", "ATLAS está respondiendo", "Audio Realtime en curso.", "working");
+          // A preamble and its post-tool result are separate responses. Reset
+          // this buffer so external TTS never speaks the preamble a second time.
+          this.currentAssistantText = "";
+          this.callbacks.setScreen?.("RESPONDIENDO", "ATLAS está respondiendo",
+            this.usesExternalTts() ? "Realtime genera texto para la voz seleccionada." : "Audio Realtime en curso.",
+            "working");
           this.postEvent("response.created", "OpenAI Realtime comenzó a responder");
           return;
         case "response.cancelled":
@@ -302,15 +371,31 @@
 
     beginSpeech() {
       const now = performance.now();
+      const outputWasActive = this.conversationActive && (
+        this.responseActive || this.nativePlaybackActive
+        || this.externalPlaybackActive || this.toolActive
+      );
+      this.speechOverActiveOutput = outputWasActive;
       this.preSpeechSilenceMs = this.lastSpeechEndedAt
         ? Math.max(0, now - this.lastSpeechEndedAt) : Number.POSITIVE_INFINITY;
       this.turnStartedAt = now;
-      this.currentInteractionId = requestId();
-      this.currentRequestId = requestId();
-      this.currentAssistantText = "";
-      this.firstOutputSeen = false;
+      // Preserve the active response until the transcript confirms an explicit
+      // barge-in. This also keeps its text and logs intact when the mic hears
+      // the A1's own loudspeaker.
+      if (!outputWasActive) {
+        this.currentInteractionId = requestId();
+        this.currentRequestId = requestId();
+        this.currentAssistantText = "";
+        this.firstOutputSeen = false;
+      }
+      this.turnInputPending = true;
+      window.clearTimeout(this.inputPendingTimer);
       window.clearTimeout(this.followUpTimer);
-      if (this.conversationActive && (this.responseActive || this.toolActive)) this.interruptWork();
+      if (!outputWasActive) {
+        this.clearPendingToolResponse();
+      } else {
+        this.callbacks.addLog?.("Voz detectada durante la respuesta; espero la transcripción antes de interrumpir");
+      }
       this.callbacks.setScreen?.("ESCUCHANDO", "Te escucho", "OpenAI Realtime está recibiendo tu voz.", "listening");
       this.postEvent("input.speech_started", "OpenAI Realtime detectó voz", {
         durationMs: Number.isFinite(this.preSpeechSilenceMs) ? this.preSpeechSilenceMs : undefined,
@@ -319,6 +404,11 @@
 
     endSpeech() {
       this.lastSpeechEndedAt = performance.now();
+      window.clearTimeout(this.inputPendingTimer);
+      this.inputPendingTimer = window.setTimeout(() => {
+        this.turnInputPending = false;
+        this.scheduleFollowUp();
+      }, 4000);
       this.callbacks.setScreen?.("PROCESANDO", "ATLAS te ha escuchado", "Interpretando la frase en directo…", "working");
       this.postEvent("input.speech_stopped", "El usuario terminó de hablar",
         { durationMs: this.lastSpeechEndedAt - this.turnStartedAt });
@@ -327,17 +417,47 @@
     handleUserTranscript(event) {
       const text = String(event.transcript || "").trim();
       if (!text) return;
+      window.clearTimeout(this.inputPendingTimer);
+      this.inputPendingTimer = 0;
+      this.turnInputPending = false;
+      window.clearTimeout(this.followUpTimer);
       this.currentInputItemId = event.item_id || "";
       this.callbacks.setTranscript?.(text);
       this.postEvent("input.transcript", "OpenAI Realtime completó la transcripción", { role: "user", text });
       if (silenceInvocation(text)) {
         this.callbacks.addLog?.("Orden de silencio detectada localmente");
-        this.cancelProviderResponse();
+        this.interruptWork();
         this.conversationActive = false;
         this.setOutputEnabled(false);
         this.deleteInputItem();
+        this.speechOverActiveOutput = false;
         this.showWaiting();
         return;
+      }
+      if (this.speechOverActiveOutput) {
+        this.speechOverActiveOutput = false;
+        const directBargeIn = wakeInvocation(text);
+        const inputWords = normalized(text).split(/\s+/u).filter(Boolean);
+        const likelySpokenByAtlas = inputWords.length >= 3
+          && normalized(this.currentAssistantText).includes(normalized(text));
+        if (!directBargeIn || likelySpokenByAtlas) {
+          this.deleteInputItem();
+          this.callbacks.addLog?.(likelySpokenByAtlas
+            ? "Eco del propio ATLAS descartado sin cortar la respuesta"
+            : "Voz de fondo ignorada durante la respuesta; di ATLAS para interrumpir");
+          this.postEvent("echo.ignored", "La entrada durante la reproducción no era una interrupción válida",
+            { text });
+          this.restoreActiveOutputScreen();
+          this.flushPendingToolResponse();
+          return;
+        }
+        this.callbacks.addLog?.("Interrupción confirmada por la palabra ATLAS");
+        this.interruptWork();
+        this.currentInteractionId = requestId();
+        this.currentRequestId = requestId();
+        this.currentAssistantText = "";
+        this.firstOutputSeen = false;
+        this.postEvent("barge_in.accepted", "El usuario interrumpió explícitamente diciendo ATLAS", { text });
       }
       if (!this.conversationActive) {
         const validWake = wakeInvocation(text) && this.preSpeechSilenceMs >= WAKE_PRE_SILENCE_MS;
@@ -361,6 +481,19 @@
       this.send({ type: "response.create" });
     }
 
+    restoreActiveOutputScreen() {
+      if (this.externalPlaybackActive || this.nativePlaybackActive) {
+        this.callbacks.setScreen?.("HABLANDO", "ATLAS está hablando",
+          "La entrada del altavoz se ha descartado y la respuesta continúa.", "speaking");
+      } else if (this.toolActive) {
+        this.callbacks.setScreen?.("SHELL", "ATLAS está actuando",
+          "La acción en curso continúa sin interrupciones.", "working");
+      } else if (this.responseActive) {
+        this.callbacks.setScreen?.("RESPONDIENDO", "ATLAS está respondiendo",
+          "La respuesta Realtime continúa.", "working");
+      }
+    }
+
     handleAssistantText(value, final) {
       const text = String(value || "");
       if (!text) return;
@@ -381,7 +514,37 @@
       if (final) {
         this.postEvent("output.transcript", "OpenAI Realtime completó la respuesta hablada",
           { role: "assistant", text: this.currentAssistantText.trim() });
+        this.playExternalTextIfNeeded();
       }
+    }
+
+    outputMode() {
+      return this.session?.atlasOutput || "native";
+    }
+
+    usesExternalTts() {
+      return ["browser", "elevenlabs"].includes(this.outputMode());
+    }
+
+    playExternalTextIfNeeded() {
+      const text = this.currentAssistantText.trim();
+      if (!this.usesExternalTts() || !text || this.externalPlaybackText === text) return;
+      this.externalPlaybackText = text;
+      this.externalPlaybackActive = true;
+      this.callbacks.setScreen?.("HABLANDO", "ATLAS está hablando",
+        this.outputMode() === "elevenlabs"
+          ? "ElevenLabs está reproduciendo la respuesta."
+          : "La voz del navegador está reproduciendo la respuesta.",
+        "speaking");
+      Promise.resolve(this.callbacks.playExternalText?.(text, this.outputMode()))
+        .catch((error) => {
+          this.callbacks.addLog?.(`La voz externa falló: ${error?.message || error}`, null, "error");
+        })
+        .finally(() => {
+          this.externalPlaybackActive = false;
+          this.flushPendingToolResponse();
+          if (this.responseFinalized) this.scheduleFollowUp();
+        });
     }
 
     bufferTool(event) {
@@ -407,20 +570,19 @@
         this.submitToolResult(callId, { ok: true, mode, message: "Control aplicado por ATLAS WebScreen." });
         return;
       }
-      if (name !== "openclaw_agent_consult") {
+      if (name !== "atlas_shell") {
         this.submitToolResult(callId, { error: `Herramienta Realtime no disponible: ${name}` });
         return;
       }
       this.toolActive = true;
-      this.callbacks.setScreen?.("OPENCLAW", "ATLAS está trabajando", "El agente principal está usando su contexto y herramientas.", "working");
-      this.callbacks.addLog?.("OpenAI Realtime delegó la petición al agente principal");
-      this.postEvent("consult.started", "OpenAI Realtime consultó al agente principal",
-        { text: String(args.question || "") });
+      this.callbacks.setScreen?.("SHELL", "ATLAS está actuando", "Consultando el sistema directamente.", "working");
+      this.callbacks.addLog?.("OpenAI Realtime ejecuta una acción directa en la shell");
+      this.postEvent("shell.started", "OpenAI Realtime ejecuta una orden en la shell",
+        { text: String(args.command || "") });
       this.consultController = new AbortController();
       const started = performance.now();
-      let finalText = "";
       try {
-        const response = await this.fetch("/api/realtime/consult", {
+        const response = await this.fetch("/api/realtime/shell", {
           method: "POST", cache: "no-store", signal: this.consultController.signal,
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -428,34 +590,20 @@
             interactionId: this.currentInteractionId || requestId(),
           }),
         });
-        if (!response.ok || !response.body) {
+        if (!response.ok) {
           const payload = await response.json().catch(() => ({}));
-          throw new Error(payload.error || `OpenClaw respondió con HTTP ${response.status}`);
+          throw new Error(payload.error || `La shell respondió con HTTP ${response.status}`);
         }
-        await readEventStream(response.body, (item) => {
-          if (item.type === "response_delta") {
-            finalText = String(item.text || finalText);
-            this.callbacks.setResponse?.(finalText);
-          } else if (item.type === "agent_preamble" || item.type === "progress") {
-            this.callbacks.addLog?.(String(item.text || "Progreso del agente"));
-          } else if (item.type === "tool") {
-            this.callbacks.addLog?.(`Herramienta: ${item.title || "OpenClaw"}`);
-          } else if (item.type === "result") {
-            finalText = String(item.text || finalText);
-          } else if (item.type === "error") {
-            throw new Error(item.message || "Falló el agente principal");
-          }
-        });
-        if (!finalText.trim()) throw new Error("OpenClaw terminó sin una respuesta visible");
-        this.postEvent("consult.completed", "El agente principal devolvió el resultado",
-          { durationMs: performance.now() - started, text: finalText });
-        this.submitToolResult(callId, { result: finalText });
+        const result = await response.json();
+        this.postEvent("shell.completed", "La shell devolvió su resultado",
+          { durationMs: performance.now() - started, text: String(result.output || "") });
+        this.submitToolResult(callId, result);
       } catch (error) {
         const aborted = error?.name === "AbortError";
         this.submitToolResult(callId, aborted
           ? { status: "cancelled", message: "La persona interrumpió el trabajo." }
           : { error: error.message || String(error) });
-        if (!aborted) this.callbacks.addLog?.(`Consulta fallida: ${error.message}`, null, "error");
+        if (!aborted) this.callbacks.addLog?.(`Shell fallida: ${error.message}`, null, "error");
       } finally {
         this.toolActive = false;
         this.consultController = null;
@@ -467,15 +615,46 @@
         type: "conversation.item.create",
         item: { type: "function_call_output", call_id: callId, output: JSON.stringify(result) },
       });
+      this.requestToolContinuation();
+    }
+
+    requestToolContinuation() {
+      if (this.closed || this.turnInputPending) return;
+      if (this.externalPlaybackActive || this.nativePlaybackActive) {
+        this.pendingToolResponse = true;
+        this.callbacks.addLog?.("La respuesta final espera al final real del audio");
+        this.postEvent("tool.continuation_wait", "La respuesta final espera al final real del búfer de audio");
+        return;
+      }
       this.send({ type: "response.create" });
+    }
+
+    flushPendingToolResponse() {
+      if (!this.pendingToolResponse || this.closed || this.turnInputPending
+          || this.externalPlaybackActive || this.nativePlaybackActive) return;
+      this.pendingToolResponse = false;
+      this.send({ type: "response.create" });
+    }
+
+    clearPendingToolResponse() {
+      this.pendingToolResponse = false;
     }
 
     finishResponse(event) {
       this.responseActive = false;
+      this.responseFinalized = true;
       const status = event.response?.status || (event.type === "response.cancelled" ? "cancelled" : "completed");
       this.postEvent("response.done", "OpenAI Realtime cerró el turno", { status,
         durationMs: this.responseStartedAt ? performance.now() - this.responseStartedAt : undefined });
-      if (!this.conversationActive || this.toolActive) return;
+      if (!this.conversationActive || this.toolActive || this.externalPlaybackActive
+          || this.nativePlaybackActive || this.turnInputPending) return;
+      this.scheduleFollowUp();
+    }
+
+    scheduleFollowUp() {
+      if (!this.conversationActive || this.toolActive || this.responseActive
+          || this.externalPlaybackActive || this.nativePlaybackActive
+          || this.turnInputPending || this.pendingToolResponse) return;
       this.callbacks.setScreen?.("CONVERSACIÓN", "Puedes seguir hablando", "No necesitas volver a decir ATLAS durante diez segundos.", "listening");
       window.clearTimeout(this.followUpTimer);
       this.followUpTimer = window.setTimeout(() => {
@@ -488,6 +667,15 @@
 
     interruptWork() {
       this.cancelProviderResponse();
+      this.interruptLocalWork();
+      this.clearPendingToolResponse();
+      this.responseActive = false;
+      this.toolActive = false;
+      this.callbacks.addLog?.("Respuesta anterior interrumpida; ATLAS sigue escuchando");
+    }
+
+    interruptLocalWork() {
+      this.callbacks.stopExternalSpeech?.();
       if (this.consultController) this.consultController.abort();
       if (this.currentRequestId) {
         void this.fetch("/api/cancel", {
@@ -495,9 +683,7 @@
           body: JSON.stringify({ requestId: this.currentRequestId }),
         }).catch(() => {});
       }
-      this.responseActive = false;
-      this.toolActive = false;
-      this.callbacks.addLog?.("Respuesta anterior interrumpida; ATLAS sigue escuchando");
+      this.externalPlaybackActive = false;
     }
 
     cancelProviderResponse() {
@@ -506,6 +692,7 @@
         this.send({ type: "output_audio_buffer.clear" });
       }
       this.responseActive = false;
+      this.nativePlaybackActive = false;
     }
 
     deleteInputItem() {
@@ -550,14 +737,21 @@
 
     stop(notify = true) {
       window.clearTimeout(this.followUpTimer);
+      window.clearTimeout(this.inputPendingTimer);
+      this.clearPendingToolResponse();
       window.clearTimeout(this.configurationTimer);
       this.configurationTimer = 0;
       this.consultController?.abort();
       this.consultController = null;
+      this.callbacks.stopExternalSpeech?.();
       this.closed = true;
       this.state = "idle";
       this.conversationActive = false;
       this.responseActive = false;
+      this.externalPlaybackActive = false;
+      this.nativePlaybackActive = false;
+      this.turnInputPending = false;
+      this.speechOverActiveOutput = false;
       this.toolActive = false;
       this.channel?.close();
       this.channel = null;

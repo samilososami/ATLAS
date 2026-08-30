@@ -7,11 +7,11 @@ reversible y documentada en `Backups/WebScreen/legacy-preamble-2026-08-29`.
 ## Flujo Realtime actual
 
 1. OpenClaw crea una reserva WebRTC efímera para `gpt-realtime-2.1` usando el OAuth configurado en la Pi. El navegador nunca recibe el token persistente ni una API key.
-2. OpenAI Realtime recibe y transcribe el audio, decide el turno y genera directamente la voz nativa elegida en la interfaz. El selector incluye `alloy`, `ash`, `ballad`, `cedar`, `coral`, `echo`, `marin`, `sage`, `shimmer` y `verse`; cambiarla guarda el ajuste y crea una nueva sesión WebRTC, porque una voz no puede sustituirse después de que una sesión haya generado audio. No hay una cadena separada de Chrome STT, texto intermedio y TTS para la conversación principal.
+2. OpenAI Realtime recibe y transcribe el audio, decide el turno y puede generar directamente una de las voces nativas `ash`, `cedar`, `marin` o `verse`. El selector también admite ElevenLabs y la voz del navegador; en esos modos Realtime devuelve texto y WebScreen lo entrega al TTS elegido. Cambiar la salida guarda el ajuste y crea una sesión WebRTC nueva.
 3. El filtro local exige que una conversación nueva comience llamando a `ATLAS` después de cuatrocientos milisegundos de silencio. Realtime mantiene su VAD y transcripción activos, pero tiene desactivada la respuesta automática: WebScreen solo habilita el audio y envía `response.create` después de validar la wake word. Una mención accidental no genera voz ni necesita un retardo artificial.
-4. Tras una respuesta quedan diez segundos de continuación natural sin repetir la wake word. Hablar durante la respuesta provoca barge-in y cancela también cualquier trabajo delegado que siga activo.
-5. OpenAI Realtime responde directamente a charla, explicaciones, ideas, cálculos sencillos y juegos. Cuando necesita memoria, workspace, archivos, correo, estado real, información actual o acciones, llama a `openclaw_agent_consult`.
-6. Esa consulta usa la sesión persistente del agente principal de OpenClaw, con Luna, sus herramientas y `WEBSCREEN_INSTRUCTIONS.md`. El resultado vuelve a Realtime, que lo expresa con su propia voz sin leer logs ni razonamiento interno.
+4. Tras una respuesta quedan diez segundos de continuación natural sin repetir la wake word. Mientras ATLAS habla, una interrupción solo se acepta si la nueva frase comienza por `ATLAS`. El VAD no corta el audio por sí solo: esto evita que el altavoz HDMI vuelva a entrar por el micrófono USB y haga que el A1 se interrumpa a sí mismo.
+5. OpenAI Realtime responde directamente y usa `atlas_shell` para consultar archivos, red y estado real o para ejecutar las acciones autorizadas. En esta etapa no deriva el turno a Luna.
+6. La sesión recibe `REALTIME_INSTRUCTIONS.md` y todos los Markdown del workspace salvo los episodios de `memory/`. `AGENTS.md` sigue siendo el mapa para localizar contexto adicional sin llenar la conversación con recuerdos que quizá no hagan falta.
 7. Los turnos directos y delegados producen logs JSON Lines. Si falla la reserva, WebRTC o el proveedor, WebScreen reactiva el pipeline legacy sin perder la copia recuperable.
 
 La voz Realtime utiliza la sesión OAuth aceptada por OpenClaw. La cuota concreta
@@ -201,11 +201,12 @@ Incluye timestamps, duración y resultado de la transcripción nativa, sesión u
 
 ## Componentes
 
-- `server.py`: HTTP, reserva Realtime, consultas al agente, logging, entrada de texto legacy, fallback de Whisper, banco TTS y ajustes de voz.
-- `WEBSCREEN_INSTRUCTIONS.md`: voz Realtime, prompt principal, instrucciones del oyente, prompt legacy y variaciones de estilo editables sin modificar Python.
+- `server.py`: HTTP, reserva Realtime, shell acotada, logging, entrada de texto legacy, fallback de Whisper, banco TTS y ajustes de voz.
+- `REALTIME_INSTRUCTIONS.md`: comportamiento, seguridad, latencia y pronunciación del agente Realtime.
+- `WEBSCREEN_INSTRUCTIONS.md`: prompt e instrucciones del pipeline legacy conservado como respaldo.
 - `openclaw-plugin/`: herramienta local `atlas_webscreen_wait`, limitada a loopback y a la sesión interna del oyente, que mantiene preparado el turno del preámbulo.
 - `gateway_bridge.mjs`: conexión persistente al Gateway, reserva segura de sesiones OpenAI Realtime y multiplexación del agente principal/legacy.
-- `static/realtime.js`: WebRTC, audio bidireccional, wake gate, barge-in, transcripciones y puente de tool calls hacia OpenClaw.
+- `static/realtime.js`: WebRTC, audio bidireccional, wake gate, barge-in confirmado por transcripción, filtro de eco y tool calls de shell.
 - `static/`: interfaz mínima y herramientas de diagnóstico; `app.js` conserva el fallback legacy.
 - `start.sh`: arranque con el entorno Python local.
 - `atlas-webscreen`: wrapper disponible para usuario normal y root.

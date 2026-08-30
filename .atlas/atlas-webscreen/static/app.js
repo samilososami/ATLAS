@@ -1,5 +1,5 @@
 const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
-const CLIENT_BUILD = "2026-08-29-realtime-2-1";
+const CLIENT_BUILD = "2026-08-30-echo-gate-1";
 const REALTIME_PRIMARY = Boolean(window.AtlasRealtime);
 const accessFetch = (url, options) => window.atlasAccess.fetch(url, options);
 const hasControl = () => window.atlasAccess.hasControl();
@@ -141,6 +141,7 @@ let ttsLabToken = 0;
 let ttsLabBusy = false;
 let realtimeController = null;
 let realtimeFallbackActive = false;
+let realtimeExternalSpeechRun = 0;
 
 function selectedVoiceProvider() {
   if (REALTIME_PRIMARY && !realtimeFallbackActive) return "realtime";
@@ -416,6 +417,7 @@ async function loadSettings() {
     if (!response.ok) throw new Error(settings.error || "No se pudieron cargar los ajustes");
     if ([...voiceProviderSelect.options].some((option) => option.value === settings.realtimeVoice)) {
       voiceProviderSelect.value = settings.realtimeVoice;
+      voiceProviderSelect.dataset.activeVoice = settings.realtimeVoice;
     }
     voiceIdInput.value = settings.elevenlabsVoiceId || "";
     settingsResult.className = "tool-result";
@@ -1510,6 +1512,31 @@ function stopCurrentPlayback() {
   resetStreamedSpeechState();
 }
 
+function stopRealtimeExternalSpeech() {
+  realtimeExternalSpeechRun += 1;
+  stopCurrentPlayback();
+}
+
+async function playRealtimeExternalText(text, provider) {
+  const run = ++realtimeExternalSpeechRun;
+  const cleanText = String(text || "").trim();
+  if (!cleanText) return false;
+  if (provider === "elevenlabs") {
+    addLog("Generando la respuesta con ElevenLabs");
+    const response = await accessFetch("/api/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: cleanText }),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "ElevenLabs no pudo generar la voz");
+    if (run !== realtimeExternalSpeechRun) return false;
+    addLog("Respuesta de ElevenLabs preparada", Number(payload.generationMs || 0));
+    return playSpeech(cleanText, payload.audio, "elevenlabs", "realtime", interactionToken);
+  }
+  return playSpeech(cleanText, "", "browser", "realtime", interactionToken);
+}
+
 function resetInteractionState() {
   clearSpeculativeTimer();
   interactionActive = false;
@@ -1796,7 +1823,7 @@ realtimeController = window.AtlasRealtime?.create({
       responseElement.textContent = text || "ATLAS está preparando la respuesta.";
       responseElement.classList.toggle("placeholder", !text);
     },
-    onReady({ model, voice }) {
+    onReady({ model, voice, output }) {
       realtimeFallbackActive = false;
       enableButton.hidden = true;
       recordButton.hidden = true;
@@ -1804,8 +1831,9 @@ realtimeController = window.AtlasRealtime?.create({
       if ([...voiceProviderSelect.options].some((option) => option.value === voice)) {
         voiceProviderSelect.value = voice;
       }
+      voiceProviderSelect.dataset.activeVoice = voice;
       healthDot.className = "ready";
-      healthLabel.textContent = `${model} · WebRTC · ${voice}`;
+      healthLabel.textContent = `${model} · WebRTC · ${output === "native" ? voice : voiceProviderLabel(output)}`;
     },
     onWaiting() {
       timer.textContent = "00:00.0";
@@ -1819,6 +1847,8 @@ realtimeController = window.AtlasRealtime?.create({
     onStopped() {
       enableButton.hidden = false;
     },
+    playExternalText: playRealtimeExternalText,
+    stopExternalSpeech: stopRealtimeExternalSpeech,
   },
 });
 
@@ -1854,7 +1884,7 @@ cancelButton.addEventListener("click", () => {
 });
 voiceProviderSelect.addEventListener("change", async () => {
   if (!REALTIME_PRIMARY || !hasControl()) return;
-  const previousVoice = realtimeController?.session?.voice || "marin";
+  const previousVoice = voiceProviderSelect.dataset.activeVoice || "marin";
   const requestedVoice = voiceProviderSelect.value;
   voiceProviderSelect.disabled = true;
   addLog(`Cambiando la voz Realtime a ${requestedVoice}`);
@@ -1867,6 +1897,7 @@ voiceProviderSelect.addEventListener("change", async () => {
     const settings = await response.json();
     if (!response.ok) throw new Error(settings.error || "No se pudo guardar la voz Realtime");
     voiceProviderSelect.value = settings.realtimeVoice;
+    voiceProviderSelect.dataset.activeVoice = settings.realtimeVoice;
     realtimeController?.stop(false);
     await activatePrimaryMicrophone();
   } catch (error) {

@@ -44,7 +44,9 @@ SESSION_FILE = RUNTIME_DIR / "webscreen-session.json"
 SETTINGS_FILE = RUNTIME_DIR / "webscreen-settings.json"
 GATEWAY_BRIDGE = ROOT_DIR / "gateway_bridge.mjs"
 INSTRUCTIONS_FILE = ROOT_DIR / "WEBSCREEN_INSTRUCTIONS.md"
+REALTIME_INSTRUCTIONS_FILE = ROOT_DIR / "REALTIME_INSTRUCTIONS.md"
 OPENCLAW_CONFIG = Path.home() / ".openclaw" / "openclaw.json"
+OPENCLAW_WORKSPACE = Path.home() / ".openclaw" / "workspace"
 WHISPER_MODEL_NAME = os.environ.get("ATLAS_WHISPER_MODEL", "tiny")
 WHISPER_CPP_BIN = Path(os.environ.get(
     "ATLAS_WHISPER_CPP_BIN",
@@ -84,13 +86,22 @@ AGENT_FAST_MODE = os.environ.get("ATLAS_WEBSCREEN_FAST_MODE", "1").lower() not i
 }
 REALTIME_MODEL = os.environ.get("ATLAS_REALTIME_MODEL", "gpt-realtime-2.1").strip()
 REALTIME_VOICE = os.environ.get("ATLAS_REALTIME_VOICE", "marin").strip()
-REALTIME_VOICES = (
-    "alloy", "ash", "ballad", "cedar", "coral",
-    "echo", "marin", "sage", "shimmer", "verse",
-)
+# Curated ATLAS voices. Keep this server-side allowlist in sync with the UI:
+# requests may arrive directly at the endpoint, without the browser selector.
+REALTIME_VOICES = ("ash", "cedar", "marin", "verse")
+# These are presentation routes rather than OpenAI Realtime voices.  The
+# Realtime model still receives audio and returns the text, which the browser
+# then sends to the selected synthesizer.
+REALTIME_EXTERNAL_OUTPUTS = ("browser", "elevenlabs")
+REALTIME_OUTPUT_CHOICES = REALTIME_VOICES + REALTIME_EXTERNAL_OUTPUTS
 REALTIME_VAD_THRESHOLD = float(os.environ.get("ATLAS_REALTIME_VAD_THRESHOLD", "0.45"))
 REALTIME_SILENCE_MS = int(os.environ.get("ATLAS_REALTIME_SILENCE_MS", "500"))
 REALTIME_PREFIX_PADDING_MS = int(os.environ.get("ATLAS_REALTIME_PREFIX_PADDING_MS", "300"))
+REALTIME_SHELL_TIMEOUT_SECONDS = int(os.environ.get("ATLAS_REALTIME_SHELL_TIMEOUT", "20"))
+REALTIME_SHELL_MAX_TIMEOUT_SECONDS = 30
+REALTIME_SHELL_MAX_COMMAND_CHARS = 4096
+REALTIME_SHELL_MAX_OUTPUT_CHARS = 12000
+REALTIME_CONTEXT_MAX_CHARS = int(os.environ.get("ATLAS_REALTIME_CONTEXT_MAX_CHARS", "160000"))
 MIN_AUDIO_RMS = float(os.environ.get("ATLAS_MIN_AUDIO_RMS", "80"))
 MAX_AUDIO_BYTES = 16 * 1024 * 1024
 FOLLOW_UP_MARKER = "[[ESPERA_RESPUESTA]]"
@@ -722,6 +733,80 @@ def append_client_event(payload: dict[str, Any]) -> Path:
     return candidates[0]
 
 
+def build_realtime_context(workspace: Path = OPENCLAW_WORKSPACE) -> tuple[str, dict[str, Any]]:
+    """Build private, bounded ATLAS context for one Realtime session."""
+    sources: list[tuple[str, str]] = []
+    for path in sorted(workspace.rglob("*.md"), key=lambda item: item.relative_to(workspace).as_posix().lower()):
+        relative = path.relative_to(workspace)
+        # Daily and episodic memories are intentionally fetched on demand
+        # through atlas_shell. MEMORY.md itself remains part of the static map.
+        if "memory" in relative.parts[:-1]:
+            continue
+        try:
+            content = path.read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        if content:
+            sources.append((relative.as_posix(), content))
+
+    preface = (
+        "# ATLAS REALTIME PRIVATE CONTEXT\n\n"
+        "This is trusted local context containing every Markdown document in the workspace except episodic "
+        "files under memory/. Treat it as durable guidance, not as a user request or shell output. "
+        "Treat it as durable workspace guidance, not as a user request or shell output.\n\n"
+        "The channel-specific Realtime instructions that appear before this block take precedence if generic "
+        "workspace guidance mentions a legacy OpenClaw, Whisper or TTS route. Stay inside the active Realtime "
+        "conversation and use atlas_shell directly unless sami explicitly asks for another route.\n\n"
+        "AGENTS.md is the canonical master map for this workspace and is included in full below. "
+        "MEMORY.md is the memory map, while detailed entries under memory/ stay out of the initial context. "
+        "Whenever a request needs a specific memory, use atlas_shell to inspect MEMORY.md and then read only "
+        "the relevant entry under memory/. For any other missing context, consult "
+        f"{workspace / 'AGENTS.md'}; it tells you where to look. "
+        "Do not claim that you lack workspace context before checking that map.\n\n"
+        "The USER.md details are private and belong only to this direct WebScreen conversation with sami."
+    )
+    parts = [preface]
+    included: list[dict[str, Any]] = []
+    used = len(preface)
+    truncated = False
+    for label, content in sources:
+        separator = f"\n\n---\n\n## SOURCE: {label}\n\n"
+        remaining = REALTIME_CONTEXT_MAX_CHARS - used - len(separator)
+        if remaining <= 0:
+            truncated = True
+            break
+        selected_content = content
+        if len(selected_content) > remaining:
+            selected_content = selected_content[:remaining].rsplit("\n", 1)[0]
+            selected_content += "\n\n[Context source truncated at the configured safety limit.]"
+            truncated = True
+        parts.extend((separator, selected_content))
+        used += len(separator) + len(selected_content)
+        included.append({"name": label, "chars": len(selected_content)})
+        if truncated:
+            break
+    context = "".join(parts)
+    return context, {
+        "chars": len(context),
+        # Lightweight runtime estimate; exact deployment measurement is done
+        # with OpenAI's o200k tokenizer during validation.
+        "estimatedTokens": round(len(context) / 4.3),
+        "sources": included,
+        "truncated": truncated,
+    }
+
+
+def read_realtime_instructions(path: Path = REALTIME_INSTRUCTIONS_FILE) -> str:
+    """Read the channel-specific Realtime policy kept outside browser code."""
+    try:
+        instructions = path.read_text(encoding="utf-8").strip()
+    except OSError as error:
+        raise RuntimeError(f"No se puede leer {path.name}") from error
+    if not instructions:
+        raise RuntimeError(f"{path.name} está vacío")
+    return instructions
+
+
 def append_realtime_event(payload: dict[str, Any]) -> Path:
     """Registra también los turnos resueltos íntegramente dentro de Realtime."""
     interaction_id = safe_identifier(str(payload.get("interactionId") or ""), "")
@@ -794,6 +879,82 @@ def cancel_run(request_id: str | None) -> int:
     return len(targets)
 
 
+def compact_shell_output(stdout: str, stderr: str) -> str:
+    """Keep tool payloads useful without turning a spoken response into a dump."""
+    chunks: list[str] = []
+    if stdout.strip():
+        chunks.append(stdout.strip())
+    if stderr.strip():
+        chunks.append(f"stderr:\n{stderr.strip()}")
+    output = "\n".join(chunks).strip() or "El comando terminó sin salida."
+    if len(output) > REALTIME_SHELL_MAX_OUTPUT_CHARS:
+        output = output[:REALTIME_SHELL_MAX_OUTPUT_CHARS] + "\n[Salida truncada]"
+    return output
+
+
+def execute_realtime_shell(command: str, request_id: str,
+                           timeout_seconds: int | float | None = None) -> dict[str, Any]:
+    """Run one non-interactive command as the WebScreen service user."""
+    command = str(command or "").strip()
+    if not command:
+        raise ValueError("Falta el comando de shell")
+    if "\x00" in command or len(command) > REALTIME_SHELL_MAX_COMMAND_CHARS:
+        raise ValueError("El comando no tiene un formato válido")
+    try:
+        requested_timeout = float(timeout_seconds or REALTIME_SHELL_TIMEOUT_SECONDS)
+    except (TypeError, ValueError):
+        requested_timeout = REALTIME_SHELL_TIMEOUT_SECONDS
+    timeout = max(1.0, min(requested_timeout, float(REALTIME_SHELL_MAX_TIMEOUT_SECONDS)))
+    cancel_event = register_run(request_id)
+    environment = {
+        "HOME": str(Path.home()),
+        "USER": os.environ.get("USER", "sami"),
+        "LOGNAME": os.environ.get("LOGNAME", "sami"),
+        "SHELL": "/bin/bash",
+        "TERM": "xterm-256color",
+        "LANG": os.environ.get("LANG", "en_GB.UTF-8"),
+        "LC_ALL": os.environ.get("LC_ALL", ""),
+        "PATH": os.environ.get("PATH", "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"),
+    }
+    started = time.perf_counter()
+    try:
+        process = subprocess.Popen(
+            ["/bin/bash", "-lc", command],
+            cwd=Path.home(), env=environment, text=True,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        set_run_process(request_id, process)
+        while True:
+            if cancel_event.is_set():
+                terminate_process(process)
+                return {"ok": False, "cancelled": True, "command": command,
+                        "output": "La ejecución fue interrumpida.",
+                        "durationMs": round((time.perf_counter() - started) * 1000, 1)}
+            try:
+                stdout, stderr = process.communicate(timeout=0.15)
+                break
+            except subprocess.TimeoutExpired:
+                if time.perf_counter() - started >= timeout:
+                    terminate_process(process)
+                    stdout, stderr = process.communicate()
+                    return {
+                        "ok": False, "timedOut": True, "command": command,
+                        "exitCode": process.returncode,
+                        "output": compact_shell_output(stdout, stderr),
+                        "durationMs": round((time.perf_counter() - started) * 1000, 1),
+                    }
+        return {
+            "ok": process.returncode == 0,
+            "command": command,
+            "exitCode": process.returncode,
+            "output": compact_shell_output(stdout, stderr),
+            "durationMs": round((time.perf_counter() - started) * 1000, 1),
+        }
+    finally:
+        with ACTIVE_RUNS_LOCK:
+            ACTIVE_RUNS.pop(request_id, None)
+
+
 def raise_if_cancelled(event: threading.Event) -> None:
     if event.is_set():
         raise CancelledRun("Interacción cancelada")
@@ -821,13 +982,21 @@ def get_webscreen_settings() -> dict[str, Any]:
         except (OSError, json.JSONDecodeError):
             stored = {}
     _, effective_voice_id = get_tts_settings()
-    realtime_voice = str(stored.get("realtimeVoice") or REALTIME_VOICE).strip().lower()
-    if realtime_voice not in REALTIME_VOICES:
-        realtime_voice = REALTIME_VOICE if REALTIME_VOICE in REALTIME_VOICES else "marin"
+    fallback_voice = REALTIME_VOICE if REALTIME_VOICE in REALTIME_VOICES else "marin"
+    realtime_voice = str(stored.get("realtimeVoice") or fallback_voice).strip().lower()
+    if realtime_voice not in REALTIME_OUTPUT_CHOICES:
+        realtime_voice = fallback_voice
+    native_realtime_voice = str(stored.get("realtimeNativeVoice") or fallback_voice).strip().lower()
+    if native_realtime_voice not in REALTIME_VOICES:
+        native_realtime_voice = fallback_voice
+    if realtime_voice in REALTIME_VOICES:
+        native_realtime_voice = realtime_voice
     return {
         "elevenlabsVoiceId": effective_voice_id,
         "voiceIdOverride": bool(stored.get("elevenlabsVoiceId")),
         "realtimeVoice": realtime_voice,
+        "realtimeNativeVoice": native_realtime_voice,
+        "realtimeOutput": "native" if realtime_voice in REALTIME_VOICES else realtime_voice,
     }
 
 
@@ -848,6 +1017,8 @@ def save_webscreen_settings(*, elevenlabs_voice_id: str | None = None,
                 payload.pop("elevenlabsVoiceId", None)
         if realtime_voice is not None:
             payload["realtimeVoice"] = realtime_voice
+            if realtime_voice in REALTIME_VOICES:
+                payload["realtimeNativeVoice"] = realtime_voice
         SETTINGS_FILE.write_text(
             json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
@@ -1858,7 +2029,7 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
                              "provider": "openai", "model": REALTIME_MODEL,
                              "voice": get_webscreen_settings()["realtimeVoice"],
                              "transport": "webrtc",
-                             "brain": "agent-consult", "legacyFallback": True},
+                             "brain": "realtime-shell", "legacyFallback": True},
                 "whisper": {"ready": MODEL is not None, "model": WHISPER_MODEL_NAME,
                             "engine": WHISPER_ENGINE, "error": MODEL_ERROR},
                 "openclaw": {"ready": bool(bridge_health.get("ready")),
@@ -1948,6 +2119,8 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
             self.handle_realtime_session()
         elif self.path == "/api/realtime/consult":
             self.handle_realtime_consult()
+        elif self.path == "/api/realtime/shell":
+            self.handle_realtime_shell()
         elif self.path == "/api/realtime/event":
             self.handle_realtime_event()
         elif self.path == "/api/text":
@@ -2012,8 +2185,8 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
         if voice_id and not re.fullmatch(r"[A-Za-z0-9_-]{8,128}", voice_id):
             self.send_json(400, {"error": "El Voice ID no tiene un formato válido"})
             return
-        if realtime_voice is not None and realtime_voice not in REALTIME_VOICES:
-            self.send_json(400, {"error": "La voz Realtime no está disponible"})
+        if realtime_voice is not None and realtime_voice not in REALTIME_OUTPUT_CHOICES:
+            self.send_json(400, {"error": "La salida de voz seleccionada no está disponible"})
             return
         save_webscreen_settings(elevenlabs_voice_id=voice_id,
                                 realtime_voice=realtime_voice)
@@ -2030,10 +2203,15 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
         except ValueError:
             payload = {}
         session_key, _, _ = current_session()
-        configured_voice = get_webscreen_settings()["realtimeVoice"]
-        voice = str(payload.get("voice") or configured_voice).strip().lower()
-        if voice not in REALTIME_VOICES:
-            voice = configured_voice
+        settings = get_webscreen_settings()
+        configured_choice = settings["realtimeVoice"]
+        requested_choice = str(payload.get("voice") or configured_choice).strip().lower()
+        if requested_choice not in REALTIME_OUTPUT_CHOICES:
+            requested_choice = configured_choice
+        output_mode = "native" if requested_choice in REALTIME_VOICES else requested_choice
+        # The ephemeral provider session always needs a valid Realtime voice.
+        # In external-TTS modes it remains muted while text is produced.
+        voice = requested_choice if output_mode == "native" else settings["realtimeNativeVoice"]
         params = {
             "mode": "realtime", "sessionKey": session_key,
             "provider": "openai", "model": REALTIME_MODEL,
@@ -2051,6 +2229,17 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
             self.send_json(502, {"error": "OpenClaw no devolvió una sesión WebRTC utilizable",
                                  "legacyFallback": True})
             return
+        realtime_context, context_stats = build_realtime_context()
+        try:
+            realtime_instructions = read_realtime_instructions()
+        except RuntimeError as error:
+            self.send_json(503, {"error": str(error)[:500], "legacyFallback": True})
+            return
+        session["atlasOutput"] = output_mode
+        session["atlasSelection"] = requested_choice
+        session["atlasInstructions"] = realtime_instructions
+        session["atlasContext"] = realtime_context
+        session["atlasContextStats"] = context_stats
         self.send_json(200, {"session": session, "sessionKey": session_key,
                              "legacyFallback": True})
 
@@ -2120,6 +2309,35 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
         finally:
             with ACTIVE_RUNS_LOCK:
                 ACTIVE_RUNS.pop(request_id, None)
+
+    def handle_realtime_shell(self) -> None:
+        try:
+            payload = self.read_json_payload(maximum=16 * 1024)
+            args = payload.get("args")
+            if isinstance(args, str):
+                args = json.loads(args or "{}")
+            if not isinstance(args, dict):
+                args = payload
+            command = str(args.get("command") or "")
+            timeout_seconds = args.get("timeoutSeconds", args.get("timeout_seconds"))
+            request_id = safe_identifier(str(payload.get("requestId") or ""), uuid4().hex)
+            interaction_id = safe_identifier(str(payload.get("interactionId") or ""), request_id)
+        except (ValueError, TypeError, json.JSONDecodeError) as error:
+            self.send_json(400, {"error": str(error)[:300]})
+            return
+        try:
+            result = execute_realtime_shell(command, request_id, timeout_seconds)
+            append_realtime_event({
+                "interactionId": interaction_id, "stage": "shell.completed",
+                "message": "ATLAS ejecutó una orden mediante la shell Realtime",
+                "text": command, "status": "ok" if result.get("ok") else "failed",
+                "durationMs": result.get("durationMs"), "source": "realtime-shell",
+            })
+            self.send_json(200, result)
+        except ValueError as error:
+            self.send_json(400, {"error": str(error)[:300]})
+        except OSError as error:
+            self.send_json(502, {"error": f"La shell no pudo iniciar: {error}"[:500]})
 
     def handle_realtime_event(self) -> None:
         try:

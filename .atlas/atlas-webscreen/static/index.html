@@ -77,18 +77,18 @@
             <button class="danger" id="cancel-button" type="button" hidden>Cancelar</button>
           </div>
           <label class="voice-picker" for="voice-provider">
-            <span>Voz de OpenAI</span>
+            <span>Salida de voz</span>
             <select id="voice-provider">
-              <option value="alloy">Alloy</option>
-              <option value="ash">Ash</option>
-              <option value="ballad">Ballad</option>
-              <option value="cedar">Cedar</option>
-              <option value="coral">Coral</option>
-              <option value="echo">Echo</option>
-              <option value="marin" selected>Marin</option>
-              <option value="sage">Sage</option>
-              <option value="shimmer">Shimmer</option>
-              <option value="verse">Verse</option>
+              <optgroup label="OpenAI Realtime">
+                <option value="ash">Ash</option>
+                <option value="cedar">Cedar</option>
+                <option value="marin" selected>Marin</option>
+                <option value="verse">Verse</option>
+              </optgroup>
+              <optgroup label="Texto a voz externo">
+                <option value="elevenlabs">ElevenLabs</option>
+                <option value="browser">Voz del navegador</option>
+              </optgroup>
             </select>
           </label>
         </section>
@@ -172,8 +172,8 @@
     </div>
     <script src="/access.js?v=2026-08-29-takeover-1"></script>
     <script src="/kiosk.js?v=2026-08-28-kiosk-1"></script>
-    <script src="/realtime.js?v=2026-08-29-realtime-voices-1"></script>
-    <script src="/app.js?v=2026-08-29-realtime-voices-1"></script>
+    <script src="/realtime.js?v=2026-08-30-echo-gate-1"></script>
+    <script src="/app.js?v=2026-08-30-echo-gate-1"></script>
     <script src="/quota.js?v=2026-08-28-access-1"></script>
   </body>
 </html>
