@@ -1,7 +1,7 @@
 [Unit]
 Description=ATLAS physical WebScreen kiosk
-After=systemd-user-sessions.service user@1000.service atlas-webscreen.service atlas-audio-echo-cancel.service
-Wants=user@1000.service atlas-webscreen.service atlas-audio-echo-cancel.service
+After=systemd-user-sessions.service user@1000.service atlas-webscreen.service
+Wants=user@1000.service atlas-webscreen.service
 Conflicts=getty@tty1.service lightdm.service atlas-screen-terminal.service
 StartLimitIntervalSec=60
 StartLimitBurst=3

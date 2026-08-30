@@ -119,6 +119,24 @@ class RealtimeBackendTests(unittest.TestCase):
         self.assertEqual(result["exitCode"], 0)
         self.assertEqual(result["output"], "atlas-shell-test")
 
+    def test_realtime_shell_permanently_blocks_forced_recursive_rm(self):
+        forbidden = (
+            "rm -rf /",
+            "sudo rm -fr /home/atlas",
+            "/bin/rm --recursive --force /tmp/example",
+            "bash -lc 'rm -R -f /'",
+            "rm -r --no-preserve-root /",
+            "rm --force-root /",
+        )
+        for command in forbidden:
+            with self.subTest(command=command), self.assertRaisesRegex(ValueError, "bloqueado"):
+                app.validate_realtime_shell_command(command)
+
+    def test_realtime_shell_allows_non_forced_scoped_operations(self):
+        for command in ("rm -r relative-directory", "rm -f one-file.txt", "printf safe"):
+            with self.subTest(command=command):
+                app.validate_realtime_shell_command(command)
+
 
 if __name__ == "__main__":
     unittest.main()

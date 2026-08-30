@@ -101,6 +101,7 @@ REALTIME_SHELL_TIMEOUT_SECONDS = int(os.environ.get("ATLAS_REALTIME_SHELL_TIMEOU
 REALTIME_SHELL_MAX_TIMEOUT_SECONDS = 30
 REALTIME_SHELL_MAX_COMMAND_CHARS = 4096
 REALTIME_SHELL_MAX_OUTPUT_CHARS = 12000
+REALTIME_SHELL_NEVER_ALLOWED_OPTIONS = ("--no-preserve-root", "--force-root")
 REALTIME_CONTEXT_MAX_CHARS = int(os.environ.get("ATLAS_REALTIME_CONTEXT_MAX_CHARS", "160000"))
 MIN_AUDIO_RMS = float(os.environ.get("ATLAS_MIN_AUDIO_RMS", "80"))
 MAX_AUDIO_BYTES = 16 * 1024 * 1024
@@ -892,6 +893,25 @@ def compact_shell_output(stdout: str, stderr: str) -> str:
     return output
 
 
+def validate_realtime_shell_command(command: str) -> None:
+    """Enforce permanent backend red lines independently of model behavior."""
+    normalized = command.replace("\\\n", " ")
+    if any(option in normalized for option in REALTIME_SHELL_NEVER_ALLOWED_OPTIONS):
+        raise ValueError("Comando bloqueado permanentemente por la política de seguridad de ATLAS")
+
+    # Reject every spelling of recursive+forced rm, even for a scoped path.
+    # ATLAS can use a narrower or recoverable operation, but never this pair.
+    for match in re.finditer(r"(?<![\w./-])(?:(?:/usr)?/bin/)?rm(?=\s|$)", normalized):
+        clause = re.split(r"(?:&&|\|\||[;|&\n])", normalized[match.end():], maxsplit=1)[0]
+        recursive = bool(re.search(r"(?:^|\s)--recursive(?=\s|$)", clause))
+        forced = bool(re.search(r"(?:^|\s)--force(?=\s|$)", clause))
+        for short_options in re.findall(r"(?:^|\s)-([^-\s]+)(?=\s|$)", clause):
+            recursive = recursive or "r" in short_options or "R" in short_options
+            forced = forced or "f" in short_options
+        if recursive and forced:
+            raise ValueError("Comando bloqueado permanentemente: ATLAS no puede ejecutar rm recursivo y forzado")
+
+
 def execute_realtime_shell(command: str, request_id: str,
                            timeout_seconds: int | float | None = None) -> dict[str, Any]:
     """Run one non-interactive command as the WebScreen service user."""
@@ -900,6 +920,7 @@ def execute_realtime_shell(command: str, request_id: str,
         raise ValueError("Falta el comando de shell")
     if "\x00" in command or len(command) > REALTIME_SHELL_MAX_COMMAND_CHARS:
         raise ValueError("El comando no tiene un formato válido")
+    validate_realtime_shell_command(command)
     try:
         requested_timeout = float(timeout_seconds or REALTIME_SHELL_TIMEOUT_SECONDS)
     except (TypeError, ValueError):
@@ -1972,7 +1993,7 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
         super().end_headers()
 
     def log_message(self, message_format: str, *args: object) -> None:
-        if self.path == "/api/access/heartbeat" and len(args) > 1 and str(args[1]) == "200":
+        if getattr(self, "path", "") == "/api/access/heartbeat" and len(args) > 1 and str(args[1]) == "200":
             return
         print(f"[atlas-webscreen] {self.address_string()} - {message_format % args}")
 
@@ -1982,7 +2003,10 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(payload)))
         self.end_headers()
-        self.wfile.write(payload)
+        try:
+            self.wfile.write(payload)
+        except (BrokenPipeError, ConnectionResetError):
+            self.close_connection = True
 
     def write_event(self, event_type: str, **data: Any) -> None:
         line = json.dumps({"type": event_type, **data}, ensure_ascii=False, separators=(",", ":"))

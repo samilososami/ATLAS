@@ -82,24 +82,17 @@ sequenced.handleEvent(JSON.stringify({ type: 'output_audio_buffer.stopped' }));
 assert.equal(sequencedSent.filter(event => event.type === 'response.create').length, 1);
 assert.equal(sequenced.pendingToolResponse, false);
 
-// ATLAS A1 supplies Chrome with a system-level echo-cancelled microphone, so
-// Realtime can use its native low-latency barge-in for any spoken interruption.
+// Raw VAD must not own barge-in on the physical A1: its HDMI speaker can be
+// heard by the separate USB microphone. Wait for a transcript and only cut
+// the response when the person explicitly says ATLAS.
 const interruptedSent = [];
-const interruptedFetches = [];
-const interrupted = window.AtlasRealtime.create({
-  fetch: async (url, options = {}) => {
-    interruptedFetches.push({ url, body: options.body ? JSON.parse(options.body) : null });
-    return { ok: true };
-  },
-  callbacks: {},
-});
+const interrupted = window.AtlasRealtime.create({ fetch: async () => ({ ok: true }), callbacks: {} });
 interrupted.closed = false;
 interrupted.state = 'ready';
 interrupted.session = { atlasOutput: 'native' };
 interrupted.conversationActive = true;
 interrupted.responseActive = true;
 interrupted.nativePlaybackActive = true;
-interrupted.currentRequestId = 'previous-request';
 interrupted.currentAssistantText = 'Es como una foto reciente de tu red guardada en el sistema.';
 interrupted.channel = {
   readyState: 'open',
@@ -110,13 +103,20 @@ now = 2000;
 interrupted.beginSpeech();
 assert.equal(interruptedSent.some(event => event.type === 'response.cancel'), false);
 assert.equal(interruptedSent.some(event => event.type === 'output_audio_buffer.clear'), false);
-assert.equal(interruptedFetches.find(call => call.url === '/api/cancel').body.requestId, 'previous-request');
-interrupted.handleUserTranscript({ item_id: 'person-1', transcript: 'espera un momento' });
+interrupted.handleUserTranscript({ item_id: 'echo-1', transcript: 'Es como una foto reciente' });
+assert.equal(interruptedSent.some(event => event.type === 'response.cancel'), false);
+assert.equal(interruptedSent.some(event => event.type === 'response.create'), false);
+assert.equal(interruptedSent.some(event => event.type === 'conversation.item.delete'), true);
+
+interrupted.beginSpeech();
+interrupted.handleUserTranscript({ item_id: 'person-1', transcript: 'Atlas, espera un momento' });
+assert.equal(interruptedSent.some(event => event.type === 'response.cancel'), true);
+assert.equal(interruptedSent.some(event => event.type === 'output_audio_buffer.clear'), true);
 assert.equal(interruptedSent.filter(event => event.type === 'response.create').length, 1);
 interrupted.stop(false);
 
 const source = fs.readFileSync(`${__dirname}/static/realtime.js`, 'utf8');
-assert.match(source, /interrupt_response:\s*true/);
+assert.match(source, /interrupt_response:\s*false/);
 assert.match(source, /session\.atlasContext/);
 assert.match(source, /output_audio_buffer\.stopped/);
 assert.doesNotMatch(source, /estimatedSpeechMs/);
