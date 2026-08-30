@@ -2,6 +2,7 @@
   "use strict";
 
   const WAKE_PRE_SILENCE_MS = 400;
+  const INPUT_SETTLE_MS = 400;
   const FOLLOW_UP_IDLE_MS = 10000;
   const MODEL = "gpt-realtime-2.1";
   const DEFAULT_VOICE = "marin";
@@ -100,6 +101,10 @@
       this.nativePlaybackActive = false;
       this.nativePlaybackEventsSeen = false;
       this.turnInputPending = false;
+      this.speechInputActive = false;
+      this.pendingTranscripts = 0;
+      this.responseAfterInput = false;
+      this.responseCreateTimer = 0;
       this.speechOverActiveOutput = false;
       this.responseFinalized = false;
       this.externalPlaybackText = "";
@@ -126,7 +131,9 @@
     isIdle() {
       return this.state === "ready" && !this.conversationActive
         && !this.responseActive && !this.externalPlaybackActive && !this.toolActive
-        && !this.nativePlaybackActive && !this.turnInputPending && !this.pendingToolResponse;
+        && !this.nativePlaybackActive && !this.turnInputPending && !this.speechInputActive
+        && !this.pendingTranscripts && !this.responseAfterInput
+        && !this.responseCreateTimer && !this.pendingToolResponse;
     }
 
     async start() {
@@ -362,6 +369,8 @@
           void this.handleTool(event);
           return;
         case "response.created":
+          this.clearResponseCreateTimer();
+          this.responseAfterInput = false;
           this.responseActive = true;
           this.responseFinalized = false;
           this.externalPlaybackText = "";
@@ -392,6 +401,15 @@
 
     beginSpeech() {
       const now = performance.now();
+      const unfinishedInput = this.speechInputActive || this.pendingTranscripts > 0
+        || this.responseAfterInput || Boolean(this.responseCreateTimer);
+      const responseCanBeReopened = this.conversationActive && this.responseActive
+        && !this.firstOutputSeen && !this.nativePlaybackActive
+        && !this.externalPlaybackActive && !this.toolActive;
+      if (responseCanBeReopened) {
+        this.cancelProviderResponse();
+        this.responseAfterInput = true;
+      }
       const outputWasActive = this.conversationActive && (
         this.responseActive || this.nativePlaybackActive
         || this.externalPlaybackActive || this.toolActive
@@ -403,19 +421,25 @@
       // Preserve the active response until the transcript confirms an explicit
       // barge-in. This also keeps its text and logs intact when the mic hears
       // the A1's own loudspeaker.
-      if (!outputWasActive) {
+      if (!outputWasActive && !unfinishedInput && !responseCanBeReopened) {
         this.currentInteractionId = requestId();
         this.currentRequestId = requestId();
         this.currentAssistantText = "";
         this.firstOutputSeen = false;
       }
+      this.speechInputActive = true;
       this.turnInputPending = true;
       window.clearTimeout(this.inputPendingTimer);
       window.clearTimeout(this.followUpTimer);
+      this.clearResponseCreateTimer();
       if (!outputWasActive) {
         this.clearPendingToolResponse();
       } else {
         this.callbacks.addLog?.("Voz detectada durante la respuesta; espero la transcripción antes de interrumpir");
+      }
+      if ((unfinishedInput || responseCanBeReopened) && !outputWasActive) {
+        this.callbacks.addLog?.("La voz continúa el mismo turno; espero el siguiente fragmento");
+        this.postEvent("input.segment_continued", "Un nuevo fragmento continúa la petición anterior");
       }
       // Raw VAD only means that the microphone heard speech-like audio. It is
       // not proof that somebody called ATLAS, so an idle screen must not flash
@@ -430,10 +454,16 @@
 
     endSpeech() {
       this.lastSpeechEndedAt = performance.now();
+      this.speechInputActive = false;
+      this.pendingTranscripts += 1;
+      this.turnInputPending = true;
       window.clearTimeout(this.inputPendingTimer);
       this.inputPendingTimer = window.setTimeout(() => {
+        this.speechInputActive = false;
+        this.pendingTranscripts = 0;
         this.turnInputPending = false;
-        this.scheduleFollowUp();
+        if (this.responseAfterInput) this.scheduleResponseAfterInput();
+        else this.scheduleFollowUp();
       }, 4000);
       if (this.conversationActive || this.speechOverActiveOutput) {
         this.callbacks.setScreen?.("PROCESANDO", "ATLAS te ha escuchado", "Interpretando la frase en directo…", "working");
@@ -443,24 +473,51 @@
     }
 
     handleTranscriptionFailure(event) {
-      window.clearTimeout(this.inputPendingTimer);
-      this.inputPendingTimer = 0;
-      this.turnInputPending = false;
+      this.completePendingTranscript();
       const reason = event.error?.message || event.error?.code || "transcripción no disponible";
       this.callbacks.addLog?.(`No se pudo transcribir la entrada: ${reason}`, null, "error");
       this.postEvent("input.transcription_failed", "OpenAI Realtime no pudo transcribir la entrada",
         { status: reason });
       this.speechOverActiveOutput = false;
-      if (this.conversationActive) this.scheduleFollowUp();
+      if (this.responseAfterInput) this.scheduleResponseAfterInput();
+      else if (this.conversationActive) this.scheduleFollowUp();
       else this.showWaiting();
+    }
+
+    completePendingTranscript() {
+      this.pendingTranscripts = Math.max(0, this.pendingTranscripts - 1);
+      this.turnInputPending = this.speechInputActive || this.pendingTranscripts > 0;
+      if (!this.turnInputPending) {
+        window.clearTimeout(this.inputPendingTimer);
+        this.inputPendingTimer = 0;
+      }
+    }
+
+    clearResponseCreateTimer() {
+      window.clearTimeout(this.responseCreateTimer);
+      this.responseCreateTimer = 0;
+    }
+
+    scheduleResponseAfterInput() {
+      this.responseAfterInput = true;
+      if (this.closed || this.speechInputActive || this.pendingTranscripts > 0) return;
+      this.clearResponseCreateTimer();
+      this.responseCreateTimer = window.setTimeout(() => this.flushResponseAfterInput(), INPUT_SETTLE_MS);
+    }
+
+    flushResponseAfterInput() {
+      this.clearResponseCreateTimer();
+      if (this.closed || !this.responseAfterInput || this.speechInputActive
+          || this.pendingTranscripts > 0 || this.responseActive || this.toolActive) return;
+      this.responseAfterInput = false;
+      this.turnInputPending = false;
+      this.send({ type: "response.create" });
     }
 
     handleUserTranscript(event) {
       const text = String(event.transcript || "").trim();
       if (!text) return;
-      window.clearTimeout(this.inputPendingTimer);
-      this.inputPendingTimer = 0;
-      this.turnInputPending = false;
+      this.completePendingTranscript();
       window.clearTimeout(this.followUpTimer);
       this.currentInputItemId = event.item_id || "";
       this.callbacks.setTranscript?.(text);
@@ -527,7 +584,7 @@
         this.postEvent("wake.accepted", "Wake word ATLAS validada", { text });
       }
       this.callbacks.setScreen?.("PROCESANDO", "ATLAS lo está procesando", "La conversación sigue en la misma sesión.", "working");
-      this.send({ type: "response.create" });
+      this.scheduleResponseAfterInput();
     }
 
     restoreActiveOutputScreen() {
@@ -707,7 +764,8 @@
     scheduleFollowUp() {
       if (!this.conversationActive || this.toolActive || this.responseActive
           || this.externalPlaybackActive || this.nativePlaybackActive
-          || this.turnInputPending || this.pendingToolResponse) return;
+          || this.turnInputPending || this.speechInputActive || this.pendingTranscripts > 0
+          || this.responseAfterInput || this.responseCreateTimer || this.pendingToolResponse) return;
       this.callbacks.setScreen?.("CONVERSACIÓN", "Puedes seguir hablando", "No necesitas volver a decir ATLAS durante diez segundos.", "listening");
       window.clearTimeout(this.followUpTimer);
       this.followUpTimer = window.setTimeout(() => {
@@ -719,6 +777,8 @@
     }
 
     interruptWork() {
+      this.clearResponseCreateTimer();
+      this.responseAfterInput = false;
       this.cancelProviderResponse();
       this.interruptLocalWork();
       this.clearPendingToolResponse();
@@ -763,6 +823,9 @@
     cancel() {
       this.interruptWork();
       this.conversationActive = false;
+      this.speechInputActive = false;
+      this.pendingTranscripts = 0;
+      this.turnInputPending = false;
       this.setOutputEnabled(false);
       this.showWaiting();
     }
@@ -797,6 +860,7 @@
     stop(notify = true) {
       window.clearTimeout(this.followUpTimer);
       window.clearTimeout(this.inputPendingTimer);
+      this.clearResponseCreateTimer();
       this.clearPendingToolResponse();
       window.clearTimeout(this.configurationTimer);
       this.configurationTimer = 0;
@@ -810,6 +874,9 @@
       this.externalPlaybackActive = false;
       this.nativePlaybackActive = false;
       this.turnInputPending = false;
+      this.speechInputActive = false;
+      this.pendingTranscripts = 0;
+      this.responseAfterInput = false;
       this.speechOverActiveOutput = false;
       this.toolActive = false;
       this.channel?.close();

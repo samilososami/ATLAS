@@ -52,6 +52,7 @@ controller.preSpeechSilenceMs = 1000;
 controller.handleUserTranscript({ transcript: 'Estoy hablando del proyecto Atlas' });
 assert.equal(sent.some(event => event.type === 'response.create'), false);
 controller.handleUserTranscript({ transcript: 'Atlas, dime quién eres' });
+controller.flushResponseAfterInput();
 assert.equal(sent.at(-1).type, 'response.create');
 assert.equal(fakeAudio.muted, false);
 controller.setOutputEnabled(false);
@@ -69,7 +70,30 @@ noisy.preSpeechSilenceMs = 75;
 noisy.handleUserTranscript({ transcript: 'Atlas' });
 assert.equal(noisySent.some(event => event.type === 'response.create'), false);
 noisy.handleUserTranscript({ transcript: 'Adlas, mira la memoria libre' });
+noisy.flushResponseAfterInput();
 assert.equal(noisySent.at(-1).type, 'response.create');
+
+// Server VAD can split one natural request and deliver the first transcript
+// after the second speech burst has already started. Both items must produce
+// one response, and the continuation does not need to repeat ATLAS.
+const splitSent = [];
+const split = window.AtlasRealtime.create({ fetch: async () => ({ ok: true }), callbacks: {} });
+split.closed = false;
+split.state = 'ready';
+split.channel = { readyState: 'open', send: value => splitSent.push(JSON.parse(value)) };
+now = 10000;
+split.beginSpeech();
+split.endSpeech();
+now = 10250;
+split.beginSpeech();
+split.handleUserTranscript({ item_id: 'split-1', transcript: 'Atlas, enciende la televisión y comparte la pantalla.' });
+assert.equal(splitSent.some(event => event.type === 'response.create'), false);
+now = 12000;
+split.endSpeech();
+split.handleUserTranscript({ item_id: 'split-2', transcript: 'Y abre Chrome en la primera mitad del escritorio.' });
+assert.equal(splitSent.some(event => event.type === 'response.create'), false);
+split.flushResponseAfterInput();
+assert.equal(splitSent.filter(event => event.type === 'response.create').length, 1);
 
 const renderedSegments = [];
 const segmented = window.AtlasRealtime.create({
@@ -143,6 +167,7 @@ interrupted.channel = {
 };
 now = 2000;
 interrupted.beginSpeech();
+interrupted.endSpeech();
 assert.equal(interruptedSent.some(event => event.type === 'response.cancel'), false);
 assert.equal(interruptedSent.some(event => event.type === 'output_audio_buffer.clear'), false);
 interrupted.handleUserTranscript({ item_id: 'echo-1', transcript: 'Es como una foto reciente' });
@@ -151,7 +176,9 @@ assert.equal(interruptedSent.some(event => event.type === 'response.create'), fa
 assert.equal(interruptedSent.some(event => event.type === 'conversation.item.delete'), true);
 
 interrupted.beginSpeech();
+interrupted.endSpeech();
 interrupted.handleUserTranscript({ item_id: 'person-1', transcript: 'Atlas, espera un momento' });
+interrupted.flushResponseAfterInput();
 assert.equal(interruptedSent.some(event => event.type === 'response.cancel'), true);
 assert.equal(interruptedSent.some(event => event.type === 'output_audio_buffer.clear'), true);
 assert.equal(interruptedSent.filter(event => event.type === 'response.create').length, 1);
@@ -175,7 +202,9 @@ buffered.channel = {
   close() {},
 };
 buffered.beginSpeech();
+buffered.endSpeech();
 buffered.handleUserTranscript({ item_id: 'person-buffered', transcript: 'Atlas, para un momento' });
+buffered.flushResponseAfterInput();
 assert.equal(bufferedSent.some(event => event.type === 'response.cancel'), false);
 assert.equal(bufferedSent.some(event => event.type === 'output_audio_buffer.clear'), true);
 assert.equal(bufferedSent.filter(event => event.type === 'response.create').length, 1);
