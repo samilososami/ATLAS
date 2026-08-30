@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-ROOT="/home/atlas/.atlas/atlas-desktop"
+ROOT="/home/atlas/.atlas/desktop"
 if [ "$EUID" -eq 0 ]; then
   exec runuser -u sami -- env DISPLAY="${DISPLAY:-:1}" "$ROOT/bin/open-chrome" "$@"
 fi

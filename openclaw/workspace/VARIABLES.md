@@ -5,7 +5,7 @@ device labels. Fill them in with your human after setup. Empty is better than
 borrowing somebody else's settings.
 
 - Runtime home: `/home/atlas/.atlas` on the reference ATLAS OS installation.
-- WebScreen projects: `/home/atlas/.atlas/atlas-webscreen-workspace`.
+- WebScreen projects: `/home/atlas/.atlas/webscreen/workspace`.
 - Model: use the model configured locally in OpenClaw.
 - Voice: choose locally in WebScreen settings.
 

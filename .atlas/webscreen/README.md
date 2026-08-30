@@ -163,7 +163,7 @@ contraseñas personales; `--password-store=basic` evita la espera de un keyring
 de escritorio que no existe en esta sesión mínima.
 
 El kiosko usa el paquete oficial `google-chrome-stable` ARM64 y un perfil nuevo
-en `/home/atlas/.atlas/atlas-screen/chrome-profile`, independiente del escritorio
+en `/home/atlas/.atlas/screen/chrome-profile`, independiente del escritorio
 virtual. No importa claves de otro navegador ni requiere una API key personal
 para intentar el reconocimiento nativo; necesita acceso al servicio de Google.
 
@@ -194,7 +194,7 @@ Para permitir el micrófono desde otro equipo en esta red controlada, abre `chro
 Cada interacción genera un archivo JSON Lines legible en:
 
 ```text
-/home/atlas/.atlas/atlas-webscreen/logs/YYYY-MM-DD/*.log
+/home/atlas/.atlas/webscreen/logs/YYYY-MM-DD/*.log
 ```
 
 Incluye timestamps, duración y resultado de la transcripción nativa, sesión usada, tiempo y respuesta de OpenClaw, reproducción de voz, errores y duración total. WebScreen no sube el audio a la Raspberry Pi.

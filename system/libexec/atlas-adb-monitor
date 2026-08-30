@@ -12,7 +12,7 @@ from pathlib import Path
 
 REAL_ADB = "/usr/bin/adb"
 INVENTORY = "/usr/local/libexec/atlas-adb-inventory"
-ROOT = Path(os.environ.get("ATLAS_ADB_ROOT", "/home/atlas/.atlas/atlas-adb"))
+ROOT = Path(os.environ.get("ATLAS_ADB_ROOT", "/home/atlas/.atlas/adb"))
 STATE = ROOT / ".connected-devices"
 
 

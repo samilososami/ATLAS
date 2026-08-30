@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="/home/atlas/.atlas/atlas-desktop"
+ROOT="/home/atlas/.atlas/desktop"
 SERVICE="atlas-desktop.service"
 DISPLAY_ID=":1"
 PIDFILE="$ROOT/runtime/cast.pid"

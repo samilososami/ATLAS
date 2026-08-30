@@ -1,4 +1,4 @@
-/home/atlas/.atlas/atlas-rafas/logs/*.log {
+/home/atlas/.atlas/rafas/logs/*.log {
     weekly
     rotate 8
     compress

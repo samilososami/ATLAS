@@ -81,7 +81,7 @@ El modo `--atlas` abre WebScreen en Google Chrome kiosko sobre `localhost:5000`,
 
 ## `atlas-webscreen`
 
-Instala, reinicia, desactiva y comprueba el servicio HTTP de ATLAS WebScreen ubicado en `/home/atlas/.atlas/atlas-webscreen`.
+Instala, reinicia, desactiva y comprueba el servicio HTTP de ATLAS WebScreen ubicado en `/home/atlas/.atlas/webscreen`.
 
 ```bash
 atlas-webscreen enable

@@ -3,31 +3,34 @@
 This is the public source layout for `/home/atlas/.atlas`. Your working parts
 live here; OpenClaw keeps your identity and memory in its own workspace.
 
-- `atlas-webscreen/`: voice UI, HTTP backend, Gateway bridge, runtime plugin,
+- `webscreen/`: voice UI, HTTP backend, Gateway bridge, runtime plugin,
   instructions and regression tests. Its README explains the voice pipeline.
-- `atlas-desktop/`: the separate virtual desktop, Openbox configuration and
+  `starter/` keeps the dedicated starter workspace and `workspace/` holds
+  projects requested through the voice interface.
+- `desktop/`: the separate virtual desktop, Openbox configuration and
   shared wallpapers. It is not the physical screen's desktop.
-- `atlas-screen/`: storage for the current physical display mode and optional
+- `screen/`: storage for the current physical display mode and optional
   boot choice. Startup stays off until explicitly enabled with `atlas-screen`.
-- `atlas-rafas/`: private RAFAS and power-lifecycle records. `logs/power.log`
+- `rafas/`: private RAFAS and power-lifecycle records. `logs/power.log`
   distinguishes clean shutdowns from a previous boot that vanished without a
   goodbye; `logs/rafas.log` records recovery-console openings and closures.
   Runtime logs and state markers stay out of Git. Even a good logbook cannot
   write after instant power loss, so an unclean marker is evidence of an abrupt
   ending, not a crystal ball that can name the electrical culprit by itself.
-- `atlas-adb/`: private, automatically refreshed Android device inventories.
+- `adb/`: private, automatically refreshed Android device inventories.
   The deterministic helper keys records by MAC when Android or the neighbour
   table exposes one. Addresses, serials and device records stay out of Git.
-- `atlas-nmap/`: the private `REPORT.md` cache produced every ten minutes by a
+- `nmap/`: the private `REPORT.md` cache produced every ten minutes by a
   bounded LAN scan. Full-port reports are focused, manual artefacts rather than
   a permanent storm of probes around the house.
-- `atlas-webscreen-workspace/`: an empty home for projects requested through
-  WebScreen. Keep each project in its own named directory.
+- `wallpapers/`: optional shared wallpaper drop point outside the desktop's
+  own curated wallpaper set.
 
 No Google Chrome profile, runtime state, recordings, conversation logs, certificates,
 model weights or private generated projects belong in this public tree.
-The former standalone starter workspace is not needed: the hot listener uses
-the existing OpenClaw `main` agent in its own short-lived run.
+The starter workspace now lives under `webscreen/starter/` for compatibility
+and diagnostics. The hot listener normally uses the existing OpenClaw `main`
+agent through its persistent gateway stream.
 
 ## Files outside this directory
 
@@ -118,7 +121,7 @@ refreshing the matching private Markdown record through
 `atlas-adb-inventory`. `atlas-adb-monitor.timer` catches USB devices without
 requiring the agent to poll them itself.
 
-`atlas-nmap-report.timer` refreshes `.atlas/atlas-nmap/REPORT.md` every ten
+`atlas-nmap-report.timer` refreshes `.atlas/nmap/REPORT.md` every ten
 minutes. Its automatic profile discovers hosts and checks the one hundred most
 common TCP ports with light version detection. The deliberate bound matters:
 all-port version scans are useful forensic tools, but absurd background pets.
@@ -132,7 +135,7 @@ claiming the full startup sequence has been visually verified.
 ## WebScreen integration
 
 WebScreen uses Python and Node.js, the installed OpenClaw Gateway SDK and its
-configured model/provider. Install the local `atlas-webscreen/openclaw-plugin`
+configured model/provider. Install the local `webscreen/openclaw-plugin`
 with OpenClaw's plugin installer and enable `atlas-webscreen-runtime` for the
 hot listener. Authenticate OpenClaw locally; never copy another installation's
 OAuth session, Gateway pairing or API keys. The bridge needs the documented

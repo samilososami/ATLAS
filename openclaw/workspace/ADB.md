@@ -12,8 +12,8 @@ adb connect IP:PORT
 
 If the address is unknown, do not ask sami for it as the first step. Resolve it autonomously in this order:
 
-1. Check `adb devices -l` and the saved records under `/home/atlas/.atlas/atlas-adb/devices/`.
-2. Read `NMAP.md` and inspect `/home/atlas/.atlas/atlas-nmap/REPORT.md`.
+1. Check `adb devices -l` and the saved records under `/home/atlas/.atlas/adb/devices/`.
+2. Read `NMAP.md` and inspect `/home/atlas/.atlas/nmap/REPORT.md`.
 3. Check the live neighbour table, then run the smallest focused Nmap scan that can identify plausible ADB endpoints and the requested device type.
 4. Connect the single plausible match and let the automatic inventory verify its model and identity.
 
@@ -31,7 +31,7 @@ live guest list: a television, a phone and a tablet are separate targets even
 when they are all waiting politely behind the same three letters.
 
 When the user names a device or a device type, match that request against the
-live serials and the records under `/home/atlas/.atlas/atlas-adb/devices/`.
+live serials and the records under `/home/atlas/.atlas/adb/devices/`.
 “Turn on the television” must select the connected television; “raise the
 volume on the phone” must select the phone. Use model, product, saved device
 type, serial and MAC evidence rather than list position. Always pass the chosen
@@ -58,7 +58,7 @@ The local `adb` wrapper behaves like the normal Android Debug Bridge, but a succ
 Private records live in:
 
 ```text
-/home/atlas/.atlas/atlas-adb/devices/
+/home/atlas/.atlas/adb/devices/
 ```
 
 The filename is normally:

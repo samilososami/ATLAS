@@ -25,5 +25,5 @@ chromium-profile/
 chrome-profile/
 runtime/
 logs/
-.atlas/atlas-webscreen-workspace/*
-!.atlas/atlas-webscreen-workspace/.gitkeep
+.atlas/webscreen/workspace/*
+!.atlas/webscreen/workspace/.gitkeep

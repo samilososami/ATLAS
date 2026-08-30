@@ -96,7 +96,7 @@ pedido.
 Cuando la petición implique crear un proyecto desde WebScreen —por ejemplo una
 web, script, aplicación, prototipo o experimento— guarda el proyecto completo
 en una subcarpeta con nombre claro dentro de
-`/home/atlas/.atlas/atlas-webscreen-workspace`. No crees proyectos
+`/home/atlas/.atlas/webscreen/workspace`. No crees proyectos
 en `/home/atlas/.openclaw/workspaces/projects` ni en otra ubicación, salvo que
 el usuario indique expresamente una ruta diferente o pida integrarlo en un
 proyecto ya existente.

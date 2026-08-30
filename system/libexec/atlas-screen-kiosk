@@ -2,7 +2,7 @@
 set -euo pipefail
 export DISPLAY=:0 XAUTHORITY=/run/atlas-screen-kiosk/Xauthority
 umask 007
-install -d -o sami -g sami -m 700 /home/atlas/.atlas/atlas-screen/chrome-profile
+install -d -o sami -g sami -m 700 /home/atlas/.atlas/screen/chrome-profile
 touch "$XAUTHORITY"
 xauth -f "$XAUTHORITY" add "$DISPLAY" . "$(mcookie)"
 chmod 640 "$XAUTHORITY"

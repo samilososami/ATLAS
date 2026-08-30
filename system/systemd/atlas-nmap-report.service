@@ -12,5 +12,5 @@ NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/home/atlas/.atlas/atlas-nmap
+ReadWritePaths=/home/atlas/.atlas/nmap
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK AF_PACKET

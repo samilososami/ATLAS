@@ -21,7 +21,7 @@ the escape hatch. The prompt has no user plugins and stores no disk history.
 
 ## Private logs
 
-RAFAS keeps its quiet black box in `/home/atlas/.atlas/atlas-rafas/logs`.
+RAFAS keeps its quiet black box in `/home/atlas/.atlas/rafas/logs`.
 `rafas.log` records recovery requests plus console openings and closures.
 `power.log` records clean systemd shutdowns, monitor restarts, firmware power
 flags and previous boots that disappeared without saying goodbye. An

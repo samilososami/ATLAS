@@ -1,7 +1,7 @@
 [Unit]
 Description=ATLAS power and RAFAS event logger
 After=local-fs.target
-RequiresMountsFor=/home/atlas/.atlas/atlas-rafas
+RequiresMountsFor=/home/atlas/.atlas/rafas
 StartLimitIntervalSec=0
 
 [Service]

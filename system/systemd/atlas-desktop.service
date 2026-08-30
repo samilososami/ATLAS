@@ -7,11 +7,11 @@ Wants=network-online.target
 Type=simple
 User=sami
 Group=sami
-WorkingDirectory=/home/atlas/.atlas/atlas-desktop
+WorkingDirectory=/home/atlas/.atlas/desktop
 Environment=ATLAS_DESKTOP_DISPLAY_NUM=1
 Environment=ATLAS_DESKTOP_WIDTH=1920
 Environment=ATLAS_DESKTOP_HEIGHT=1080
-ExecStart=/home/atlas/.atlas/atlas-desktop/bin/start-desktop
+ExecStart=/home/atlas/.atlas/desktop/bin/start-desktop
 Restart=on-failure
 RestartSec=2
 

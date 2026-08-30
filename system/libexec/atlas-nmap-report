@@ -18,7 +18,7 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 
-ROOT = Path(os.environ.get("ATLAS_NMAP_ROOT", "/home/atlas/.atlas/atlas-nmap"))
+ROOT = Path(os.environ.get("ATLAS_NMAP_ROOT", "/home/atlas/.atlas/nmap"))
 REPORT = ROOT / "REPORT.md"
 LOCK = ROOT / ".scan.lock"
 NMAP = "/usr/bin/nmap"

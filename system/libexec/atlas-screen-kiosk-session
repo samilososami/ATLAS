@@ -12,7 +12,7 @@ export PATH=/usr/local/bin:/usr/bin:/bin
 export LANG=en_GB.UTF-8
 export GTK_USE_PORTAL=0
 umask 077
-profile=/home/atlas/.atlas/atlas-screen/chrome-profile
+profile=/home/atlas/.atlas/screen/chrome-profile
 mkdir -p "$profile"
 xset -dpms s off s noblank
 xsetroot -solid '#040b18'

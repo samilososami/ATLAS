@@ -37,7 +37,7 @@ that selection. `enable` without a mode reuses the saved boot choice, or `last`
 if none exists. These commands only configure startup, without interrupting the
 current screen. To change the screen now, use a mode flag directly.
 
-The separate files `/home/atlas/.atlas/atlas-screen/mode` and `boot-mode` hold
+The separate files `/home/atlas/.atlas/screen/mode` and `boot-mode` hold
 the runtime selection and startup choice. `atlas-screen-boot-on.service` opens
 the configured surface after Plymouth; `disable` enables the existing
 `atlas-screen-boot-off.service` instead. Do not enable the four surface services
@@ -65,7 +65,7 @@ atlas-screen off
 atlas-screen --atlas
 ```
 
-This opens `http://localhost:5000/?kiosk=1` in fullscreen Google Chrome on the physical screen. No desktop is hiding underneath. Google Chrome runs as `sami`, with its sandbox enabled and its own private profile under `/home/atlas/.atlas/atlas-screen/chrome-profile`.
+This opens `http://localhost:5000/?kiosk=1` in fullscreen Google Chrome on the physical screen. No desktop is hiding underneath. Google Chrome runs as `sami`, with its sandbox enabled and its own private profile under `/home/atlas/.atlas/screen/chrome-profile`.
 
 Use the official `google-chrome-stable` ARM64 package. The launcher calls that binary directly; the system policy lives at `/etc/opt/chrome/policies/managed/atlas-webscreen.json`. Keep the profile private and out of the public repository. Your browser luggage is not release material.
 

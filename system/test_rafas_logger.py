@@ -12,7 +12,7 @@ LOGGER = ROOT / "system/libexec/atlas-rafas-logger"
 class RafasLogger(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
-        self.state = Path(self.temporary.name) / "atlas-rafas"
+        self.state = Path(self.temporary.name) / "rafas"
         self.boot_id = Path(self.temporary.name) / "boot-id"
         self.boot_id.write_text("boot-one\n")
         self.environment = os.environ | {

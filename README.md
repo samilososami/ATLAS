@@ -62,7 +62,7 @@ La versión mostrada utiliza:
 
 ### WebScreen y conversación por voz
 
-El código de [`ATLAS WebScreen`](.atlas/atlas-webscreen) incluye una interfaz de depuración con cuatro vistas: ATLAS, Transcripción, Texto a voz y Ajustes.
+El código de [`ATLAS WebScreen`](.atlas/webscreen) incluye una interfaz de depuración con cuatro vistas: ATLAS, Transcripción, Texto a voz y Ajustes.
 
 Una sola pestaña controla WebScreen a la vez. Las demás muestran **Tomar control**: al pulsarlo, el permiso pasa inmediatamente al nuevo dispositivo, sin solicitud ni confirmación. La pestaña anterior detiene micrófono, audio y trabajo activo y muestra la pantalla bloqueada. La conversación de OpenClaw se conserva; este control de uso no sustituye una futura autenticación.
 

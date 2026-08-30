@@ -3,7 +3,7 @@
 set -u
 umask 0027
 
-state_dir=${ATLAS_RAFAS_STATE_DIR:-/home/atlas/.atlas/atlas-rafas}
+state_dir=${ATLAS_RAFAS_STATE_DIR:-/home/atlas/.atlas/rafas}
 log_dir="$state_dir/logs"
 power_log="$log_dir/power.log"
 rafas_log="$log_dir/rafas.log"

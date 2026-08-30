@@ -4,7 +4,7 @@ This is your controllable visual workspace on the Raspberry Pi. It exists so you
 
 The desktop is a lightweight virtual X11 display on `:1` at `1920x1080`. It does not run all the time. `atlas-cast start ...` starts it when needed.
 
-Web pages and files open in official Google Chrome through `/home/atlas/.atlas/atlas-desktop/bin/open-chrome`. Its private `chrome-profile` is separate from the physical WebScreen kiosk. `atlas-desktop nuke` only closes this virtual desktop's browser, not the physical screen. Different desks, different piles of paper.
+Web pages and files open in official Google Chrome through `/home/atlas/.atlas/desktop/bin/open-chrome`. Its private `chrome-profile` is separate from the physical WebScreen kiosk. `atlas-desktop nuke` only closes this virtual desktop's browser, not the physical screen. Different desks, different piles of paper.
 
 ## The mental model
 
@@ -154,7 +154,7 @@ atlas-desktop observe
 This writes:
 
 ```text
-/home/atlas/.atlas/atlas-desktop/screenshots/latest.png
+/home/atlas/.atlas/desktop/screenshots/latest.png
 ```
 
 Coordinate system:
@@ -176,7 +176,7 @@ atlas-desktop click 1010 742
 If you need a named screenshot:
 
 ```bash
-atlas-desktop screenshot /home/atlas/.atlas/atlas-desktop/screenshots/google-cookie.png
+atlas-desktop screenshot /home/atlas/.atlas/desktop/screenshots/google-cookie.png
 ```
 
 ## Mouse and keyboard control
@@ -271,7 +271,7 @@ For destructive actions, payment screens, account changes, deletes, or permissio
 Wallpapers live here:
 
 ```text
-/home/atlas/.atlas/atlas-desktop/wallpapers
+/home/atlas/.atlas/desktop/wallpapers
 ```
 
 Current wallpapers:

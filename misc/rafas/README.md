@@ -73,7 +73,7 @@ Diagnostics: `systemctl status atlas-rafas-hotkey.service atlas-rafas.service`
 and `journalctl -u atlas-rafas-hotkey.service`. Input characters never enter those logs.
 
 The companion `atlas-rafas-logger.service` keeps the private logbook under
-`/home/atlas/.atlas/atlas-rafas/logs`. `power.log` records clean shutdowns,
+`/home/atlas/.atlas/rafas/logs`. `power.log` records clean shutdowns,
 abrupt previous boots and Raspberry Pi throttling flags; `rafas.log` records
 recovery requests and console sessions. It samples the firmware flag every
 fifteen seconds but only appends when that state changes, because a logbook

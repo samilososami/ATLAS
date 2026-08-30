@@ -11,15 +11,15 @@ class ChromeLaunchers(unittest.TestCase):
     def test_shell_syntax(self):
         for path in ('system/libexec/atlas-screen-kiosk',
                      'system/libexec/atlas-screen-kiosk-session',
-                     '.atlas/atlas-desktop/bin/open-chrome',
-                     '.atlas/atlas-desktop/bin/start-desktop',
+                     '.atlas/desktop/bin/open-chrome',
+                     '.atlas/desktop/bin/start-desktop',
                      'atlas-commands/atlas-desktop'):
             with self.subTest(path=path):
                 subprocess.run(['bash', '-n', str(ROOT / path)], check=True)
 
     def test_both_launchers_use_official_chrome_with_sandbox(self):
         for path in ('system/libexec/atlas-screen-kiosk-session',
-                     '.atlas/atlas-desktop/bin/open-chrome'):
+                     '.atlas/desktop/bin/open-chrome'):
             source = (ROOT / path).read_text()
             self.assertIn('google-chrome-stable ', source)
             self.assertIn('runuser -u sami', source)
@@ -28,9 +28,9 @@ class ChromeLaunchers(unittest.TestCase):
 
     def test_profiles_are_independent_and_ignored(self):
         kiosk = (ROOT / 'system/libexec/atlas-screen-kiosk-session').read_text()
-        self.assertIn('/atlas-screen/chrome-profile', kiosk)
-        desktop = (ROOT / '.atlas/atlas-desktop/bin/open-chrome').read_text()
-        self.assertIn('ROOT="/home/atlas/.atlas/atlas-desktop"', desktop)
+        self.assertIn('/screen/chrome-profile', kiosk)
+        desktop = (ROOT / '.atlas/desktop/bin/open-chrome').read_text()
+        self.assertIn('ROOT="/home/atlas/.atlas/desktop"', desktop)
         self.assertIn('--user-data-dir="$ROOT/chrome-profile"', desktop)
         self.assertIn('chrome-profile/', (ROOT / '.gitignore').read_text().splitlines())
 

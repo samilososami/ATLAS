@@ -126,8 +126,8 @@ Reactions are lightweight social signals. Humans use them constantly — they sa
 ### Public source map
 
 The repository `.atlas/README.md` maps your runtime folders and system helpers.
-`/home/atlas/.atlas/atlas-webscreen/README.md` explains the voice pipeline.
-`/home/atlas/.atlas/atlas-webscreen/WEBSCREEN_INSTRUCTIONS.md` holds the voice,
+`/home/atlas/.atlas/webscreen/README.md` explains the voice pipeline.
+`/home/atlas/.atlas/webscreen/WEBSCREEN_INSTRUCTIONS.md` holds the voice,
 preamble and direct-answer rules; edit those sections instead of hiding prompts
 in Python. The repository's main README introduces ATLAS, and
 `atlas-commands/README.md` describes the executable wrappers for humans.
@@ -167,7 +167,7 @@ If sami asks something like "is the webscreen running?", do not guess and do not
 Use these Raspberry Pi paths:
 
 - `/home/atlas/.openclaw/workspaces/tmp` for temporary or disposable files: screenshots for verification, short-lived `.mp3`/`.wav` files, extracted attachments, debug captures, scratch downloads, transient conversions, and anything that can be safely deleted later.
-- `/home/atlas/.atlas/atlas-webscreen-workspace` for every project requested through WebScreen. If sami asks you there to create a new website, script, prototype, app, experiment, or standalone deliverable, create a named folder, for example `/home/atlas/.atlas/atlas-webscreen-workspace/crypto-web`.
+- `/home/atlas/.atlas/webscreen/workspace` for every project requested through WebScreen. If sami asks you there to create a new website, script, prototype, app, experiment, or standalone deliverable, create a named folder, for example `/home/atlas/.atlas/webscreen/workspace/crypto-web`.
 
 Use clear lowercase folder names for projects. Keep each project self-contained unless sami explicitly asks to integrate it somewhere else.
 
@@ -190,9 +190,9 @@ The TDR has two main parts:
 
 When the user mentions the TDR, OpenAtlas, ATLAS A1, the physical assistant, the Raspberry Pi setup, Telegram, voice, or the project architecture, consult and update `TDR.md` when relevant.
 
-`ADB.md` explains how you connect to and control authorised Android devices without poking the screen just to prove that ADB works. Read it before any ADB task. Its deterministic helper refreshes private device records under `/home/atlas/.atlas/atlas-adb/devices/`; those generated records are runtime state, not workspace prose.
+`ADB.md` explains how you connect to and control authorised Android devices without poking the screen just to prove that ADB works. Read it before any ADB task. Its deterministic helper refreshes private device records under `/home/atlas/.atlas/adb/devices/`; those generated records are runtime state, not workspace prose.
 
-`NMAP.md` explains bounded network discovery, focused service scans and the private cached network report at `/home/atlas/.atlas/atlas-nmap/REPORT.md`. Read it before looking for a device or scanning the LAN. Prefer the cached report first, then the smallest focused scan that can answer the question.
+`NMAP.md` explains bounded network discovery, focused service scans and the private cached network report at `/home/atlas/.atlas/nmap/REPORT.md`. Read it before looking for a device or scanning the LAN. Prefer the cached report first, then the smallest focused scan that can answer the question.
 
 When an action depends on an IP address, port or service, do not ask sami for information ATLAS can discover: inspect the private report, use the smallest useful Nmap scan and follow `NMAP.md`.
 

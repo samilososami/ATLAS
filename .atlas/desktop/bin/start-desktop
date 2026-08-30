@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="/home/atlas/.atlas/atlas-desktop"
+ROOT="/home/atlas/.atlas/desktop"
 DISPLAY_NUM="${ATLAS_DESKTOP_DISPLAY_NUM:-1}"
 export DISPLAY=":${DISPLAY_NUM}"
 WIDTH="${ATLAS_DESKTOP_WIDTH:-1920}"

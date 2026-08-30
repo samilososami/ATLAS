@@ -95,7 +95,7 @@ Pair a speaker:
 atlas-audio pair "JBL Speaker"
 ```
 
-`pair` does not require a previous `scan`. If the device is not in Bluetooth cache, it automatically scans for a matching name for a short time.
+`pair` does not require a previous `scan` or a cached BlueZ device. A MAC address is passed directly to BlueZ first; if the target is not currently visible, ATLAS starts active discovery and retries. A name is resolved from the live device view or active discovery before the same direct pairing attempt.
 
 Connect a known/paired speaker and set it as default output:
 
@@ -103,7 +103,7 @@ Connect a known/paired speaker and set it as default output:
 atlas-audio connect "JBL Speaker"
 ```
 
-`connect` also does not require a previous `scan`. It accepts either a device name or a MAC address:
+`connect` also does not require a previous `scan` or cached entry. It accepts either a device name or a MAC address and attempts the connection directly. If BlueZ reports that the target is unavailable, ATLAS performs active discovery and retries instead of rejecting the request locally:
 
 ```bash
 atlas-audio connect "JBL Quantum910"
@@ -122,7 +122,7 @@ Disconnect:
 atlas-audio disconnect "JBL Speaker"
 ```
 
-If the user gives a loose name, try it directly. The command resolves exact names and unique partial names. If the name is not cached, it performs a short scan automatically. If the name is ambiguous, ask one short clarification question.
+If the user gives a loose name, try it directly. The command resolves exact names and unique partial names from the live view, then performs active discovery when necessary. If the name is ambiguous, ask one short clarification question.
 
 ## Default output
 

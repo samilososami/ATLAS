@@ -10,7 +10,7 @@ BOOT_ON_SERVICE="atlas-screen-boot-on.service"
 BOOT_OFF_SERVICE="atlas-screen-boot-off.service"
 DISPLAY_ID=":0"
 XAUTHORITY_FILE="/home/atlas/.Xauthority"
-MODE_DIR="/home/atlas/.atlas/atlas-screen"
+MODE_DIR="/home/atlas/.atlas/screen"
 MODE_FILE="$MODE_DIR/mode"
 BOOT_MODE_FILE="$MODE_DIR/boot-mode"
 

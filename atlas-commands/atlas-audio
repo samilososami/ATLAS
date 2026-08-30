@@ -122,7 +122,7 @@ bt_power_on() {
 discover_bt_for_query() {
   local query="$1"
   local seconds="${ATLAS_AUDIO_AUTODISCOVER_SECONDS:-12}"
-  echo "Bluetooth device not in cache. Scanning for \"$query\" for ${seconds}s..." >&2
+  echo "Actively discovering \"$query\" for ${seconds}s..." >&2
   bt_power_on
   QUERY="$query" SECONDS="$seconds" python3 - <<'PY'
 import os
@@ -134,6 +134,7 @@ import time
 query = " ".join(os.environ["QUERY"].strip().split()).casefold()
 seconds = int(os.environ.get("SECONDS", "12"))
 mac_re = re.compile(r"([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}")
+query_is_mac = bool(mac_re.fullmatch(query))
 
 def norm(value):
     return " ".join(value.strip().split()).casefold()
@@ -159,7 +160,7 @@ try:
             continue
         mac = match.group(1)
         name = match.group(3).strip()
-        if norm(name) == query or query in norm(name):
+        if (query_is_mac and mac.casefold() == query) or (not query_is_mac and (norm(name) == query or query in norm(name))):
             found = mac
             break
 finally:
@@ -353,10 +354,27 @@ PY
       return 0
     fi
   fi
-  echo "Bluetooth device not found by name: \"$query\"" >&2
-  echo "Make sure it is powered on and in pairing/connectable mode, or use its MAC address directly." >&2
+  echo "Bluetooth device not visible by name: \"$query\"" >&2
+  echo "The command attempted active discovery. Make sure it is powered on and in pairing/connectable mode, or use its MAC address directly." >&2
   echo "You can inspect visible devices with: atlas-audio scan 10 --all" >&2
   return 1
+}
+
+pair_bt_device() {
+  local mac="$1"
+  local output=""
+  local rc=1
+  output="$(bluetoothctl pair "$mac" 2>&1)" && rc=0 || rc=$?
+  printf '%s\n' "$output"
+  if [ "$rc" -eq 0 ]; then
+    return 0
+  fi
+  if printf '%s' "$output" | grep -Eqi 'not available|not found|does not exist'; then
+    discover_bt_for_query "$mac" >/dev/null || true
+    output="$(bluetoothctl pair "$mac" 2>&1)" && rc=0 || rc=$?
+    printf '%s\n' "$output"
+  fi
+  return "$rc"
 }
 
 sink_for_bt_mac() {
@@ -424,6 +442,8 @@ connect_bt_device() {
       ensure_bluetooth_audio_support
     elif printf '%s' "$output" | grep -q 'br-connection-page-timeout'; then
       break
+    elif printf '%s' "$output" | grep -Eqi 'not available|not found|does not exist'; then
+      discover_bt_for_query "$mac" >/dev/null || true
     else
       sleep 1
     fi
@@ -559,7 +579,7 @@ case "$cmd" in
     mac="$(resolve_bt_device "$*")"
     ensure_bluetooth_audio_support
     bluetoothctl pairable on >/dev/null 2>&1 || true
-    bluetoothctl pair "$mac"
+    pair_bt_device "$mac"
     bluetoothctl trust "$mac" >/dev/null 2>&1 || true
     connect_bt_device "$mac"
     if sink="$(wait_for_bt_sink "$mac")"; then

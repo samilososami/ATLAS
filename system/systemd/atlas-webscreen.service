@@ -7,11 +7,11 @@ After=network-online.target
 Type=simple
 User=sami
 Group=sami
-WorkingDirectory=/home/atlas/.atlas/atlas-webscreen
+WorkingDirectory=/home/atlas/.atlas/webscreen
 Environment=ATLAS_WEBSCREEN_HOST=0.0.0.0
 Environment=ATLAS_WEBSCREEN_SESSION_IDLE=1800
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/home/atlas/.atlas/atlas-webscreen/start.sh
+ExecStart=/home/atlas/.atlas/webscreen/start.sh
 Restart=on-failure
 RestartSec=3
 KillSignal=SIGTERM

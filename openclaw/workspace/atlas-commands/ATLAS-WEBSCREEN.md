@@ -92,8 +92,8 @@ the unauthenticated HTTP service on a trusted LAN.
 Its project and generated WebScreen projects live in:
 
 ```text
-/home/atlas/.atlas/atlas-webscreen
-/home/atlas/.atlas/atlas-webscreen-workspace
+/home/atlas/.atlas/webscreen
+/home/atlas/.atlas/webscreen/workspace
 ```
 
 It should not stop the OpenClaw Gateway unless a command explicitly says so. `disable` is for the webscreen service, not the full ATLAS brain.
