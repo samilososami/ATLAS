@@ -194,6 +194,8 @@ When the user mentions the TDR, OpenAtlas, ATLAS A1, the physical assistant, the
 
 `NMAP.md` explains bounded network discovery, focused service scans and the private cached network report at `/home/atlas/.atlas/atlas-nmap/REPORT.md`. Read it before looking for a device or scanning the LAN. Prefer the cached report first, then the smallest focused scan that can answer the question.
 
+When an action depends on an IP address, port or service, do not ask sami for information ATLAS can discover: inspect the private report, use the smallest useful Nmap scan and follow `NMAP.md`.
+
 
 ## ATLAS Desktop and Cast
 

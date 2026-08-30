@@ -115,6 +115,30 @@ assert.equal(interruptedSent.some(event => event.type === 'output_audio_buffer.c
 assert.equal(interruptedSent.filter(event => event.type === 'response.create').length, 1);
 interrupted.stop(false);
 
+// OpenAI may finish generating before Chrome finishes playing its buffered
+// audio. ATLAS must still clear that audio when sami interrupts, without
+// sending an invalid response.cancel for an already-finished response.
+const bufferedSent = [];
+const buffered = window.AtlasRealtime.create({ fetch: async () => ({ ok: true }), callbacks: {} });
+buffered.closed = false;
+buffered.state = 'ready';
+buffered.session = { atlasOutput: 'native' };
+buffered.conversationActive = true;
+buffered.responseActive = false;
+buffered.nativePlaybackActive = true;
+buffered.currentAssistantText = 'Esta respuesta ya terminó de generarse pero sigue sonando.';
+buffered.channel = {
+  readyState: 'open',
+  send: value => bufferedSent.push(JSON.parse(value)),
+  close() {},
+};
+buffered.beginSpeech();
+buffered.handleUserTranscript({ item_id: 'person-buffered', transcript: 'Atlas, para un momento' });
+assert.equal(bufferedSent.some(event => event.type === 'response.cancel'), false);
+assert.equal(bufferedSent.some(event => event.type === 'output_audio_buffer.clear'), true);
+assert.equal(bufferedSent.filter(event => event.type === 'response.create').length, 1);
+buffered.stop(false);
+
 const source = fs.readFileSync(`${__dirname}/static/realtime.js`, 'utf8');
 assert.match(source, /interrupt_response:\s*false/);
 assert.match(source, /session\.atlasContext/);

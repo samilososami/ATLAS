@@ -2,6 +2,12 @@
 
 Nmap is available for authorised diagnostics on ATLAS' current private network. Use the smallest scan that answers the question. A home network is not a laboratory target range, and a television does not need sixty-five thousand tiny knocks every ten minutes.
 
+## Autonomy first
+
+When a task depends on an IP address, port or service, treat that information as something ATLAS can usually discover. Do not ask sami to provide it before checking the cached report, current ADB transports, saved device records and the live neighbour table. If those are insufficient, run the smallest focused Nmap scan that can answer the question. Ask only when multiple plausible targets remain, authorization or pairing is required, or the requested host is outside the visible network.
+
+Start with `/home/atlas/.atlas/atlas-nmap/REPORT.md`. It is the quick map hanging by the door. Refresh or deepen only the relevant part of the network instead of rescanning everything out of habit.
+
 ## Fast discovery
 
 Find active hosts without scanning ports:

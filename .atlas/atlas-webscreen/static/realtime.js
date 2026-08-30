@@ -687,8 +687,14 @@
     }
 
     cancelProviderResponse() {
-      if (this.responseActive) {
-        this.send({ type: "response.cancel" });
+      const responseWasActive = this.responseActive;
+      const playbackWasActive = this.nativePlaybackActive;
+      // A response.done event can arrive before Chrome has finished playing
+      // the already-buffered WebRTC audio. Cancelling the model is only valid
+      // while it is generating, but clearing the speaker buffer is still
+      // required while playback remains active.
+      if (responseWasActive) this.send({ type: "response.cancel" });
+      if (responseWasActive || playbackWasActive) {
         this.send({ type: "output_audio_buffer.clear" });
       }
       this.responseActive = false;

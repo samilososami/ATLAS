@@ -10,7 +10,14 @@ Use the real `adb` command. For a network device:
 adb connect IP:PORT
 ```
 
-If the address is unknown, read `NMAP.md` and inspect `/home/atlas/.atlas/atlas-nmap/REPORT.md` before scanning again. Wireless debugging may require a pairing step or an approval dialog on the target device; never attempt to bypass it.
+If the address is unknown, do not ask sami for it as the first step. Resolve it autonomously in this order:
+
+1. Check `adb devices -l` and the saved records under `/home/atlas/.atlas/atlas-adb/devices/`.
+2. Read `NMAP.md` and inspect `/home/atlas/.atlas/atlas-nmap/REPORT.md`.
+3. Check the live neighbour table, then run the smallest focused Nmap scan that can identify plausible ADB endpoints and the requested device type.
+4. Connect the single plausible match and let the automatic inventory verify its model and identity.
+
+Ask one short question only if several plausible devices remain, the device is outside the visible network, or Android requires pairing or an approval dialog. Never attempt to bypass that authorization.
 
 List current transports with:
 
@@ -37,6 +44,12 @@ several plausible targets remain — for example, two televisions — ask one
 short clarifying question before doing anything. A stale saved record is useful
 context, not proof that its device is currently connected; verify it against
 `adb devices -l` before sending a command.
+
+## Fast controls stay fast
+
+Playback, pause, resume, volume, power and launching a known app are normally one-step controls. Execute the matching command immediately without a spoken preamble. Once it succeeds, reply with a single short acknowledgement such as “Listo” or “Hecho”. Do not repeat what sami just asked, narrate the command or add “debería funcionar”.
+
+Narrate progress only when the request genuinely needs several stages, such as locating content inside an app, navigating multiple screens or verifying a result after several actions. In that case, mention useful milestones while working rather than announcing every key press like a very nervous sports commentator.
 
 ## Automatic device records
 
