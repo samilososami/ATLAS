@@ -8,7 +8,7 @@
     <meta name="google" content="notranslate" />
     <title>ATLAS WebScreen</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/styles.css?v=2026-08-30-a1-transfer-1" />
+    <link rel="stylesheet" href="/styles.css?v=2026-08-31-wake-notes-1" />
   </head>
   <body>
     <section class="access-blocked" id="access-blocked" aria-labelledby="access-title">
@@ -17,7 +17,6 @@
         <h1 id="access-title">Conectando con ATLAS…</h1>
         <p id="access-detail" role="status">Comprobando quién tiene el control.</p>
         <button class="primary" id="access-takeover" type="button" disabled>Tomar control</button>
-        <button class="secondary" id="access-activate-a1" type="button" hidden disabled>Activar en ATLAS A1</button>
       </div>
     </section>
     <audio id="realtime-audio" autoplay playsinline hidden></audio>
@@ -48,6 +47,7 @@
           <span class="brand">ATLAS WebScreen</span>
           <span class="connection"><i id="health-dot"></i><span id="health-label">Comprobando sistema</span></span>
           </div>
+          <div class="topbar-tools">
           <section class="codex-usage" id="codex-usage" aria-label="Límites de Codex">
             <div class="usage-heading"><span>CODEX</span><span>Disponible</span></div>
             <div class="usage-row" id="quota-five-hour">
@@ -64,6 +64,8 @@
             </div>
             <span class="usage-status" id="quota-status" role="status">Consultando límites…</span>
           </section>
+          <button class="secondary activate-a1-main" id="access-activate-a1" type="button" hidden disabled>Activar en ATLAS A1</button>
+          </div>
         </header>
 
         <section class="hero" aria-labelledby="main-status">
@@ -171,9 +173,9 @@
     </section>
 
     </div>
-    <script src="/access.js?v=2026-08-30-a1-transfer-1"></script>
+    <script src="/access.js?v=2026-08-31-wake-notes-1"></script>
     <script src="/kiosk.js?v=2026-08-28-kiosk-1"></script>
-    <script src="/realtime.js?v=2026-08-30-wake-validation-1"></script>
+    <script src="/realtime.js?v=2026-08-31-wake-notes-1"></script>
     <script src="/app.js?v=2026-08-30-eleven-stream-1"></script>
     <script src="/quota.js?v=2026-08-28-access-1"></script>
   </body>

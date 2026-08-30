@@ -53,7 +53,7 @@ Narrate progress only when the request genuinely needs several stages, such as l
 
 ## Automatic device records
 
-The local `adb` wrapper behaves like the normal Android Debug Bridge, but a successful `adb connect` also launches a silent read-only inventory. A small systemd timer catches newly attached USB devices. Both paths call the same deterministic helper; the agent does not compose these records by hand.
+The local `adb` wrapper behaves like the normal Android Debug Bridge, but a successful `adb connect` also launches a silent read-only inventory. A small systemd timer catches newly attached USB devices. Both paths call the same deterministic helper for generated facts; ATLAS owns only the persistent `# NOTES` section at the end of each record.
 
 Private records live in:
 
@@ -70,6 +70,14 @@ MAC_Model_device-type.md
 The helper obtains the MAC from the local neighbour table or a readable Android network interface. If Android hides every usable MAC, it writes `NO-MAC-<serial>` rather than inventing one. When a known MAC reconnects, any older filename for that MAC is replaced, so a changed model label cannot create a duplicate.
 
 The automatic pass is intentionally invisible and read-only. It collects properties, Android/build version, codename, hardware identity, display information, battery state, storage summary and the foreground activity present at that instant. It must not send key events, launch applications, change settings, install packages or wake the display.
+
+### NOTES - the part ATLAS is allowed to remember out loud
+
+Every report ends with `# NOTES`. Unlike the generated inventory above it, this section survives reconnects, renamed model labels and automatic refreshes. ATLAS may edit this section autonomously; do not edit generated identity, build or runtime fields by hand because the next inventory will quite reasonably eat those changes for breakfast.
+
+Use NOTES as concise, actionable device memory. Replace the empty placeholder when writing the first real note. Record direct instructions from sami, indirect corrections and behaviour learned while solving a real request. If one launch intent fails on a particular television but a second component or command works, record the working method and the failed alternative there so the next attempt starts with the useful path. The same applies to device-specific volume controls, wake behaviour, unusual packages, navigation quirks and other stable facts that save future exploration.
+
+Keep each note tied to observed evidence or to an explicit user statement. Mark uncertainty instead of promoting a guess to folklore, update or remove obsolete notes, and merge duplicates rather than growing a tiny Markdown landfill. Never store passwords, pairing codes, tokens, private message contents or other secrets. ATLAS may freely maintain NOTES, but the rest of the report remains the deterministic inventory helper's territory.
 
 ## Acting on a device
 

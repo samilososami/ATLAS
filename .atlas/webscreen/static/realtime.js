@@ -7,7 +7,7 @@
   const DEFAULT_VOICE = "marin";
   const VAD_THRESHOLD = 0.45;
   const SILENCE_DURATION_MS = 500;
-  const PREFIX_PADDING_MS = 300;
+  const PREFIX_PADDING_MS = 600;
   const ATLAS_REALTIME_FALLBACK_INSTRUCTIONS =
     "Eres ATLAS. Habla principalmente en español y usa tus herramientas para resolver la petición del usuario.";
 
@@ -31,11 +31,19 @@
     .toLowerCase().replace(/[^a-z0-9ñ]+/g, " ").trim();
 
   function wakeInvocation(text) {
-    return /^(?:oye\s+)?atlas(?:\s|$)/u.test(normalized(text));
+    // Realtime occasionally hears the proper name ATLAS as "Adlas" or
+    // "Adelast" on the A1's far-field USB microphone. Keep the accepted set
+    // deliberately tiny and only at the beginning of the utterance.
+    return /^(?:oye\s+)?(?:atlas|adlas|adelas|adelast)(?:\s|$)/u.test(normalized(text));
+  }
+
+  function wakeHasRequest(text) {
+    return /^(?:oye\s+)?(?:atlas|adlas|adelas|adelast)\s+\S/u.test(normalized(text));
   }
 
   function silenceInvocation(text) {
-    const phrase = normalized(text).replace(/^(?:oye\s+)?atlas\s*/u, "").trim();
+    const phrase = normalized(text)
+      .replace(/^(?:oye\s+)?(?:atlas|adlas|adelas|adelast)\s*/u, "").trim();
     if (!phrase) return false;
     const words = phrase.split(/\s+/u);
     return words.every((word) => ["calla", "nada", "no", "para", "parate", "silencio"].includes(word))
@@ -189,6 +197,12 @@
               tool_choice: "auto",
               audio: {
                 input: {
+                  noise_reduction: { type: "far_field" },
+                  transcription: {
+                    model: "gpt-4o-mini-transcribe",
+                    language: "es",
+                    prompt: "Conversación en español. El asistente se llama ATLAS; conserva exactamente el nombre ATLAS cuando se pronuncie al inicio.",
+                  },
                   turn_detection: {
                     type: "server_vad",
                     threshold: Number(session.vadThreshold || VAD_THRESHOLD),
@@ -327,6 +341,9 @@
         case "conversation.item.input_audio_transcription.completed":
           this.handleUserTranscript(event);
           return;
+        case "conversation.item.input_audio_transcription.failed":
+          this.handleTranscriptionFailure(event);
+          return;
         case "conversation.output_transcript.delta":
         case "response.output_text.delta":
         case "response.audio_transcript.delta":
@@ -353,9 +370,13 @@
           // A preamble and its post-tool result are separate responses. Reset
           // this buffer so external TTS never speaks the preamble a second time.
           this.currentAssistantText = "";
-          this.callbacks.setScreen?.("RESPONDIENDO", "ATLAS está respondiendo",
-            this.usesExternalTts() ? "Realtime genera texto para la voz seleccionada." : "Audio Realtime en curso.",
-            "working");
+          // Tool-only responses are silent when external TTS is selected. Do
+          // not flash RESPONDIENDO between shell calls; the first actual text
+          // fragment owns that state.
+          if (!this.usesExternalTts()) {
+            this.callbacks.setScreen?.("RESPONDIENDO", "ATLAS está respondiendo",
+              "Audio Realtime en curso.", "working");
+          }
           this.postEvent("response.created", "OpenAI Realtime comenzó a responder");
           return;
         case "response.cancelled":
@@ -421,6 +442,19 @@
         { durationMs: this.lastSpeechEndedAt - this.turnStartedAt });
     }
 
+    handleTranscriptionFailure(event) {
+      window.clearTimeout(this.inputPendingTimer);
+      this.inputPendingTimer = 0;
+      this.turnInputPending = false;
+      const reason = event.error?.message || event.error?.code || "transcripción no disponible";
+      this.callbacks.addLog?.(`No se pudo transcribir la entrada: ${reason}`, null, "error");
+      this.postEvent("input.transcription_failed", "OpenAI Realtime no pudo transcribir la entrada",
+        { status: reason });
+      this.speechOverActiveOutput = false;
+      if (this.conversationActive) this.scheduleFollowUp();
+      else this.showWaiting();
+    }
+
     handleUserTranscript(event) {
       const text = String(event.transcript || "").trim();
       if (!text) return;
@@ -467,15 +501,23 @@
         this.postEvent("barge_in.accepted", "El usuario interrumpió explícitamente diciendo ATLAS", { text });
       }
       if (!this.conversationActive) {
-        const validWake = wakeInvocation(text) && this.preSpeechSilenceMs >= WAKE_PRE_SILENCE_MS;
+        const directWake = wakeInvocation(text);
+        // Keep the 0.4 s guard for a bare wake word. A complete direct address
+        // ("ATLAS, haz...") is already strong evidence of intent and must not
+        // be rejected because VAD briefly heard a fan, television or another
+        // noise immediately beforehand.
+        const silenceValidated = this.preSpeechSilenceMs >= WAKE_PRE_SILENCE_MS;
+        const validWake = directWake && (silenceValidated || wakeHasRequest(text));
         if (!validWake) {
           this.cancelProviderResponse();
           this.deleteInputItem();
           this.setOutputEnabled(false);
-          this.callbacks.addLog?.(wakeInvocation(text)
+          this.callbacks.addLog?.(directWake
             ? "Wake word ignorada: faltó silencio previo"
             : "Frase de fondo ignorada: no era una llamada directa a ATLAS");
-          this.postEvent("wake.ignored", "La frase no superó el filtro local de wake word", { text });
+          this.postEvent("wake.ignored", "La frase no superó el filtro local de wake word",
+            { text, durationMs: Number.isFinite(this.preSpeechSilenceMs) ? this.preSpeechSilenceMs : undefined,
+              status: directWake ? "missing-prior-silence" : "not-a-direct-wake" });
           this.showWaiting();
           return;
         }
@@ -506,6 +548,10 @@
       if (!text) return;
       if (!this.firstOutputSeen) {
         this.firstOutputSeen = true;
+        if (this.usesExternalTts()) {
+          this.callbacks.setScreen?.("RESPONDIENDO", "ATLAS está respondiendo",
+            "Realtime está preparando el texto para la voz seleccionada.", "working");
+        }
         const latency = this.lastSpeechEndedAt ? performance.now() - this.lastSpeechEndedAt : 0;
         this.callbacks.addLog?.("Primer fragmento de OpenAI Realtime", latency);
         this.postEvent("output.first_delta", "Llegó el primer fragmento hablado", { durationMs: latency });
@@ -787,6 +833,6 @@
     create(options) { return new RealtimeController(options); },
     model: MODEL,
     voice: DEFAULT_VOICE,
-    _test: { normalized, wakeInvocation, silenceInvocation, withTurnSeparator },
+    _test: { normalized, wakeInvocation, wakeHasRequest, silenceInvocation, withTurnSeparator },
   };
 })();

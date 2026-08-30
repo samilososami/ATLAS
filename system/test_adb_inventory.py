@@ -50,11 +50,46 @@ class AdbInventoryTests(unittest.TestCase):
             devices = Path(directory) / "devices"
             devices.mkdir()
             old = devices / "AA:BB:CC:DD:EE:FF_Old-tv_tv.md"
-            old.write_text("old", encoding="utf-8")
+            old.write_text(
+                "# Old inventory\n\n# NOTES\n\n- Launch Prime Video with the component intent.\n",
+                encoding="utf-8",
+            )
             destination = inventory.inventory("192.168.1.50:5555")
             self.assertTrue(destination.exists())
             self.assertFalse(old.exists())
             self.assertEqual(len(list(devices.glob("AA:BB:CC:DD:EE:FF_*.md"))), 1)
+            report = destination.read_text(encoding="utf-8")
+            self.assertIn("# NOTES\n\n- Launch Prime Video with the component intent.", report)
+
+            destination.write_text(
+                report.replace(
+                    "- Launch Prime Video with the component intent.",
+                    "- Use the component intent to launch Prime Video; the launcher intent fails on this television.",
+                ),
+                encoding="utf-8",
+            )
+            refreshed = inventory.inventory("192.168.1.50:5555").read_text(encoding="utf-8")
+            self.assertEqual(refreshed.count("# NOTES"), 1)
+            self.assertIn("the launcher intent fails on this television", refreshed)
+
+    def test_new_report_contains_notes_section(self):
+        properties = "\n".join([
+            "[ro.product.manufacturer]: [Google]",
+            "[ro.product.model]: [Pixel]",
+            "[ro.build.characteristics]: [phone]",
+        ])
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(inventory, "ROOT", Path(directory)), \
+             patch.object(inventory, "DEVICES_DIR", Path(directory) / "devices"), \
+             patch.object(inventory, "wait_for_device", return_value=True), \
+             patch.object(inventory, "neighbour_mac", return_value="11:22:33:44:55:66"), \
+             patch.object(inventory, "adb") as adb:
+            adb.side_effect = lambda serial, *args, **kwargs: (
+                properties if args == ("shell", "getprop") else
+                "PIXEL-SERIAL" if args == ("get-serialno",) else ""
+            )
+            report = inventory.inventory("usb-pixel").read_text(encoding="utf-8")
+            self.assertTrue(report.endswith("# NOTES\n\n_No device-specific notes recorded yet._\n"))
 
     def test_wrapper_calls_real_adb_without_mutating_commands(self):
         wrapper = (ROOT / "system/bin/adb").read_text(encoding="utf-8")

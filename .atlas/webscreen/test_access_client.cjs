@@ -4,6 +4,7 @@ const vm = require('node:vm');
 const fs = require('node:fs');
 const path = require('node:path');
 const source = fs.readFileSync(path.join(__dirname, 'static/access.js'), 'utf8');
+const markup = fs.readFileSync(path.join(__dirname, 'static/index.html'), 'utf8');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
 function client() {
@@ -60,6 +61,14 @@ test('remote page can send control directly to the physical A1', async () => {
   assert.equal(c.calls.at(-1).url, '/api/access/activate-atlas-a1');
   assert.equal(c.node('#access-blocked').hidden, false);
   assert.equal(c.node('#access-detail').textContent, 'Control activado en la pantalla de ATLAS A1.');
+});
+
+test('A1 activation lives in the owned assistant topbar, not the blocked page', () => {
+  const blocked = markup.match(/<section class="access-blocked"[\s\S]*?<\/section>/)?.[0] || '';
+  const topbar = markup.match(/<header class="topbar">[\s\S]*?<\/header>/)?.[0] || '';
+  assert.doesNotMatch(blocked, /access-activate-a1/);
+  assert.match(topbar, /id="access-activate-a1"/);
+  assert.match(topbar, /codex-usage[\s\S]*access-activate-a1/);
 });
 
 test('lease watchdog stops a disconnected client before the server lease expires', async () => {

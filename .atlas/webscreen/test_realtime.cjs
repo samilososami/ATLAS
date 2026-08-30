@@ -18,11 +18,16 @@ vm.runInNewContext(fs.readFileSync(`${__dirname}/static/realtime.js`, 'utf8'), {
   setTimeout, clearTimeout, console, JSON, String, Number, RegExp, Object, Array, Error,
 });
 
-const { wakeInvocation, silenceInvocation, withTurnSeparator } = window.AtlasRealtime._test;
+const { wakeInvocation, wakeHasRequest, silenceInvocation, withTurnSeparator } = window.AtlasRealtime._test;
 assert.equal(wakeInvocation('Atlas, qué hora es'), true);
 assert.equal(wakeInvocation('Oye Atlas, dime la hora'), true);
+assert.equal(wakeInvocation('Adlas, mira el almacenamiento'), true);
+assert.equal(wakeInvocation('Adelast, abre Prime Video'), true);
 assert.equal(wakeInvocation('Estoy trabajando en el proyecto de Atlas'), false);
+assert.equal(wakeHasRequest('Atlas'), false);
+assert.equal(wakeHasRequest('Atlas, qué hora es'), true);
 assert.equal(silenceInvocation('Atlas, calla calla'), true);
+assert.equal(silenceInvocation('Adlas, calla calla'), true);
 assert.equal(silenceInvocation('Atlas, nada nada nada'), true);
 assert.equal(silenceInvocation('Atlas, no quiero que borres nada'), false);
 assert.equal(withTurnSeparator('Dame un momento.'), 'Dame un momento. ');
@@ -52,6 +57,20 @@ assert.equal(fakeAudio.muted, false);
 controller.setOutputEnabled(false);
 assert.equal(fakeAudio.muted, true);
 
+// A full direct request must survive a noisy VAD boundary even when the
+// server reports less than 0.4 s before the utterance. A bare wake still keeps
+// the anti-mention silence guard.
+const noisySent = [];
+const noisy = window.AtlasRealtime.create({ fetch: async () => ({ ok: true }), callbacks: {} });
+noisy.closed = false;
+noisy.state = 'ready';
+noisy.channel = { readyState: 'open', send: value => noisySent.push(JSON.parse(value)) };
+noisy.preSpeechSilenceMs = 75;
+noisy.handleUserTranscript({ transcript: 'Atlas' });
+assert.equal(noisySent.some(event => event.type === 'response.create'), false);
+noisy.handleUserTranscript({ transcript: 'Adlas, mira la memoria libre' });
+assert.equal(noisySent.at(-1).type, 'response.create');
+
 const renderedSegments = [];
 const segmented = window.AtlasRealtime.create({
   fetch: async () => ({ ok: true }),
@@ -67,6 +86,23 @@ segmented.toolActive = false;
 segmented.handleEvent(JSON.stringify({ type: 'response.created' }));
 segmented.handleAssistantText('Sí, el ventilador está funcionando a un nivel bajo.', true);
 assert.equal(renderedSegments.at(-1), 'Sí, el ventilador está funcionando a un nivel bajo.');
+
+// External TTS must not alternate between ACTUANDO and RESPONDIENDO for
+// silent tool-only responses. RESPONDIENDO begins with actual text.
+const externalScreens = [];
+const external = window.AtlasRealtime.create({
+  fetch: async () => ({ ok: true }),
+  callbacks: { setScreen: (...args) => externalScreens.push(args) },
+});
+external.closed = false;
+external.state = 'ready';
+external.session = { atlasOutput: 'elevenlabs' };
+external.toolActive = true;
+external.handleEvent(JSON.stringify({ type: 'response.created' }));
+assert.equal(externalScreens.some(screen => screen[1] === 'ATLAS está respondiendo'), false);
+external.toolActive = false;
+external.handleAssistantText('Hecho.', false);
+assert.equal(externalScreens.at(-1)[1], 'ATLAS está respondiendo');
 
 // A fast tool result must not start a second response while the real WebRTC
 // output buffer is still playing. No guessed speech duration is involved.
@@ -147,6 +183,8 @@ buffered.stop(false);
 
 const source = fs.readFileSync(`${__dirname}/static/realtime.js`, 'utf8');
 assert.match(source, /interrupt_response:\s*false/);
+assert.match(source, /language:\s*"es"/);
+assert.match(source, /noise_reduction:\s*\{\s*type:\s*"far_field"\s*\}/);
 assert.match(source, /session\.atlasContext/);
 assert.match(source, /output_audio_buffer\.stopped/);
 assert.doesNotMatch(source, /estimatedSpeechMs/);

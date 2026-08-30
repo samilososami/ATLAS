@@ -153,6 +153,33 @@ def write_atomic(path: Path, content: str) -> None:
     os.replace(temporary, path)
 
 
+def notes_from_report(path: Path) -> str:
+    """Return the persistent NOTES body from an existing inventory report."""
+    try:
+        content = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return ""
+    match = re.search(r"(?ms)^# NOTES\s*\n(.*)\Z", content)
+    return match.group(1).strip() if match else ""
+
+
+def persistent_notes(identifier: str, destination: Path) -> str:
+    """Prefer notes from the current filename, then any prior name for the MAC."""
+    candidates = [destination]
+    candidates.extend(
+        sorted(
+            (path for path in DEVICES_DIR.glob(f"{identifier}_*.md") if path != destination),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+    )
+    for candidate in candidates:
+        notes = notes_from_report(candidate)
+        if notes:
+            return notes
+    return ""
+
+
 def inventory(serial: str) -> Path:
     if not wait_for_device(serial):
         raise RuntimeError(f"ADB device is not ready: {serial}")
@@ -187,11 +214,15 @@ def inventory(serial: str) -> Path:
     locale = first(properties.get("persist.sys.locale", ""), properties.get("ro.product.locale", ""))
     timestamp = dt.datetime.now().astimezone().isoformat(timespec="seconds")
 
+    safe_model = clean_filename(model, "Android")
+    destination = DEVICES_DIR / f"{identifier}_{safe_model}_{device_type}.md"
+    notes = persistent_notes(identifier, destination)
+
     lines = [
         f"# {compact(manufacturer)} {compact(model)}",
         "",
         "> Generated automatically by ATLAS ADB using read-only commands. "
-        "It is refreshed when the device reconnects; do not use it as a place for manual notes.",
+        "Generated facts are refreshed when the device reconnects; the NOTES section is persistent and belongs to ATLAS.",
         "",
         "## Identity",
         "",
@@ -227,9 +258,12 @@ def inventory(serial: str) -> Path:
     field(lines, "Foreground activity at inventory time", foreground)
     lines.extend(["", "### Battery", "", "```text", battery or "unavailable", "```"])
     lines.extend(["", "### Data filesystem", "", "```text", data_storage or "unavailable", "```", ""])
-
-    safe_model = clean_filename(model, "Android")
-    destination = DEVICES_DIR / f"{identifier}_{safe_model}_{device_type}.md"
+    lines.extend([
+        "# NOTES",
+        "",
+        notes or "_No device-specific notes recorded yet._",
+        "",
+    ])
     write_atomic(destination, "\n".join(lines))
 
     for previous in DEVICES_DIR.glob(f"{identifier}_*.md"):
