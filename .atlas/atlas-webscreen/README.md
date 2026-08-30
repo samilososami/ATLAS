@@ -9,7 +9,7 @@ reversible y documentada en `Backups/WebScreen/legacy-preamble-2026-08-29`.
 1. OpenClaw crea una reserva WebRTC efímera para `gpt-realtime-2.1` usando el OAuth configurado en la Pi. El navegador nunca recibe el token persistente ni una API key.
 2. OpenAI Realtime recibe y transcribe el audio, decide el turno y puede generar directamente una de las voces nativas `ash`, `cedar`, `marin` o `verse`. El selector también admite ElevenLabs y la voz del navegador; en esos modos Realtime devuelve texto y WebScreen lo entrega al TTS elegido. Cambiar la salida guarda el ajuste y crea una sesión WebRTC nueva.
 3. El filtro local exige que una conversación nueva comience llamando a `ATLAS` después de cuatrocientos milisegundos de silencio. Realtime mantiene su VAD y transcripción activos, pero tiene desactivada la respuesta automática: WebScreen solo habilita el audio y envía `response.create` después de validar la wake word. Una mención accidental no genera voz ni necesita un retardo artificial.
-4. Tras una respuesta quedan diez segundos de continuación natural sin repetir la wake word. Mientras ATLAS habla, una interrupción solo se acepta si la nueva frase comienza por `ATLAS`. El VAD no corta el audio por sí solo: esto evita que el altavoz HDMI vuelva a entrar por el micrófono USB y haga que el A1 se interrumpa a sí mismo.
+4. Tras una respuesta quedan diez segundos de continuación natural sin repetir la wake word. Mientras ATLAS habla, cualquier intervención del usuario aplica el barge-in nativo de Realtime inmediatamente: no hace falta volver a decir `ATLAS`. En el A1, PulseAudio crea una ruta dúplex con el cancelador WebRTC que resta la salida HDMI del micrófono USB antes de entregárselo a Chrome; así conserva la interrupción natural del portátil sin reaccionar a su propia voz.
 5. OpenAI Realtime responde directamente y usa `atlas_shell` para consultar archivos, red y estado real o para ejecutar las acciones autorizadas. En esta etapa no deriva el turno a Luna.
 6. La sesión recibe `REALTIME_INSTRUCTIONS.md` y todos los Markdown del workspace salvo los episodios de `memory/`. `AGENTS.md` sigue siendo el mapa para localizar contexto adicional sin llenar la conversación con recuerdos que quizá no hagan falta.
 7. Los turnos directos y delegados producen logs JSON Lines. Si falla la reserva, WebRTC o el proveedor, WebScreen reactiva el pipeline legacy sin perder la copia recuperable.
@@ -149,7 +149,7 @@ En la pantalla física, `atlas-screen --atlas --on` abre esta misma interfaz en
 Google Chrome kiosko sobre `http://localhost:5000/?kiosk=1`. No añade otra sesión de
 OpenClaw ni cambia la dirección HTTP de la red. El micrófono se activa con el
 botón habitual; necesita un dispositivo de entrada real. El modo kiosko utiliza
-el audio predeterminado de `sami`, mantiene el sandbox del navegador y esconde
+la fuente y salida virtuales `atlas_echo_cancel_*`, mantiene el sandbox del navegador y esconde
 el cursor cuando no hay ratón conectado. `atlas-screen off` cierra únicamente
 la superficie física, no este servidor. La compilación de Google Chrome debe tener
 acceso funcional al servicio de Speech Recognition; esto se verifica hablando
@@ -206,7 +206,8 @@ Incluye timestamps, duración y resultado de la transcripción nativa, sesión u
 - `WEBSCREEN_INSTRUCTIONS.md`: prompt e instrucciones del pipeline legacy conservado como respaldo.
 - `openclaw-plugin/`: herramienta local `atlas_webscreen_wait`, limitada a loopback y a la sesión interna del oyente, que mantiene preparado el turno del preámbulo.
 - `gateway_bridge.mjs`: conexión persistente al Gateway, reserva segura de sesiones OpenAI Realtime y multiplexación del agente principal/legacy.
-- `static/realtime.js`: WebRTC, audio bidireccional, wake gate, barge-in confirmado por transcripción, filtro de eco y tool calls de shell.
+- `static/realtime.js`: WebRTC, audio bidireccional, wake gate, barge-in nativo y tool calls de shell.
+- `system/libexec/atlas-audio-echo-cancel`: ruta PulseAudio dúplex que aplica WebRTC AEC entre el micrófono USB y el audio HDMI del A1.
 - `static/`: interfaz mínima y herramientas de diagnóstico; `app.js` conserva el fallback legacy.
 - `start.sh`: arranque con el entorno Python local.
 - `atlas-webscreen`: wrapper disponible para usuario normal y root.

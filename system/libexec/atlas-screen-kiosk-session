@@ -33,6 +33,11 @@ trap 'exit 0' INT TERM
 # Repair the boot-with-HDMI-off case before opening the microphone/browser.
 # This is a bounded startup check, not another background audio watcher.
 /usr/local/libexec/atlas-screen-audio-ready || true
+# Chrome's built-in WebRTC processing works well on integrated laptop audio,
+# but A1 uses a separate USB microphone and HDMI speakers. Feed Chrome a
+# system-level WebRTC echo-cancelled source so natural barge-in does not hear
+# ATLAS's own voice.
+/usr/local/libexec/atlas-audio-echo-cancel ensure || true
 
 for _ in $(seq 1 60); do
   if curl -fsS --max-time 1 http://localhost:5000/ >/dev/null; then break; fi

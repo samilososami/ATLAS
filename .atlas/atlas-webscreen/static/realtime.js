@@ -92,7 +92,6 @@
       this.nativePlaybackActive = false;
       this.nativePlaybackEventsSeen = false;
       this.turnInputPending = false;
-      this.speechOverActiveOutput = false;
       this.responseFinalized = false;
       this.externalPlaybackText = "";
       this.toolActive = false;
@@ -195,11 +194,10 @@
                     silence_duration_ms: Number(session.silenceDurationMs || SILENCE_DURATION_MS),
                     prefix_padding_ms: Number(session.prefixPaddingMs || PREFIX_PADDING_MS),
                     create_response: false,
-                    // The physical A1 uses an HDMI speaker and a separate USB
-                    // microphone. Let the transcript prove that sami actually
-                    // said ATLAS before cutting audio; raw VAD alone can hear
-                    // the loudspeaker and would otherwise interrupt itself.
-                    interrupt_response: false,
+                    // A1 removes its HDMI playback from the USB microphone at
+                    // the PulseAudio layer. Realtime can therefore provide the
+                    // same natural, immediate barge-in as it does on a laptop.
+                    interrupt_response: true,
                   },
                 },
               },
@@ -375,27 +373,28 @@
         this.responseActive || this.nativePlaybackActive
         || this.externalPlaybackActive || this.toolActive
       );
-      this.speechOverActiveOutput = outputWasActive;
       this.preSpeechSilenceMs = this.lastSpeechEndedAt
         ? Math.max(0, now - this.lastSpeechEndedAt) : Number.POSITIVE_INFINITY;
       this.turnStartedAt = now;
-      // Preserve the active response until the transcript confirms an explicit
-      // barge-in. This also keeps its text and logs intact when the mic hears
-      // the A1's own loudspeaker.
-      if (!outputWasActive) {
-        this.currentInteractionId = requestId();
-        this.currentRequestId = requestId();
-        this.currentAssistantText = "";
-        this.firstOutputSeen = false;
-      }
       this.turnInputPending = true;
       window.clearTimeout(this.inputPendingTimer);
       window.clearTimeout(this.followUpTimer);
-      if (!outputWasActive) {
-        this.clearPendingToolResponse();
-      } else {
-        this.callbacks.addLog?.("Voz detectada durante la respuesta; espero la transcripción antes de interrumpir");
+      this.clearPendingToolResponse();
+      if (outputWasActive) {
+        // Native Realtime audio is cut server-side by interrupt_response. Stop
+        // browser/ElevenLabs playback and local shell work immediately too.
+        this.interruptLocalWork();
+        this.toolActive = false;
+        this.callbacks.addLog?.("Interrupción natural detectada; ATLAS deja paso al usuario");
+        this.postEvent("barge_in.accepted", "El usuario interrumpió de forma natural");
       }
+      // Cancel the previous local request before replacing its identifier with
+      // the new turn. Otherwise /api/cancel would target the turn that has only
+      // just begun instead of the work the user is interrupting.
+      this.currentInteractionId = requestId();
+      this.currentRequestId = requestId();
+      this.currentAssistantText = "";
+      this.firstOutputSeen = false;
       this.callbacks.setScreen?.("ESCUCHANDO", "Te escucho", "OpenAI Realtime está recibiendo tu voz.", "listening");
       this.postEvent("input.speech_started", "OpenAI Realtime detectó voz", {
         durationMs: Number.isFinite(this.preSpeechSilenceMs) ? this.preSpeechSilenceMs : undefined,
@@ -430,34 +429,8 @@
         this.conversationActive = false;
         this.setOutputEnabled(false);
         this.deleteInputItem();
-        this.speechOverActiveOutput = false;
         this.showWaiting();
         return;
-      }
-      if (this.speechOverActiveOutput) {
-        this.speechOverActiveOutput = false;
-        const directBargeIn = wakeInvocation(text);
-        const inputWords = normalized(text).split(/\s+/u).filter(Boolean);
-        const likelySpokenByAtlas = inputWords.length >= 3
-          && normalized(this.currentAssistantText).includes(normalized(text));
-        if (!directBargeIn || likelySpokenByAtlas) {
-          this.deleteInputItem();
-          this.callbacks.addLog?.(likelySpokenByAtlas
-            ? "Eco del propio ATLAS descartado sin cortar la respuesta"
-            : "Voz de fondo ignorada durante la respuesta; di ATLAS para interrumpir");
-          this.postEvent("echo.ignored", "La entrada durante la reproducción no era una interrupción válida",
-            { text });
-          this.restoreActiveOutputScreen();
-          this.flushPendingToolResponse();
-          return;
-        }
-        this.callbacks.addLog?.("Interrupción confirmada por la palabra ATLAS");
-        this.interruptWork();
-        this.currentInteractionId = requestId();
-        this.currentRequestId = requestId();
-        this.currentAssistantText = "";
-        this.firstOutputSeen = false;
-        this.postEvent("barge_in.accepted", "El usuario interrumpió explícitamente diciendo ATLAS", { text });
       }
       if (!this.conversationActive) {
         const validWake = wakeInvocation(text) && this.preSpeechSilenceMs >= WAKE_PRE_SILENCE_MS;
@@ -479,19 +452,6 @@
       }
       this.callbacks.setScreen?.("PROCESANDO", "ATLAS lo está procesando", "La conversación sigue en la misma sesión.", "working");
       this.send({ type: "response.create" });
-    }
-
-    restoreActiveOutputScreen() {
-      if (this.externalPlaybackActive || this.nativePlaybackActive) {
-        this.callbacks.setScreen?.("HABLANDO", "ATLAS está hablando",
-          "La entrada del altavoz se ha descartado y la respuesta continúa.", "speaking");
-      } else if (this.toolActive) {
-        this.callbacks.setScreen?.("SHELL", "ATLAS está actuando",
-          "La acción en curso continúa sin interrupciones.", "working");
-      } else if (this.responseActive) {
-        this.callbacks.setScreen?.("RESPONDIENDO", "ATLAS está respondiendo",
-          "La respuesta Realtime continúa.", "working");
-      }
     }
 
     handleAssistantText(value, final) {
@@ -751,7 +711,6 @@
       this.externalPlaybackActive = false;
       this.nativePlaybackActive = false;
       this.turnInputPending = false;
-      this.speechOverActiveOutput = false;
       this.toolActive = false;
       this.channel?.close();
       this.channel = null;

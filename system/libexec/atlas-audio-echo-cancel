@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+physical_source='alsa_input.usb-Jieli_Technology_UACDemoV1.0-00.mono-fallback'
+physical_sink='alsa_output.platform-107c701400.hdmi.hdmi-stereo'
+echo_source='atlas_echo_cancel_source'
+echo_sink='atlas_echo_cancel_sink'
+
+if [ "${EUID}" -eq 0 ]; then
+  exec runuser -u sami -- env \
+    HOME=/home/atlas USER=sami LOGNAME=sami \
+    XDG_RUNTIME_DIR=/run/user/1000 \
+    PULSE_SERVER=unix:/run/user/1000/pulse/native \
+    /usr/local/libexec/atlas-audio-echo-cancel "$@"
+fi
+
+module_ids() {
+  pactl list short modules 2>/dev/null \
+    | awk -v source="source_name=${echo_source}" \
+      '$2 == "module-echo-cancel" && index($0, source) { print $1 }'
+}
+
+has_device() {
+  local kind="$1" name="$2"
+  pactl list short "$kind" 2>/dev/null | awk -v name="$name" '$2 == name { found=1 } END { exit !found }'
+}
+
+start_echo_cancel() {
+  local attempt
+  for attempt in $(seq 1 20); do
+    if has_device sources "$physical_source" && has_device sinks "$physical_sink"; then
+      break
+    fi
+    sleep 0.25
+  done
+  if ! has_device sources "$physical_source" || ! has_device sinks "$physical_sink"; then
+    echo 'ATLAS echo cancellation is waiting for the USB microphone and HDMI output.' >&2
+    return 0
+  fi
+
+  if [ -z "$(module_ids)" ]; then
+    pactl load-module module-echo-cancel \
+      "source_master=${physical_source}" \
+      "sink_master=${physical_sink}" \
+      "source_name=${echo_source}" \
+      "sink_name=${echo_sink}" \
+      aec_method=webrtc use_master_format=1 >/dev/null
+  fi
+  pactl set-default-source "$echo_source"
+  pactl set-default-sink "$echo_sink"
+  echo "ATLAS acoustic echo cancellation is active (${echo_source} -> ${echo_sink})."
+}
+
+stop_echo_cancel() {
+  if has_device sources "$physical_source"; then
+    pactl set-default-source "$physical_source"
+  fi
+  if has_device sinks "$physical_sink"; then
+    pactl set-default-sink "$physical_sink"
+  fi
+  while read -r module_id; do
+    [ -z "$module_id" ] || pactl unload-module "$module_id"
+  done < <(module_ids)
+  echo 'ATLAS acoustic echo cancellation is disabled.'
+}
+
+show_status() {
+  if has_device sources "$echo_source" && has_device sinks "$echo_sink"; then
+    printf 'active\nsource=%s\nsink=%s\n' \
+      "$(pactl get-default-source)" "$(pactl get-default-sink)"
+  else
+    printf 'inactive\n'
+  fi
+}
+
+case "${1:-start}" in
+  start|ensure) start_echo_cancel ;;
+  stop) stop_echo_cancel ;;
+  restart) stop_echo_cancel; start_echo_cancel ;;
+  status) show_status ;;
+  *) echo 'Usage: atlas-audio-echo-cancel [start|stop|restart|status]' >&2; exit 2 ;;
+esac
