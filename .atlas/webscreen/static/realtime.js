@@ -396,7 +396,12 @@
       } else {
         this.callbacks.addLog?.("Voz detectada durante la respuesta; espero la transcripción antes de interrumpir");
       }
-      this.callbacks.setScreen?.("ESCUCHANDO", "Te escucho", "OpenAI Realtime está recibiendo tu voz.", "listening");
+      // Raw VAD only means that the microphone heard speech-like audio. It is
+      // not proof that somebody called ATLAS, so an idle screen must not flash
+      // "Te escucho" before the completed transcript validates the wake word.
+      if (this.conversationActive && !outputWasActive) {
+        this.callbacks.setScreen?.("ESCUCHANDO", "Te escucho", "OpenAI Realtime está recibiendo tu voz.", "listening");
+      }
       this.postEvent("input.speech_started", "OpenAI Realtime detectó voz", {
         durationMs: Number.isFinite(this.preSpeechSilenceMs) ? this.preSpeechSilenceMs : undefined,
       });
@@ -409,7 +414,9 @@
         this.turnInputPending = false;
         this.scheduleFollowUp();
       }, 4000);
-      this.callbacks.setScreen?.("PROCESANDO", "ATLAS te ha escuchado", "Interpretando la frase en directo…", "working");
+      if (this.conversationActive || this.speechOverActiveOutput) {
+        this.callbacks.setScreen?.("PROCESANDO", "ATLAS te ha escuchado", "Interpretando la frase en directo…", "working");
+      }
       this.postEvent("input.speech_stopped", "El usuario terminó de hablar",
         { durationMs: this.lastSpeechEndedAt - this.turnStartedAt });
     }

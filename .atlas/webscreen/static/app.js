@@ -1477,6 +1477,37 @@ async function playElevenLabsSpeech(encodedAudio, text = "") {
   }
 }
 
+async function playElevenLabsStream(streamUrl, text = "") {
+  if (!streamUrl) throw new Error("ElevenLabs no devolvió un flujo de audio");
+  const audio = new Audio(streamUrl);
+  currentAudio = audio;
+  const wakePositions = [];
+  const normalizedText = normalizeSpeechText(text);
+  for (const match of normalizedText.matchAll(/\S*atlas\S*/g)) {
+    wakePositions.push(match.index / Math.max(1, normalizedText.length));
+  }
+  audio.addEventListener("timeupdate", () => {
+    if (!Number.isFinite(audio.duration) || audio.duration <= 0) return;
+    if (wakePositions.some((position) => Math.abs(audio.currentTime - position * audio.duration) < 0.7)) {
+      muteRecognitionFor(WAKE_ECHO_MUTE_MS);
+    }
+  });
+  let stopPlayback = null;
+  try {
+    const finished = new Promise((resolve, reject) => {
+      stopPlayback = resolve;
+      currentAudioStop = resolve;
+      audio.addEventListener("ended", resolve, { once: true });
+      audio.addEventListener("error", () => reject(new Error("Chrome no pudo reproducir el flujo de ElevenLabs")), { once: true });
+    });
+    await audio.play();
+    await finished;
+  } finally {
+    if (currentAudioStop === stopPlayback) currentAudioStop = null;
+    currentAudio = null;
+  }
+}
+
 async function playSpeech(text, encodedAudio, provider = "browser", role = "final", token = interactionToken) {
   setScreen("HABLANDO", "ATLAS está hablando", "La respuesta escrita se está reproduciendo por voz.", "speaking");
   const started = performance.now();
@@ -1522,17 +1553,28 @@ async function playRealtimeExternalText(text, provider) {
   const cleanText = String(text || "").trim();
   if (!cleanText) return false;
   if (provider === "elevenlabs") {
-    addLog("Generando la respuesta con ElevenLabs");
-    const response = await accessFetch("/api/tts", {
+    const requestedAt = performance.now();
+    addLog("Abriendo el flujo de audio de ElevenLabs");
+    const response = await accessFetch("/api/tts/stream-ticket", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text: cleanText }),
     });
     const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || "ElevenLabs no pudo generar la voz");
+    if (!response.ok) throw new Error(payload.error || "ElevenLabs no pudo abrir el flujo de voz");
     if (run !== realtimeExternalSpeechRun) return false;
-    addLog("Respuesta de ElevenLabs preparada", Number(payload.generationMs || 0));
-    return playSpeech(cleanText, payload.audio, "elevenlabs", "realtime", interactionToken);
+    addLog(`Flujo ElevenLabs preparado en ${payload.format || "MP3"}`, performance.now() - requestedAt);
+    setScreen("HABLANDO", "ATLAS está hablando", "ElevenLabs está enviando y reproduciendo el audio en directo.", "speaking");
+    const started = performance.now();
+    beginPlaybackEchoGuard(cleanText);
+    try {
+      await playElevenLabsStream(payload.streamUrl, cleanText);
+      if (run !== realtimeExternalSpeechRun) return false;
+      addLog("Streaming de ElevenLabs completado", performance.now() - started);
+      return true;
+    } finally {
+      if (containsAtlasFragment(cleanText)) muteRecognitionFor(WAKE_ECHO_TAIL_MS);
+    }
   }
   return playSpeech(cleanText, "", "browser", "realtime", interactionToken);
 }

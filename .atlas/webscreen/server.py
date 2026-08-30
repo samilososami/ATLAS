@@ -130,6 +130,16 @@ FAST_DIRECT_PARENTS: dict[str, float] = {}
 FAST_CONTEXT_LOCK = threading.Lock()
 FAST_CONTEXT: dict[str, Any] = {"session": "", "turns": deque(maxlen=12), "state": ""}
 FAST_DIRECT_PARENT_TTL_SECONDS = 120
+TTS_STREAM_TICKETS_LOCK = threading.Lock()
+TTS_STREAM_TICKETS: dict[str, tuple[float, str]] = {}
+TTS_STREAM_TICKET_SECONDS = 90
+
+
+def is_physical_a1_client(client_ip: str, host: str, requested_kind: Any = None) -> bool:
+    normalized_host = str(host or "").rsplit(":", 1)[0].strip("[]").lower()
+    return client_ip in {"127.0.0.1", "::1"} and (
+        requested_kind == "atlas-a1" or normalized_host in {"localhost", "127.0.0.1", "::1"}
+    )
 
 DISMISSAL_CORES = {
     "nada", "nada nada", "no nada", "no no nada", "no no nada nada",
@@ -1598,28 +1608,59 @@ def inject_fast_exchange(session_key: str, transcript: str, answer: str,
         )
 
 
-def text_to_speech(text: str) -> bytes:
+def elevenlabs_speech_request(text: str) -> urllib.request.Request:
     api_key, voice_id = get_tts_settings()
     if not api_key or not voice_id:
         raise RuntimeError("ElevenLabs no está configurado en OpenClaw")
     endpoint = ("https://api.elevenlabs.io/v1/text-to-speech/"
                 f"{urllib.parse.quote(voice_id, safe='')}/stream"
-                "?output_format=mp3_44100_128&optimize_streaming_latency=4")
+                "?output_format=mp3_44100_128")
     payload = json.dumps({
-        "text": text, "model_id": "eleven_flash_v2_5", "language_code": "es",
+        "text": text, "model_id": "eleven_v3", "language_code": "es",
         "voice_settings": {"stability": 0.48, "similarity_boost": 0.78,
                            "style": 0.08, "use_speaker_boost": False, "speed": 1.04},
     }).encode()
-    request = urllib.request.Request(endpoint, data=payload, method="POST", headers={
+    return urllib.request.Request(endpoint, data=payload, method="POST", headers={
         "Accept": "audio/mpeg", "Content-Type": "application/json", "xi-api-key": api_key,
     })
+
+
+def open_elevenlabs_speech(text: str):
     try:
-        with urllib.request.urlopen(request, timeout=45) as response:
-            return response.read()
+        return urllib.request.urlopen(elevenlabs_speech_request(text), timeout=45)
     except urllib.error.HTTPError as error:
         raise RuntimeError(f"ElevenLabs respondió con HTTP {error.code}") from error
     except urllib.error.URLError as error:
         raise RuntimeError("No se pudo conectar con ElevenLabs") from error
+
+
+def text_to_speech(text: str) -> bytes:
+    try:
+        with open_elevenlabs_speech(text) as response:
+            return response.read()
+    except RuntimeError:
+        raise
+
+
+def create_tts_stream_ticket(text: str) -> str:
+    now = time.monotonic()
+    with TTS_STREAM_TICKETS_LOCK:
+        for token, (expires, _) in list(TTS_STREAM_TICKETS.items()):
+            if expires <= now:
+                del TTS_STREAM_TICKETS[token]
+        token = uuid4().hex
+        TTS_STREAM_TICKETS[token] = (now + TTS_STREAM_TICKET_SECONDS, text)
+        return token
+
+
+def resolve_tts_stream_ticket(token: str) -> str:
+    now = time.monotonic()
+    with TTS_STREAM_TICKETS_LOCK:
+        item = TTS_STREAM_TICKETS.get(token)
+        if not item or item[0] <= now:
+            TTS_STREAM_TICKETS.pop(token, None)
+            raise KeyError(token)
+        return item[1]
 
 
 def stream_openclaw_agent(transcript: str, session_key: str, emit: Any,
@@ -2015,6 +2056,9 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
 
     def do_GET(self) -> None:
         parsed = urllib.parse.urlparse(self.path)
+        if parsed.path.startswith("/api/tts/stream/"):
+            self.handle_tts_stream(parsed.path.rsplit("/", 1)[-1])
+            return
         if parsed.path in {"/api/settings", "/api/codex-usage"}:
             try:
                 ACCESS.authorize(self.headers.get("X-Atlas-Client", ""))
@@ -2108,11 +2152,23 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
             token = self.headers.get("X-Atlas-Client", "")
             action = self.path.removeprefix("/api/access/")
             if action == "connect":
-                result = ACCESS.connect()
+                requested_kind = payload.get("clientKind")
+                # Only a browser actually reaching the server through loopback
+                # may become the physical A1. The localhost Host fallback also
+                # recognizes an already-open kiosk from before this frontend
+                # version began sending clientKind explicitly.
+                atlas_a1 = is_physical_a1_client(
+                    self.client_address[0], self.headers.get("Host", ""), requested_kind,
+                )
+                result = ACCESS.connect("atlas-a1" if atlas_a1 else "browser")
             elif action == "heartbeat":
                 result = ACCESS.heartbeat(token, payload.get("idle"))
             elif action == "takeover":
                 result = ACCESS.takeover(token)
+                if result.get("replacedOwner"):
+                    cancel_run(None)
+            elif action == "activate-atlas-a1":
+                result = ACCESS.activate_atlas_a1(token)
                 if result.get("replacedOwner"):
                     cancel_run(None)
             elif action == "release":
@@ -2137,6 +2193,8 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
             self.handle_starter()
         elif self.path == "/api/tts":
             self.handle_tts_preview()
+        elif self.path == "/api/tts/stream-ticket":
+            self.handle_tts_stream_ticket()
         elif self.path == "/api/settings":
             self.handle_settings()
         elif self.path == "/api/realtime/session":
@@ -2195,6 +2253,52 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
             "generationMs": round(elapsed, 1),
             "bytes": len(audio),
         })
+
+    def handle_tts_stream_ticket(self) -> None:
+        try:
+            payload = self.read_json_payload()
+            text = str(payload.get("text") or "").strip()
+        except ValueError as error:
+            self.send_json(400, {"error": str(error)})
+            return
+        if not text:
+            self.send_json(400, {"error": "La respuesta de voz está vacía"})
+            return
+        if len(text) > 4000:
+            self.send_json(413, {"error": "El texto supera los cuatro mil caracteres"})
+            return
+        token = create_tts_stream_ticket(text)
+        self.send_json(201, {
+            "streamUrl": f"/api/tts/stream/{token}",
+            "format": "mp3_44100_128",
+        })
+
+    def handle_tts_stream(self, token: str) -> None:
+        if not re.fullmatch(r"[0-9a-f]{32}", token):
+            self.send_json(404, {"error": "Flujo de voz desconocido"})
+            return
+        try:
+            text = resolve_tts_stream_ticket(token)
+            response = open_elevenlabs_speech(text)
+        except KeyError:
+            self.send_json(404, {"error": "El flujo de voz ha caducado"})
+            return
+        except RuntimeError as error:
+            self.send_json(502, {"error": str(error)})
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", "audio/mpeg")
+        self.send_header("Connection", "close")
+        self.send_header("X-Atlas-Audio-Format", "mp3_44100_128")
+        self.end_headers()
+        self.close_connection = True
+        try:
+            with response:
+                while chunk := response.read(8192):
+                    self.wfile.write(chunk)
+                    self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            self.close_connection = True
 
     def handle_settings(self) -> None:
         try:

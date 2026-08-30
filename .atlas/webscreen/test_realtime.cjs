@@ -30,13 +30,19 @@ assert.equal(withTurnSeparator('Dame un momento. '), 'Dame un momento. ');
 assert.equal(withTurnSeparator(''), '');
 
 const sent = [];
-const controller = window.AtlasRealtime.create({ fetch: async () => ({ ok: true }), callbacks: {} });
+const idleScreens = [];
+const controller = window.AtlasRealtime.create({ fetch: async () => ({ ok: true }),
+  callbacks: { setScreen: (...args) => idleScreens.push(args) } });
 controller.closed = false;
 controller.state = 'ready';
 controller.channel = { readyState: 'open', send: value => sent.push(JSON.parse(value)) };
 controller.attachRemoteAudio({ streams: [{ id: 'remote-stream' }] });
 assert.equal(fakeAudio.srcObject.id, 'remote-stream');
 assert.equal(fakeAudio.muted, true);
+controller.beginSpeech();
+controller.endSpeech();
+assert.equal(idleScreens.some(screen => screen[1] === 'Te escucho'), false);
+assert.equal(idleScreens.some(screen => screen[1] === 'ATLAS te ha escuchado'), false);
 controller.preSpeechSilenceMs = 1000;
 controller.handleUserTranscript({ transcript: 'Estoy hablando del proyecto Atlas' });
 assert.equal(sent.some(event => event.type === 'response.create'), false);

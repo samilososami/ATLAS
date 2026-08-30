@@ -45,15 +45,21 @@ class AccessControl:
         return {
             'owner': owner,
             'waitingForTurn': self.owner is None and self._occupied(),
+            'atlasA1Available': any(
+                client.get('kind') == 'atlas-a1' for client in self.clients.values()
+            ),
         }
 
-    def connect(self):
+    def connect(self, kind='browser'):
         with self.lock:
             self._prune()
             if len(self.clients) >= 128:
                 raise AccessError(503, 'Demasiadas conexiones. Inténtalo más tarde.')
             token = secrets.token_urlsafe(32)
-            self.clients[token] = {'seen': self.clock(), 'idle': False}
+            normalized_kind = 'atlas-a1' if kind == 'atlas-a1' else 'browser'
+            self.clients[token] = {
+                'seen': self.clock(), 'idle': False, 'kind': normalized_kind,
+            }
             self._assign_if_free(token)
             return {'token': token, **self._snapshot(token)}
 
@@ -74,6 +80,27 @@ class AccessControl:
             return {
                 'taken': previous != token,
                 'replacedOwner': previous is not None and previous != token,
+                **self._snapshot(token),
+            }
+
+    def activate_atlas_a1(self, token):
+        """Transfer the lease to the live physical kiosk from another page."""
+        with self.lock:
+            requester = self._client(token)
+            requester['seen'] = self.clock()
+            kiosks = [
+                (candidate, client) for candidate, client in self.clients.items()
+                if client.get('kind') == 'atlas-a1'
+            ]
+            if not kiosks:
+                raise AccessError(409, 'ATLAS A1 no está conectado a WebScreen.')
+            target, kiosk = max(kiosks, key=lambda item: item[1]['seen'])
+            previous = self.owner
+            self.owner = target
+            kiosk['idle'] = False
+            return {
+                'activated': True,
+                'replacedOwner': previous is not None and previous != target,
                 **self._snapshot(token),
             }
 

@@ -101,6 +101,24 @@ class RealtimeBackendTests(unittest.TestCase):
         self.assertEqual(session["atlasOutput"], "elevenlabs")
         self.assertEqual(session["atlasSelection"], "elevenlabs")
 
+    def test_elevenlabs_uses_maximum_free_format_and_conversational_model(self):
+        with patch.object(app, "get_tts_settings", return_value=("test-key", "test-voice")):
+            request = app.elevenlabs_speech_request("Hola, sami")
+        self.assertIn("output_format=mp3_44100_128", request.full_url)
+        self.assertNotIn("optimize_streaming_latency", request.full_url)
+        payload = request.data.decode("utf-8")
+        self.assertIn('"model_id": "eleven_v3"', payload)
+
+    def test_tts_stream_ticket_is_opaque_and_expires(self):
+        now = 100.0
+        with patch.object(app.time, "monotonic", return_value=now):
+            token = app.create_tts_stream_ticket("Respuesta progresiva")
+            self.assertRegex(token, r"^[0-9a-f]{32}$")
+            self.assertEqual(app.resolve_tts_stream_ticket(token), "Respuesta progresiva")
+        with patch.object(app.time, "monotonic", return_value=now + app.TTS_STREAM_TICKET_SECONDS + 1):
+            with self.assertRaises(KeyError):
+                app.resolve_tts_stream_ticket(token)
+
     def test_realtime_direct_event_creates_its_own_log(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(app, "LOG_DIR", Path(directory)):
             path = app.append_realtime_event({

@@ -7,17 +7,18 @@ reversible y documentada en `Backups/WebScreen/legacy-preamble-2026-08-29`.
 ## Flujo Realtime actual
 
 1. OpenClaw crea una reserva WebRTC efímera para `gpt-realtime-2.1` usando el OAuth configurado en la Pi. El navegador nunca recibe el token persistente ni una API key.
-2. OpenAI Realtime recibe y transcribe el audio, decide el turno y puede generar directamente una de las voces nativas `ash`, `cedar`, `marin` o `verse`. El selector también admite ElevenLabs y la voz del navegador; en esos modos Realtime devuelve texto y WebScreen lo entrega al TTS elegido. Cambiar la salida guarda el ajuste y crea una sesión WebRTC nueva.
+2. OpenAI Realtime recibe y transcribe el audio, decide el turno y puede generar directamente una de las voces nativas `ash`, `cedar`, `marin` o `verse`. El selector también admite ElevenLabs y la voz del navegador; en esos modos Realtime devuelve texto y WebScreen lo entrega al TTS elegido. ElevenLabs usa `eleven_v3` y transmite `MP3 44,1 kHz / 128 kbps`, la máxima calidad de salida del plan Free, directamente hacia el elemento de audio de Chrome: ya no espera un MP3 completo codificado en Base64. Cambiar la salida guarda el ajuste y crea una sesión WebRTC nueva.
 3. El filtro local exige que una conversación nueva comience llamando a `ATLAS` después de cuatrocientos milisegundos de silencio. Realtime mantiene su VAD y transcripción activos, pero tiene desactivada la respuesta automática: WebScreen solo habilita el audio y envía `response.create` después de validar la wake word. Una mención accidental no genera voz ni necesita un retardo artificial.
 4. Tras una respuesta quedan diez segundos de continuación natural sin repetir la wake word. Mientras ATLAS habla, una interrupción solo se acepta si la nueva frase comienza por `ATLAS`. El VAD no corta el audio por sí solo: esto evita que el altavoz HDMI vuelva a entrar por el micrófono USB y haga que el A1 se interrumpa a sí mismo.
 5. OpenAI Realtime responde directamente y usa `atlas_shell` para consultar archivos, red y estado real o para ejecutar las acciones autorizadas. El backend rechaza de forma permanente cualquier `rm` que combine borrado recursivo y forzado, además de `--no-preserve-root`, con independencia de lo que solicite o genere el modelo. En esta etapa no deriva el turno a Luna.
 6. La sesión recibe `REALTIME_INSTRUCTIONS.md` y todos los Markdown del workspace salvo los episodios de `memory/`. `AGENTS.md` sigue siendo el mapa para localizar contexto adicional sin llenar la conversación con recuerdos que quizá no hagan falta.
 7. Los turnos directos y delegados producen logs JSON Lines. Si falla la reserva, WebRTC o el proveedor, WebScreen reactiva el pipeline legacy sin perder la copia recuperable.
 
-La voz Realtime utiliza la sesión OAuth aceptada por OpenClaw. La cuota concreta
-se debe medir en la cuenta y no se presenta como ilimitada. No
-se configura ElevenLabs en esta ruta. Los tabs de laboratorio conservan los
-motores anteriores únicamente para comparación y depuración.
+La voz nativa Realtime utiliza la sesión OAuth aceptada por OpenClaw. La cuota
+concreta se debe medir en la cuenta y no se presenta como ilimitada. Cuando se
+selecciona ElevenLabs o la voz del navegador, Realtime mantiene el razonamiento
+y devuelve solo texto; WebScreen realiza la síntesis externa. Los tabs de
+laboratorio conservan ambos motores también para comparación y depuración.
 
 ## Flujo legacy de respaldo
 
@@ -99,6 +100,11 @@ Las demás ven una pantalla negra y el botón **Tomar control**. Al pulsarlo, el
 servidor transfiere inmediatamente el permiso a esa pestaña; no hay solicitud,
 notificación ni confirmación en el dispositivo anterior.
 
+En cualquier navegador que no sea el kiosko físico aparece además **Activar en
+ATLAS A1**. Mientras `localhost/?kiosk=1` siga conectado, ese botón le entrega
+el control directamente a la pantalla de la Pi. No hace falta levantarse para
+pulsar **Tomar control** en el panel táctil durante las pruebas.
+
 La pestaña anterior detecta el cambio en un máximo aproximado de medio segundo,
 detiene micrófono, reconocimiento, audio y cualquier trabajo activo, y pasa a
 mostrar la misma pantalla negra. La nueva pestaña puede activar su micrófono;
@@ -108,7 +114,7 @@ se mantiene la sesión de OpenClaw. No se crean cuentas ni se reinicia la memori
 `static/access.js` renueva la conexión cada medio segundo. Cerrar la pestaña
 libera el control; si desaparece sin avisar, su permiso caduca a los veinte
 segundos. El cliente se detiene si pasa ocho segundos sin confirmar el acceso.
-Una toma de control cancela el trabajo activo del propietario anterior. Una
+Una toma de control o una activación remota del A1 cancela el trabajo activo del propietario anterior. Una
 recarga crea un permiso nuevo y puede recuperar el control con el mismo botón.
 Tras actualizar WebScreen hay que recargar las pestañas antiguas.
 

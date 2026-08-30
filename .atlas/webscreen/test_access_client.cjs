@@ -14,7 +14,8 @@ function client() {
     if (!nodes.has(id)) nodes.set(id, { events: {}, addEventListener(name, fn) { this.events[name] = fn; } });
     return nodes.get(id);
   };
-  const window = { addEventListener: (name, fn) => events.set(name, fn), dispatchEvent() {} };
+  const window = { location: { hostname: '192.168.1.50', search: '' },
+    addEventListener: (name, fn) => events.set(name, fn), dispatchEvent() {} };
   vm.runInNewContext(source, { window, Event, Headers, AbortSignal,
     performance: { now: () => now },
     document: { querySelector: node, addEventListener() {} },
@@ -49,6 +50,16 @@ test('takeover is immediate and does not require approval from the current owner
   assert.equal(c.calls.at(-1).url, '/api/access/takeover');
   assert.equal(c.window.atlasAccess.hasControl(), true);
   assert.equal(c.node('#webscreen-content').hidden, false);
+});
+
+test('remote page can send control directly to the physical A1', async () => {
+  const c = client(); await tick();
+  c.setReply({ owner: false, activated: true, atlasA1Available: true });
+  c.node('#access-activate-a1').events.click();
+  await tick();
+  assert.equal(c.calls.at(-1).url, '/api/access/activate-atlas-a1');
+  assert.equal(c.node('#access-blocked').hidden, false);
+  assert.equal(c.node('#access-detail').textContent, 'Control activado en la pantalla de ATLAS A1.');
 });
 
 test('lease watchdog stops a disconnected client before the server lease expires', async () => {

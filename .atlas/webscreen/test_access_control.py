@@ -43,6 +43,18 @@ class AccessTests(unittest.TestCase):
         self.assertTrue(result['replacedOwner'])
         self.control.authorize(self.a)
 
+    def test_remote_page_can_activate_live_atlas_a1(self):
+        kiosk = self.control.connect('atlas-a1')['token']
+        result = self.control.activate_atlas_a1(self.b)
+        self.assertTrue(result['activated'])
+        self.assertFalse(result['owner'])
+        self.assertTrue(result['atlasA1Available'])
+        self.control.authorize(kiosk)
+        self.error(423, self.control.authorize, self.b)
+
+    def test_remote_activation_requires_a_live_atlas_a1(self):
+        self.error(409, self.control.activate_atlas_a1, self.b)
+
     def test_takeover_is_immediate_even_during_work(self):
         self.control.authorize(self.a, begin=True)
         self.control.heartbeat(self.a, True)
@@ -102,7 +114,8 @@ class HTTPAccessTests(unittest.TestCase):
 
     def request(self, path, token='', payload=None, extra=None, method='POST'):
         connection = http.client.HTTPConnection(*self.server.server_address, timeout=2)
-        headers = {'Content-Type': 'application/json', 'X-Atlas-Access': '1', 'X-Atlas-Client': token}
+        headers = {'Content-Type': 'application/json', 'X-Atlas-Access': '1',
+                   'X-Atlas-Client': token, 'Host': 'atlas.test'}
         headers.update(extra or {})
         connection.request(method, path, json.dumps(payload or {}) if method == 'POST' else None, headers)
         response = connection.getresponse()
@@ -112,7 +125,8 @@ class HTTPAccessTests(unittest.TestCase):
 
     def test_all_control_routes_reject_other_client_before_work(self):
         for path in ('text', 'voice', 'starter', 'cancel', 'settings', 'tts', 'client-event',
-                     'realtime/session', 'realtime/consult', 'realtime/shell', 'realtime/event'):
+                     'tts/stream-ticket', 'realtime/session', 'realtime/consult',
+                     'realtime/shell', 'realtime/event'):
             for token, status in ((self.b, 423), ('', 401)):
                 with self.subTest(path=path, token=bool(token)):
                     self.assertEqual(self.request('/api/' + path, token)[0], status)
@@ -126,6 +140,21 @@ class HTTPAccessTests(unittest.TestCase):
         self.assertTrue(result[1]['replacedOwner'])
         self.assertEqual(self.request('/api/settings', self.a, method='GET')[0], 423)
         self.assertEqual(self.request('/api/settings', self.b, method='GET')[0], 200)
+
+    def test_real_http_remote_activation_targets_kiosk(self):
+        kiosk = self.request('/api/access/connect', payload={'clientKind': 'atlas-a1'},
+                             extra={'Host': 'localhost'})[1]['token']
+        result = self.request('/api/access/activate-atlas-a1', self.b)
+        self.assertEqual(result[0], 200)
+        self.assertTrue(result[1]['activated'])
+        self.assertEqual(self.request('/api/settings', kiosk, method='GET')[0], 200)
+        self.assertEqual(self.request('/api/settings', self.b, method='GET')[0], 423)
+
+    def test_lan_client_cannot_impersonate_physical_kiosk_by_payload(self):
+        self.assertFalse(app.is_physical_a1_client(
+            '192.168.1.50', '192.168.1.142:5000', 'atlas-a1',
+        ))
+        self.assertTrue(app.is_physical_a1_client('127.0.0.1', 'localhost:5000'))
 
     def test_cross_origin_and_browser_internal_route(self):
         self.assertEqual(self.request('/api/access/connect', extra={'Origin': 'http://other.test'})[0], 403)

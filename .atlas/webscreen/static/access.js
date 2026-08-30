@@ -5,6 +5,10 @@
   const title = document.querySelector('#access-title');
   const detail = document.querySelector('#access-detail');
   const takeover = document.querySelector('#access-takeover');
+  const activateA1 = document.querySelector('#access-activate-a1');
+  const pageLocation = window.location || {};
+  const isAtlasA1 = ['localhost', '127.0.0.1', '[::1]'].includes(pageLocation.hostname)
+    && /(?:^|[?&])kiosk=1(?:&|$)/.test(pageLocation.search || '');
   let token = '', owner = false, updating = false;
   let lastReply = 0, adapter = null, state = {}, released = false;
   let message = '';
@@ -21,6 +25,8 @@
       ? 'ATLAS está terminando una operación anterior. Puedes tomar el control igualmente.'
       : 'Toma el control para utilizar ATLAS en este dispositivo.');
     takeover.disabled = !token || updating;
+    activateA1.hidden = isAtlasA1;
+    activateA1.disabled = !token || updating || !state.atlasA1Available;
   }
 
   function setOwner(value) {
@@ -44,7 +50,7 @@
       const response = await fetch(`/api/access/${actual}`, {
         method: 'POST', cache: 'no-store', signal: AbortSignal.timeout(4000),
         headers: { 'Content-Type': 'application/json', 'X-Atlas-Access': '1', 'X-Atlas-Client': token },
-        body: JSON.stringify({ idle: wasIdle }),
+        body: JSON.stringify({ idle: wasIdle, clientKind: isAtlasA1 ? 'atlas-a1' : 'browser' }),
       });
       const result = await response.json();
       if (!response.ok) {
@@ -55,7 +61,8 @@
       token = result.token || token;
       state = result;
       lastReply = performance.now();
-      message = '';
+      if (result.activated) message = 'Control activado en la pantalla de ATLAS A1.';
+      else if (actual !== 'heartbeat') message = '';
       setOwner(result.owner);
     } catch (error) {
       message = error.name === 'TimeoutError' || error.name === 'TypeError'
@@ -83,6 +90,7 @@
     },
   };
   takeover.addEventListener('click', () => { message = ''; void update('takeover'); });
+  activateA1.addEventListener('click', () => { message = ''; void update('activate-atlas-a1'); });
   setInterval(() => void update(), 500);
   setInterval(() => {
     if (owner && performance.now() - lastReply >= 8000) setOwner(false);
