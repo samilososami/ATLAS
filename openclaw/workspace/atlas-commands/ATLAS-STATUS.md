@@ -10,6 +10,14 @@ atlas-status
 
 Use it before heavy work, when something feels slow, when sami asks about the Pi, or when you need to know whether the local services are alive.
 
+## Latency and scope
+
+`atlas-status` normally takes around 1.5 to 2 seconds because it intentionally collects a broad snapshot: temperature, storage, RAM, CPU, fan, throttling, Gateway, WebScreen, desktop, cast and physical screen state.
+
+That trade-off is useful when sami asks about several of those areas at once, requests a general health report or when the cause of a problem is still unclear. It is usually slower when only one or two facts are needed. In that case, query the narrow source directly—for example, use `vcgencmd measure_temp` for temperature—instead of collecting the entire report. Even for several known facts, a few focused direct reads may still finish sooner.
+
+`atlas-*` commands are not guaranteed to be faster than ordinary system commands. They are designed primarily to be convenient, consistent and adapted to ATLAS. Choose them when their combined output fits the request; otherwise use the fastest reliable direct path.
+
 ## What it shows
 
 `atlas-status` reports:
@@ -61,7 +69,7 @@ Use it when sami asks:
 - "is cast running?"
 - "do we have RAM/CPU for this?"
 
-Prefer `atlas-status` over raw `systemctl` checks for first-pass status. It is faster and easier to read.
+Prefer `atlas-status` when a broad first-pass health snapshot is genuinely useful. For one service or one metric, use its focused status or direct read instead.
 
 ## Follow-up commands
 
