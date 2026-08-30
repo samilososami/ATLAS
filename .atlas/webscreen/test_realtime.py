@@ -42,7 +42,11 @@ class RealtimeBackendTests(unittest.TestCase):
 
     def test_realtime_context_loads_identity_user_full_agents_and_commands(self):
         with tempfile.TemporaryDirectory() as directory:
-            workspace = Path(directory)
+            root = Path(directory)
+            workspace = root / "workspace"
+            workspace.mkdir()
+            adb_reports = root / "adb-reports"
+            adb_reports.mkdir()
             (workspace / "IDENTITY.md").write_text("identity-full", encoding="utf-8")
             (workspace / "SOUL.md").write_text("soul-full", encoding="utf-8")
             (workspace / "USER.md").write_text("user-full", encoding="utf-8")
@@ -60,7 +64,12 @@ class RealtimeBackendTests(unittest.TestCase):
             memories = workspace / "memory"
             memories.mkdir()
             (memories / "2026-08-30.md").write_text("episodic-secret", encoding="utf-8")
-            context, stats = app.build_realtime_context(workspace)
+            report_name = "AA-BB-CC_test-tv_tv.md"
+            (adb_reports / report_name).write_text(
+                "# Test TV\n\n# NOTES\n\nUse the working TV route.",
+                encoding="utf-8",
+            )
+            context, stats = app.build_realtime_context(workspace, adb_reports)
         self.assertIn("identity-full", context)
         self.assertIn("soul-full", context)
         self.assertIn("user-full", context)
@@ -71,6 +80,8 @@ class RealtimeBackendTests(unittest.TestCase):
         self.assertIn("memory-map", context)
         self.assertNotIn("episodic-secret", context)
         self.assertIn("do-not-load-heartbeats", context)
+        self.assertIn("Use the working TV route.", context)
+        self.assertIn(f"runtime/adb/devices/{report_name}", context)
         self.assertIn("AGENTS.md is the canonical master map", context)
         self.assertFalse(stats["truncated"])
 

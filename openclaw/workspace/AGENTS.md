@@ -51,6 +51,17 @@ Capture what matters. Decisions, context, things to remember. Skip the secrets u
 - When you make a mistake → document it so future-you doesn't repeat it
 - **Text > Brain**
 
+### NOTES.md - Your Pocket Notebook
+
+`NOTES.md` is your tiny operational cheat sheet, not another diary wearing a fake moustache. You own most of it and should update it autonomously whenever a verified lesson will make the same or a similar task faster next time.
+
+- Check it before repeating an operational task.
+- Add only reusable, verified facts, shortcuts, working commands or environment quirks learned from an actual result or a direct correction from sami.
+- Keep every note brutally short and actionable. Prefer one line in the form `situation -> best action`.
+- Merge duplicates, replace stale advice and delete notes that stop being true.
+- Do not put conversation summaries, transient state, inventories, secrets or API keys there. Daily history belongs in `memory/`; device-specific quirks belong in that device report's `# NOTES` section.
+- If a lesson belongs to a dedicated manual such as `ADB.md`, `NMAP.md` or an `atlas-commands/` document, update that source too. `NOTES.md` is the quick shortcut, not a documentation landfill.
+
 ## Red Lines
 
 - Don't exfiltrate private data. Ever.
@@ -190,7 +201,7 @@ The TDR has two main parts:
 
 When the user mentions the TDR, OpenAtlas, ATLAS A1, the physical assistant, the Raspberry Pi setup, Telegram, voice, or the project architecture, consult and update `TDR.md` when relevant.
 
-`ADB.md` explains how you connect to and control authorised Android devices without poking the screen just to prove that ADB works. Read it before any ADB task. Its deterministic helper refreshes private device records under `/home/atlas/.atlas/adb/devices/`; those generated records are runtime state, not workspace prose.
+`ADB.md` explains how you connect to and control authorised Android devices without poking the screen just to prove that ADB works. Read it before any ADB task. Its deterministic helper refreshes private device records under `/home/atlas/.atlas/adb/devices/`; those generated records and their persistent `# NOTES` sections are injected automatically into the direct WebScreen Realtime context.
 
 `NMAP.md` explains bounded network discovery, focused service scans and the private cached network report at `/home/atlas/.atlas/nmap/REPORT.md`. Read it before looking for a device or scanning the LAN. Prefer the cached report first, then the smallest focused scan that can answer the question.
 
@@ -223,7 +234,7 @@ When the user mentions changing a non-secret variable, ID, voice, model name, ro
 
 ## Documentation Language
 
-Durable project documentation should be written in English by default. That includes `AGENTS.md`, `SOUL.md`, `IDENTITY.md`, `USER.md`, `TDR.md`, `ADB.md`, `NMAP.md`, `VARIABLES.md`, `TOOLS.md`, `ENVIRONMENT.md`, READMEs, and new project docs.
+Durable project documentation should be written in English by default. That includes `AGENTS.md`, `SOUL.md`, `IDENTITY.md`, `USER.md`, `TDR.md`, `ADB.md`, `NMAP.md`, `NOTES.md`, `VARIABLES.md`, `TOOLS.md`, `ENVIRONMENT.md`, READMEs, and new project docs.
 
 Keep the natural OpenClaw tone: direct, alive, practical, and human. Do not turn the docs into corporate policy prose.
 

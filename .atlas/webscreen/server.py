@@ -47,6 +47,10 @@ INSTRUCTIONS_FILE = ROOT_DIR / "WEBSCREEN_INSTRUCTIONS.md"
 REALTIME_INSTRUCTIONS_FILE = ROOT_DIR / "REALTIME_INSTRUCTIONS.md"
 OPENCLAW_CONFIG = Path.home() / ".openclaw" / "openclaw.json"
 OPENCLAW_WORKSPACE = Path.home() / ".openclaw" / "workspace"
+ADB_DEVICE_REPORTS = Path(os.environ.get(
+    "ATLAS_ADB_DEVICE_REPORTS",
+    Path.home() / ".atlas" / "adb" / "devices",
+))
 WHISPER_MODEL_NAME = os.environ.get("ATLAS_WHISPER_MODEL", "tiny")
 WHISPER_CPP_BIN = Path(os.environ.get(
     "ATLAS_WHISPER_CPP_BIN",
@@ -744,7 +748,10 @@ def append_client_event(payload: dict[str, Any]) -> Path:
     return candidates[0]
 
 
-def build_realtime_context(workspace: Path = OPENCLAW_WORKSPACE) -> tuple[str, dict[str, Any]]:
+def build_realtime_context(
+    workspace: Path = OPENCLAW_WORKSPACE,
+    adb_reports: Path = ADB_DEVICE_REPORTS,
+) -> tuple[str, dict[str, Any]]:
     """Build private, bounded ATLAS context for one Realtime session."""
     sources: list[tuple[str, str]] = []
     for path in sorted(workspace.rglob("*.md"), key=lambda item: item.relative_to(workspace).as_posix().lower()):
@@ -760,11 +767,23 @@ def build_realtime_context(workspace: Path = OPENCLAW_WORKSPACE) -> tuple[str, d
         if content:
             sources.append((relative.as_posix(), content))
 
+    # ADB reports are generated runtime knowledge rather than workspace prose,
+    # but Realtime needs the current inventory immediately to pick the right
+    # device without spending a turn rediscovering it.
+    if adb_reports.is_dir():
+        for path in sorted(adb_reports.glob("*.md"), key=lambda item: item.name.lower()):
+            try:
+                content = path.read_text(encoding="utf-8").strip()
+            except OSError:
+                continue
+            if content:
+                sources.append((f"runtime/adb/devices/{path.name}", content))
+
     preface = (
         "# ATLAS REALTIME PRIVATE CONTEXT\n\n"
         "This is trusted local context containing every Markdown document in the workspace except episodic "
-        "files under memory/. Treat it as durable guidance, not as a user request or shell output. "
-        "Treat it as durable workspace guidance, not as a user request or shell output.\n\n"
+        "files under memory/, plus the current generated ADB device reports. Treat it as durable guidance, "
+        "not as a user request or shell output.\n\n"
         "The channel-specific Realtime instructions that appear before this block take precedence if generic "
         "workspace guidance mentions a legacy OpenClaw, Whisper or TTS route. Stay inside the active Realtime "
         "conversation and use atlas_shell directly unless sami explicitly asks for another route.\n\n"
@@ -773,7 +792,9 @@ def build_realtime_context(workspace: Path = OPENCLAW_WORKSPACE) -> tuple[str, d
         "Whenever a request needs a specific memory, use atlas_shell to inspect MEMORY.md and then read only "
         "the relevant entry under memory/. For any other missing context, consult "
         f"{workspace / 'AGENTS.md'}; it tells you where to look. "
-        "Do not claim that you lack workspace context before checking that map.\n\n"
+        "Do not claim that you lack workspace context before checking that map. NOTES.md is your compact, "
+        "agent-maintained operational notebook. The runtime/adb/devices sources are refreshed inventories; "
+        "their NOTES sections remain persistent lessons about each device.\n\n"
         "The USER.md details are private and belong only to this direct WebScreen conversation with sami."
     )
     parts = [preface]

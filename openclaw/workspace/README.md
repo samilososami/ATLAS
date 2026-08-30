@@ -10,6 +10,7 @@ Este directorio contiene la base de contexto que convierte una instalación de O
 - `TOOLS.md`: template para documentar tools, hardware y rutas locales.
 - `USER.md`: template privado para que cada usuario describa sus preferencias.
 - `MEMORY.md`: template de memoria persistente.
+- `NOTES.md`: cuaderno operativo mínimo que ATLAS mantiene con atajos y lecciones verificadas.
 - `TDR.md`: template para el contexto académico o de investigación.
 - `ENVIRONMENT.md`: template para describir el dispositivo y sus servicios.
 - `HEARTBEAT.md`: template para comprobaciones periódicas.
