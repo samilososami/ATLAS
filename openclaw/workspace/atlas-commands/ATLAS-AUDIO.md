@@ -135,6 +135,22 @@ atlas-audio default bluez_output.XX_XX_XX_XX_XX_XX.1
 
 After changing default output, currently playing streams are moved when possible.
 
+## Quick output toggle
+
+When sami asks to switch, alternate, or move the sound between the connected
+Bluetooth speaker and the ATLAS A1 display speakers, use the fast path:
+
+```bash
+atlas-audio output-device-toggle
+```
+
+If Bluetooth is the current output, it switches to the available HDMI display
+sink. From HDMI or another local output, it switches to the single connected
+Bluetooth audio sink. The command also moves active playback streams, so do not
+disconnect or re-pair the speaker just to change where sound comes out. If more
+than one Bluetooth audio device is connected, choose explicitly with
+`atlas-audio default` instead of guessing which pair of ears sami meant.
+
 ## Volume and mute
 
 Set volume:

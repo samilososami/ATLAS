@@ -26,6 +26,7 @@ Commands:
   connect <name|mac>             connect a Bluetooth speaker and set it as default
   disconnect [name|mac]          disconnect a Bluetooth device, default current/known speaker
   default <sink|name|mac>        set default audio output
+  output-device-toggle           switch between connected Bluetooth audio and display HDMI
   volume <0-150>                 set default output volume percentage
   mute                           mute default output
   unmute                         unmute default output
@@ -503,6 +504,62 @@ set_default_sink() {
   done
 }
 
+hdmi_output_sink() {
+  pactl list short sinks | awk 'tolower($2) ~ /hdmi/ {print $2; exit}'
+}
+
+connected_bluetooth_sinks() {
+  local mac=""
+  local sink=""
+  bluetoothctl devices Connected 2>/dev/null | awk '{print $2}' | while read -r mac; do
+    [ -n "$mac" ] || continue
+    sink="$(sink_for_bt_mac "$mac")"
+    [ -n "$sink" ] && printf '%s\n' "$sink"
+  done | awk '!seen[$0]++'
+}
+
+toggle_output_device() {
+  local current=""
+  local hdmi=""
+  local target=""
+  local description=""
+  local -a bluetooth_sinks=()
+
+  ensure_audio_server
+  current="$(default_sink)"
+  hdmi="$(hdmi_output_sink)"
+  mapfile -t bluetooth_sinks < <(connected_bluetooth_sinks)
+
+  [ -n "$hdmi" ] || {
+    echo "Display HDMI audio output is not available" >&2
+    return 1
+  }
+
+  if [[ "$current" == bluez_* ]]; then
+    target="$hdmi"
+  else
+    case "${#bluetooth_sinks[@]}" in
+      0)
+        echo "No connected Bluetooth audio output is available" >&2
+        return 1
+        ;;
+      1)
+        target="${bluetooth_sinks[0]}"
+        ;;
+      *)
+        echo "More than one connected Bluetooth audio output is available:" >&2
+        printf '  - %s\n' "${bluetooth_sinks[@]}" >&2
+        echo "Choose one explicitly with: atlas-audio default <name|sink|mac>" >&2
+        return 1
+        ;;
+    esac
+  fi
+
+  set_default_sink "$target"
+  description="$(sink_description "$target" || true)"
+  printf 'Output switched to: %s\n' "${description:-$target}"
+}
+
 cmd="${1:-status}"
 shift || true
 
@@ -617,6 +674,10 @@ case "$cmd" in
     sink="$(resolve_sink "$*")"
     set_default_sink "$sink"
     atlas-audio status
+    ;;
+  output-device-toggle|toggle-output)
+    [ "$#" -eq 0 ] || { echo 'usage: atlas-audio output-device-toggle' >&2; exit 2; }
+    toggle_output_device
     ;;
   volume)
     [ "$#" -eq 1 ] || { echo 'usage: atlas-audio volume <0-150>' >&2; exit 2; }

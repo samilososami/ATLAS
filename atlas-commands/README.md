@@ -4,11 +4,13 @@ Estos scripts proporcionan una interfaz uniforme para administrar las funciones 
 
 ## `atlas-audio`
 
-Gestiona las salidas de audio, dispositivos Bluetooth, volumen, mute y pruebas de reproducción.
+Gestiona las salidas de audio, dispositivos Bluetooth, alternancia rápida entre
+Bluetooth y HDMI, volumen, mute y pruebas de reproducción.
 
 ```bash
 atlas-audio status
 atlas-audio outputs
+atlas-audio output-device-toggle
 atlas-audio volume 50
 atlas-audio test
 ```

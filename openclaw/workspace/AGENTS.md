@@ -157,7 +157,7 @@ Use them when they match the task. Detailed command docs live in `atlas-commands
 - `atlas-commands/ATLAS-SCREEN.md` — `atlas-screen`, physical SunFounder power, desktop, root terminal, and touchscreen WebScreen kiosk.
 - `atlas-commands/ATLAS-RAFAS.md` — local root recovery, the USB shortcut and its limits.
 - `atlas-commands/ATLAS-CAST.md` — `atlas-cast`, Chromecast discovery, connection, stream quality, and stop/status.
-- `atlas-commands/ATLAS-AUDIO.md` — `atlas-audio`, speaker/audio output control, Bluetooth, volume, mute, and tests.
+- `atlas-commands/ATLAS-AUDIO.md` — `atlas-audio`, speaker/audio output control, fast Bluetooth/HDMI switching, volume, mute, and tests.
 - `atlas-commands/ATLAS-SAY.md` — `atlas-say`, spoken output through the current default audio output.
 
 If sami asks something like "is the webscreen running?", do not guess and do not run a pile of raw `systemctl` commands first. Use `atlas-status` or `atlas-webscreen status`, then answer from that. These commands exist so you can move quickly and keep the system understandable.
