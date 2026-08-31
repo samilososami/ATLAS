@@ -126,7 +126,10 @@ atlas-spotify queue spotify:track:...
 El control de reproducción exige Spotify Premium. `device connect` transfiere la
 reproducción entre dispositivos Spotify Connect. El servicio local `spotifyd`
 aparece como **ATLAS A1**, incluye librespot internamente y empieza enviando solo
-la música al HDMI de la pantalla; no sustituye la salida de voz de ATLAS.
+la música al HDMI de la pantalla; no sustituye la salida de voz de ATLAS. Un
+servicio local añade a `.atlas/spotify/HISTORY.md` cada canción reproducida con
+timestamp, título, álbum y artista; ese historial es privado y todavía no
+activa recomendaciones ni automatismos.
 
 ## Seguridad
 

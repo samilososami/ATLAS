@@ -47,3 +47,11 @@ ATLAS output stays on its normal PulseAudio default. `atlas-spotify output`
 shows this dedicated local player state. A later output selector may route only
 Spotify to a Bluetooth speaker without moving ATLAS speech; until then, use
 `atlas-audio` only when Sami explicitly wants to change the global system output.
+
+## Private listening history
+
+`atlas-spotify-history.service` observes the local `spotifyd` MPRIS player and
+appends each newly selected track to `/home/atlas/.atlas/spotify/HISTORY.md`.
+Each line contains only its timestamp, title, album and artist. The record is
+private runtime data: it is not committed, uploaded, injected into Realtime, or
+used to infer listening preferences yet.

@@ -1,0 +1,23 @@
+[Unit]
+Description=ATLAS private Spotify playback history
+After=atlas-spotifyd.service
+Wants=atlas-spotifyd.service
+
+[Service]
+Type=simple
+User=sami
+Group=sami
+Environment=HOME=/home/atlas
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus
+ExecStart=/usr/local/libexec/atlas-spotify-history
+Restart=always
+RestartSec=3
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/atlas/.atlas/spotify
+
+[Install]
+WantedBy=default.target

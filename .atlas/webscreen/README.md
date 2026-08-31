@@ -22,7 +22,7 @@ laboratorio conservan ambos motores también para comparación y depuración.
 
 ## Flujo legacy de respaldo
 
-1. En el Chrome de ATLAS A1, el micrófono se activa automáticamente cuando la pantalla obtiene el control, también tras reiniciar. En otros navegadores se reutiliza un permiso ya concedido; la primera autorización sigue siendo manual. Al perder el control se detiene el micrófono de la pantalla anterior.
+1. Cuando una pestaña obtiene el control de ATLAS, WebScreen solicita el micrófono automáticamente, también tras reiniciar. Chrome reutiliza un permiso ya concedido sin mostrar nada; en una primera visita aparece su diálogo nativo. Al perder el control se detiene el micrófono de la pantalla anterior.
 2. Chrome mantiene la detección de la wake word `ATLAS`. Un VAD local y efímero comprueba que haya al menos cuatrocientos milisegundos sin voz antes de la llamada y que `ATLAS` sea el comienzo de la nueva intervención. Una mención dentro de una conversación, como `estoy trabajando en el proyecto de ATLAS`, se ignora. El audio previo no se guarda ni se envía.
 3. Al detectarla, conserva cualquier palabra reconocida a continuación y mantiene abierta la misma sesión de escucha. El usuario puede decir `ATLAS, qué hora es` de corrido, sin locución de confirmación ni pausa artificial.
 4. Chrome transcribe la petición de forma nativa y muestra también el texto provisional en tiempo real.

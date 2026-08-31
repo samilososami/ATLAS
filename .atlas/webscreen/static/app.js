@@ -41,7 +41,6 @@ const phaseLabel = document.querySelector("#phase-label");
 const mainStatus = document.querySelector("#main-status");
 const statusDetail = document.querySelector("#status-detail");
 const timer = document.querySelector("#timer");
-const enableButton = document.querySelector("#enable-button");
 const recordButton = document.querySelector("#record-button");
 const cancelButton = document.querySelector("#cancel-button");
 const voiceProviderSelect = document.querySelector("#voice-provider");
@@ -957,8 +956,6 @@ function configureRecognition() {
         microphoneStream?.getTracks().forEach(track => track.stop());
         microphoneStream = null;
       }
-      enableButton.hidden = false;
-      enableButton.disabled = false;
       recordButton.hidden = true;
       setScreen("ERROR", "No puedo escuchar", "Revisa el permiso del micrófono en Chrome.", "error");
     } else if (nativeTranscribing) {
@@ -1847,7 +1844,6 @@ async function initializeMicrophone(forceLegacy = false) {
   }
   const generation = ++microphoneGeneration;
   microphoneInitializing = true;
-  enableButton.disabled = true;
   setScreen("MICRÓFONO", "Activando micrófono", "Preparando la escucha de ATLAS…", "listening");
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -1869,7 +1865,6 @@ async function initializeMicrophone(forceLegacy = false) {
     startVoiceActivityGate(stream);
     recognitionEnabled = true;
     configureRecognition();
-    enableButton.hidden = true;
     recordButton.hidden = false;
     addLog("Micrófono activado");
     setWaiting();
@@ -1879,7 +1874,6 @@ async function initializeMicrophone(forceLegacy = false) {
     stopVoiceActivityGate();
     microphoneStream?.getTracks().forEach(track => track.stop());
     microphoneStream = null;
-    enableButton.hidden = false;
     recordButton.hidden = true;
     const message = error.name === "NotAllowedError"
       ? "Permiso de micrófono denegado. Autorízalo en Chrome y vuelve a intentarlo."
@@ -1889,30 +1883,16 @@ async function initializeMicrophone(forceLegacy = false) {
   } finally {
     if (generation === microphoneGeneration) {
       microphoneInitializing = false;
-      enableButton.disabled = false;
     }
   }
 }
 
 async function restoreMicrophone() {
   if (!hasControl()) return;
-  const generation = microphoneGeneration;
-  // Only the physical kiosk has a managed, origin-specific microphone grant.
-  const kiosk = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname)
-    && new URLSearchParams(location.search).get("kiosk") === "1";
-  if (kiosk) {
-    await initializeMicrophone();
-    return;
-  }
-  // Other browsers resume an existing grant, never silently bypass a denial.
-  try {
-    const permission = await navigator.permissions?.query({ name: "microphone" });
-    if (permission?.state === "granted" && hasControl() && generation === microphoneGeneration) {
-      await initializeMicrophone();
-    }
-  } catch {
-    // Unsupported Permissions API: retain the manual activation button.
-  }
+  // Request the browser permission as soon as this tab owns ATLAS.  Chrome
+  // reuses an existing grant without a prompt, while a new browser surfaces its
+  // normal permission dialog instead of exposing an extra WebScreen button.
+  await initializeMicrophone();
 }
 
 async function checkHealth() {
@@ -1960,7 +1940,6 @@ realtimeController = window.AtlasRealtime?.create({
     },
     onReady({ model, voice, output }) {
       realtimeFallbackActive = false;
-      enableButton.hidden = true;
       recordButton.hidden = true;
       cancelButton.hidden = false;
       if ([...voiceProviderSelect.options].some((option) => option.value === voice)) {
@@ -1983,7 +1962,7 @@ realtimeController = window.AtlasRealtime?.create({
       if (hasControl() && activeView === "atlas") void initializeMicrophone(true);
     },
     onStopped() {
-      enableButton.hidden = false;
+      recordButton.hidden = true;
     },
     onInputStream: attachRealtimeWakeInput,
     playExternalText: playRealtimeExternalText,
@@ -2024,7 +2003,6 @@ ttsForm.addEventListener("submit", runTtsLab);
 settingsForm.addEventListener("submit", saveSettings);
 microphoneMuteButton.addEventListener("click", () => setMicrophoneMuted(!microphoneMuted));
 
-enableButton.addEventListener("click", () => void initializeMicrophone());
 recordButton.addEventListener("click", () => {
   if (REALTIME_PRIMARY && !realtimeFallbackActive) {
     void activatePrimaryMicrophone();
@@ -2113,14 +2091,12 @@ window.atlasAccess.bind({
     window.AtlasWakeEnrollment?.stop?.();
     resetInteractionState();
     setPanelOpen(false);
-    enableButton.hidden = false;
-    enableButton.disabled = false;
     recordButton.hidden = true;
     cancelButton.hidden = true;
   },
   acquired() {
     switchView("atlas");
-    setScreen("EN ESPERA", "Esperando a ATLAS", "Activa el micrófono para comenzar.", "idle");
+    setScreen("MICRÓFONO", "Preparando ATLAS", "Solicitando acceso al micrófono…", "listening");
     void checkHealth();
     void loadSettings();
     if (!REALTIME_PRIMARY) void restoreMicrophone();

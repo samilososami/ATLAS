@@ -93,7 +93,6 @@ test('physical kiosk opens microphone and starts recognition without a click', a
   const p = page(); p.acquire(); await tick(); p.flushTimers();
   assert.equal(p.requests, 1);
   assert.equal(p.starts, 1);
-  assert.equal(p.node('#enable-button').hidden, true);
   assert.equal(p.node('#main-status').textContent, 'Esperando a ATLAS');
 });
 
@@ -127,17 +126,15 @@ test('stale pending capture is stopped even after ownership is reacquired', asyn
   assert.equal(p.requests, 2);
   pending[0](); await tick();
   assert.equal(p.streams[0].track.stopped, true);
-  assert.equal(p.node('#enable-button').disabled, true);
   pending[1](); await tick();
   assert.equal(p.streams[1].track.stopped, false);
-  assert.equal(p.node('#enable-button').hidden, true);
 });
 
-test('LAN clients only auto-start with an existing permission grant', async () => {
+test('LAN clients request the microphone immediately, including their first visit', async () => {
   for (const permission of ['granted', 'prompt', 'denied']) {
     const p = page({ hostname: '192.168.1.142', permission });
     p.acquire(); await tick();
-    assert.equal(p.requests, permission === 'granted' ? 1 : 0, permission);
+    assert.equal(p.requests, 1, permission);
   }
 });
 
@@ -147,22 +144,17 @@ test('insecure origin does not attempt capture or display a false listening stat
   assert.equal(p.node('#phase-label').textContent, 'MICRÓFONO BLOQUEADO');
 });
 
-test('denied microphone preserves an enabled retry button without a retry loop', async () => {
+test('denied microphone shows Chrome guidance without an application retry button', async () => {
   const p = page({ getUserMedia: () => { const error = new Error(); error.name = 'NotAllowedError'; throw error; } });
   p.acquire(); await tick(); p.flushTimers();
   assert.equal(p.requests, 1);
-  assert.equal(p.node('#enable-button').hidden, false);
-  assert.equal(p.node('#enable-button').disabled, false);
   assert.equal(p.node('#main-status').textContent, 'No puedo escuchar');
 });
 
-test('recognition permission error releases capture and permits manual retry', async () => {
+test('recognition permission error releases the microphone capture cleanly', async () => {
   const p = page(); p.acquire(); await tick();
   p.recognizers[0].onerror({ error: 'not-allowed' });
   assert.equal(p.streams[0].track.stopped, true);
-  assert.equal(p.node('#enable-button').hidden, false);
-  await p.initialize();
-  assert.equal(p.requests, 2);
 });
 
 test('wake word and request can be spoken continuously without losing the tail', async () => {

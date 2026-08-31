@@ -1,0 +1,90 @@
+#!/usr/bin/env python3
+"""Keep a minimal private history of tracks played by ATLAS A1's spotifyd."""
+
+from __future__ import annotations
+
+import os
+import subprocess
+import time
+from pathlib import Path
+
+
+ATLAS_HOME = Path(os.environ.get("ATLAS_HOME", "/home/atlas"))
+HISTORY = Path(os.environ.get("ATLAS_SPOTIFY_HISTORY", ATLAS_HOME / ".atlas/spotify/HISTORY.md"))
+PLAYER = os.environ.get("ATLAS_SPOTIFY_PLAYER", "spotifyd")
+FORMAT = "\t".join(("{{mpris:trackid}}", "{{xesam:title}}", "{{xesam:album}}", "{{xesam:artist}}"))
+
+
+def clean(value: str, fallback: str) -> str:
+    """Keep one readable Markdown line even if MPRIS metadata is malformed."""
+    value = " ".join(value.replace("\t", " ").replace("\n", " ").split()).strip()
+    return value or fallback
+
+
+def append_history(track_id: str, title: str, album: str, artist: str) -> None:
+    HISTORY.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if not HISTORY.exists() or HISTORY.stat().st_size == 0:
+        HISTORY.write_text(
+            "# ATLAS Spotify History\n\n"
+            "Private, local record of tracks observed on the ATLAS A1 Spotify Connect player. "
+            "It is not uploaded and is not used for recommendations yet.\n\n",
+            encoding="utf-8",
+        )
+        HISTORY.chmod(0o600)
+    stamp = time.strftime("%Y-%m-%d %H:%M:%S %z")
+    with HISTORY.open("a", encoding="utf-8") as handle:
+        handle.write(
+            f"- {stamp} — **{clean(title, 'Unknown title')}** — "
+            f"Album: {clean(album, 'Unknown album')} — Artist: {clean(artist, 'Unknown artist')}\n"
+        )
+    HISTORY.chmod(0o600)
+
+
+def record_metadata(line: str, last_track: str) -> str:
+    """Append one valid metadata event and return the effective last track ID."""
+    fields = line.rstrip("\n").split("\t", 3)
+    if len(fields) != 4:
+        return last_track
+    track_id, title, album, artist = fields
+    identity = clean(track_id, f"{title}\t{album}\t{artist}")
+    if not title.strip() or identity == last_track:
+        return last_track
+    append_history(identity, title, album, artist)
+    return identity
+
+
+def metadata_command(follow: bool = False) -> list[str]:
+    command = ["playerctl", f"--player={PLAYER}", "metadata"]
+    if follow:
+        command.append("--follow")
+    return [*command, "--format", FORMAT]
+
+
+def follow() -> None:
+    """Record the current track, then each new track selection exactly once."""
+    last_track = ""
+    try:
+        initial = subprocess.run(
+            metadata_command(), text=True, stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL, check=False,
+        ).stdout
+        last_track = record_metadata(initial, last_track)
+    except OSError:
+        pass
+    while True:
+        process = subprocess.Popen(
+            metadata_command(follow=True),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            bufsize=1,
+        )
+        assert process.stdout is not None
+        for line in process.stdout:
+            last_track = record_metadata(line, last_track)
+        process.wait()
+        time.sleep(3)
+
+
+if __name__ == "__main__":
+    follow()

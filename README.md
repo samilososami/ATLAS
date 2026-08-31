@@ -158,3 +158,7 @@ Cualquier donación me motiva muchísimo y me ayuda a continuar creando, investi
 
 - PayPal: [paypal.me/samilososami](https://paypal.me/samilososami)
 - Bitcoin: `bc1qa8r8ll0m0e58f3ngrauh08nnzdn0alm825nc3r`
+
+## TO-DO
+
+- [ ] Diseñar un algoritmo de canciones opt-in que analice el historial local de Spotify, detecte patrones de escucha y proponga acciones explicables sin saltar ni modificar música automáticamente.
