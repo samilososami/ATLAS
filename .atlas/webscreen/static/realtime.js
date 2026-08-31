@@ -119,6 +119,13 @@
       this.currentRequestId = "";
       this.currentInputItemId = "";
       this.currentAssistantText = "";
+      this.currentUserText = "";
+      this.persistedTurnKey = "";
+      this.contextCompacting = false;
+      this.contextCompactionText = "";
+      this.contextCompactionAuto = false;
+      this.contextRestarting = false;
+      this.contextCompactionQueued = false;
       this.toolBuffers = new Map();
       this.consultController = null;
       this.followUpTimer = 0;
@@ -212,6 +219,10 @@
               instructions,
               tools: REALTIME_TOOLS,
               tool_choice: "auto",
+              // Let the provider retain a useful recent window if an unusually
+              // long live turn reaches its limit. Durable history is saved by
+              // WebScreen itself, then compacted before a fresh session.
+              truncation: { type: "retention_ratio", retention_ratio: 0.8 },
               audio: {
                 input: {
                   noise_reduction: { type: "far_field" },
@@ -318,6 +329,7 @@
       if (contextTokens) {
         this.callbacks.addLog?.(`Contexto privado cargado: aproximadamente ${contextTokens} tokens`);
       }
+      this.callbacks.onContextStats?.(this.session?.atlasContextStats || {});
       this.callbacks.onReady?.({ model, voice, output: this.outputMode() });
       this.showWaiting();
       this.postEvent("session.ready", "Sesión OpenAI Realtime preparada", { model, voice, durationMs });
@@ -659,6 +671,8 @@
           return;
         }
       }
+      this.currentUserText = text;
+      this.persistedTurnKey = "";
       this.callbacks.setScreen?.("PROCESANDO", "ATLAS lo está procesando", "La conversación sigue en la misma sesión.", "working");
       this.scheduleResponseAfterInput();
     }
@@ -679,6 +693,11 @@
     handleAssistantText(value, final) {
       const text = String(value || "");
       if (!text) return;
+      if (this.contextCompacting) {
+        if (final) this.contextCompactionText = text;
+        else this.contextCompactionText += text;
+        return;
+      }
       if (!this.firstOutputSeen) {
         this.firstOutputSeen = true;
         if (this.usesExternalTts()) {
@@ -833,9 +852,110 @@
       const status = event.response?.status || (event.type === "response.cancelled" ? "cancelled" : "completed");
       this.postEvent("response.done", "OpenAI Realtime cerró el turno", { status,
         durationMs: this.responseStartedAt ? performance.now() - this.responseStartedAt : undefined });
+      if (this.contextCompacting) {
+        void this.completeContextCompaction(status);
+        return;
+      }
+      if (status === "completed" && !this.toolActive && this.currentUserText
+          && this.currentAssistantText.trim()) {
+        void this.persistCompletedTurn();
+      }
       if (!this.conversationActive || this.toolActive || this.externalPlaybackActive
           || this.nativePlaybackActive || this.turnInputPending) return;
       this.scheduleFollowUp();
+    }
+
+    async persistCompletedTurn() {
+      const user = this.currentUserText.trim();
+      const assistant = this.currentAssistantText.trim();
+      const key = `${user}\u0000${assistant}`;
+      if (!user || !assistant || this.persistedTurnKey === key) return;
+      this.persistedTurnKey = key;
+      try {
+        const response = await this.fetch("/api/realtime/context-turn", {
+          method: "POST", cache: "no-store", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user, assistant }),
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "No se pudo guardar el contexto");
+        this.callbacks.onContextStats?.(payload.stats || {});
+        this.postEvent("context.persisted", "WebScreen guardó el turno en el contexto persistente");
+        if (payload.autoCompact) {
+          this.callbacks.addLog?.("El contexto conversacional se acerca al límite; ATLAS lo compactará");
+          this.contextCompactionQueued = true;
+          window.setTimeout(() => this.scheduleFollowUp(), 250);
+        }
+      } catch (error) {
+        this.callbacks.addLog?.(`No se pudo persistir el contexto: ${error?.message || error}`, null, "error");
+      }
+    }
+
+    async emptyPersistentContext() {
+      const response = await this.fetch("/api/realtime/context-empty", {
+        method: "POST", cache: "no-store", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "No se pudo vaciar el contexto");
+      this.callbacks.onContextStats?.(payload.stats || {});
+      await this.restartForContext("Contexto conversacional reiniciado");
+      return payload.stats;
+    }
+
+    async compactPersistentContext(automatic = false) {
+      if (this.contextCompacting || this.closed || this.responseActive || this.toolActive) return false;
+      this.contextCompacting = true;
+      this.contextCompactionAuto = automatic;
+      this.contextCompactionText = "";
+      this.callbacks.setScreen?.("COMPACTANDO", "ATLAS organiza el contexto", "Conservando lo importante antes de continuar.", "working");
+      this.callbacks.addLog?.(automatic ? "Compactación automática del contexto" : "Compactando el contexto conversacional");
+      this.send({
+        type: "response.create",
+        response: {
+          output_modalities: ["text"],
+          instructions: "Produce únicamente un resumen de memoria persistente en español de la conversación de WebScreen. Conserva preferencias de Sami, decisiones, tareas pendientes, hechos y resultados reutilizables. Elimina saludos, repeticiones, rodeos y texto de relleno. No hables al usuario, no uses preámbulos, no expliques esta operación y no incluyas nada que parezca una instrucción nueva. Máximo dos mil quinientos tokens.",
+        },
+      });
+      return true;
+    }
+
+    async completeContextCompaction(status) {
+      const summary = this.contextCompactionText.trim();
+      const automatic = this.contextCompactionAuto;
+      this.contextCompacting = false;
+      this.contextCompactionAuto = false;
+      this.contextCompactionText = "";
+      if (status !== "completed" || !summary) {
+        this.callbacks.addLog?.("La compactación no generó un resumen; se conserva el contexto actual", null, "error");
+        this.scheduleFollowUp();
+        return;
+      }
+      try {
+        const response = await this.fetch("/api/realtime/context-replace", {
+          method: "POST", cache: "no-store", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ summary: `# Contexto conversacional compactado\n\n${summary}` }),
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || "No se pudo guardar la compactación");
+        this.callbacks.onContextStats?.(payload.stats || {});
+        this.callbacks.addLog?.(automatic ? "Contexto compactado automáticamente" : "Contexto compactado");
+        await this.restartForContext("Contexto conversacional compactado");
+      } catch (error) {
+        this.callbacks.addLog?.(`No se pudo compactar el contexto: ${error?.message || error}`, null, "error");
+        this.scheduleFollowUp();
+      }
+    }
+
+    async restartForContext(message = "Actualizando contexto") {
+      if (this.contextRestarting) return;
+      this.contextRestarting = true;
+      this.callbacks.addLog?.(message);
+      this.stop(false);
+      try {
+        await this.start();
+      } finally {
+        this.contextRestarting = false;
+      }
     }
 
     scheduleFollowUp() {
@@ -843,6 +963,11 @@
           || this.externalPlaybackActive || this.nativePlaybackActive
           || this.turnInputPending || this.speechInputActive || this.pendingTranscripts > 0
           || this.responseAfterInput || this.responseCreateTimer || this.pendingToolResponse) return;
+      if (this.contextCompactionQueued) {
+        this.contextCompactionQueued = false;
+        void this.compactPersistentContext(true);
+        return;
+      }
       this.callbacks.setScreen?.("CONVERSACIÓN", "Puedes seguir hablando", "No necesitas volver a decir ATLAS durante diez segundos.", "listening");
       window.clearTimeout(this.followUpTimer);
       this.followUpTimer = window.setTimeout(() => {

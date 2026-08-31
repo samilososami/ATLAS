@@ -1925,6 +1925,9 @@ realtimeController = window.AtlasRealtime?.create({
       healthDot.className = "ready";
       healthLabel.textContent = `${model} · WebRTC · ${output === "native" ? voice : voiceProviderLabel(output)}`;
     },
+    onContextStats(stats) {
+      window.dispatchEvent(new CustomEvent("atlas-context-stats", { detail: stats || {} }));
+    },
     onWaiting() {
       timer.textContent = "00:00.0";
       cancelButton.hidden = false;
@@ -1941,6 +1944,22 @@ realtimeController = window.AtlasRealtime?.create({
     playExternalText: playRealtimeExternalText,
     stopExternalSpeech: stopRealtimeExternalSpeech,
   },
+});
+
+window.addEventListener("atlas-context-restart", () => {
+  if (REALTIME_PRIMARY && !realtimeFallbackActive && hasControl() && activeView === "atlas") {
+    void realtimeController?.restartForContext("Contexto conversacional reiniciado");
+  }
+});
+window.addEventListener("atlas-context-revision", () => {
+  if (REALTIME_PRIMARY && !realtimeFallbackActive && hasControl() && activeView === "atlas") {
+    void realtimeController?.restartForContext("Contexto actualizado desde otro dispositivo");
+  }
+});
+window.addEventListener("atlas-context-compact", () => {
+  if (REALTIME_PRIMARY && !realtimeFallbackActive && hasControl() && activeView === "atlas") {
+    void realtimeController?.compactPersistentContext(false);
+  }
 });
 
 menuToggle.addEventListener("click", () => setPanelOpen(!sidePanel.classList.contains("open")));

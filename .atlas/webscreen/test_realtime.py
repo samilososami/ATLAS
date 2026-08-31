@@ -85,6 +85,40 @@ class RealtimeBackendTests(unittest.TestCase):
         self.assertIn("AGENTS.md is the canonical master map", context)
         self.assertFalse(stats["truncated"])
 
+    def test_realtime_context_separates_crucial_and_persistent_memory(self):
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(app, "CONTEXT_DIR", Path(directory) / "context"), \
+             patch.object(app, "PERSISTENT_CONTEXT_FILE", Path(directory) / "context" / "CONTEXT.md"), \
+             patch.object(app, "CONTEXT_REVISION_FILE", Path(directory) / "context" / "REVISION"), \
+             patch.object(app, "CONTEXT_COMPACT_REQUEST_FILE", Path(directory) / "context" / "COMPACT_REQUEST"):
+            revision = app.replace_persistent_context("Sami prefiere respuestas breves.")
+            context, stats = app.build_realtime_context(
+                Path(directory) / "missing-workspace", Path(directory) / "missing-adb",
+            )
+            self.assertIn("Sami prefiere respuestas breves.", context)
+            self.assertGreater(stats["crucialEstimatedTokens"], 0)
+            self.assertGreater(stats["fillerEstimatedTokens"], 0)
+            self.assertEqual(stats["revision"], revision)
+            self.assertEqual(stats["availableFillerTokens"],
+                             app.REALTIME_CONTEXT_LIMIT_TOKENS - stats["crucialEstimatedTokens"])
+            app.empty_persistent_context()
+            _, cleared = app.build_realtime_context(
+                Path(directory) / "missing-workspace", Path(directory) / "missing-adb",
+            )
+            self.assertEqual(cleared["fillerEstimatedTokens"], 0)
+
+    def test_persistent_turn_requests_compaction_before_window_is_full(self):
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(app, "CONTEXT_DIR", Path(directory) / "context"), \
+             patch.object(app, "PERSISTENT_CONTEXT_FILE", Path(directory) / "context" / "CONTEXT.md"), \
+             patch.object(app, "CONTEXT_REVISION_FILE", Path(directory) / "context" / "REVISION"), \
+             patch.object(app, "CONTEXT_COMPACT_REQUEST_FILE", Path(directory) / "context" / "COMPACT_REQUEST"), \
+             patch.object(app, "REALTIME_CONTEXT_LIMIT_TOKENS", 80), \
+             patch.object(app, "REALTIME_CONTEXT_MAX_CHARS", 10000):
+            stats, auto_compact = app.append_persistent_turn("hola " * 80, "respuesta " * 80)
+            self.assertTrue(auto_compact)
+            self.assertGreaterEqual(stats["fillerEstimatedTokens"], stats["autoCompactAtTokens"])
+
     def test_realtime_instructions_treat_clear_orders_as_authorization(self):
         instructions = app.read_realtime_instructions()
         self.assertIn("clear, direct order", instructions)

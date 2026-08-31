@@ -170,6 +170,7 @@ Use them when they match the task. Detailed command docs live in `atlas-commands
 - `atlas-commands/ATLAS-CAST.md` — `atlas-cast`, Chromecast discovery, connection, stream quality, and stop/status.
 - `atlas-commands/ATLAS-AUDIO.md` — `atlas-audio`, speaker/audio output control, fast Bluetooth/HDMI switching, volume, mute, and tests.
 - `atlas-commands/ATLAS-SAY.md` — `atlas-say`, spoken output through the current default audio output.
+- `atlas-commands/ATLAS-CONTEXT.md` — `atlas-context`, resettable WebScreen Realtime conversation memory and semantic compaction.
 
 If sami asks something like "is the webscreen running?", do not guess and do not run a pile of raw `systemctl` commands first. Use `atlas-status` or `atlas-webscreen status`, then answer from that. These commands exist so you can move quickly and keep the system understandable.
 

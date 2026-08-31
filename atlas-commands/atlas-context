@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+HELPER="/usr/local/lib/atlas/atlas-contextctl"
+
+usage() {
+  cat <<'USAGE'
+usage: atlas-context <status|empty|compact>
+
+  status   show resettable WebScreen conversational context state
+  empty    erase only conversational context and request a fresh WebScreen session
+  compact  request a semantic compaction from the next active WebScreen session
+
+Crucial Markdown context and OpenClaw memory are never modified.
+USAGE
+}
+
+run_as_sami() {
+  if [ "$(id -u)" -eq 0 ]; then
+    runuser -u sami -- "$HELPER" "$@"
+  else
+    "$HELPER" "$@"
+  fi
+}
+
+case "${1:-status}" in
+  status|empty|compact) run_as_sami "$1" ;;
+  -h|--help|help) usage ;;
+  *) usage >&2; exit 2 ;;
+esac

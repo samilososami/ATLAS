@@ -92,6 +92,22 @@ atlas-webscreen status
 atlas-webscreen disable
 ```
 
+## `atlas-context`
+
+Gestiona únicamente la memoria conversacional persistente de WebScreen Realtime.
+No modifica los Markdown cruciales del workspace ni la memoria de OpenClaw.
+
+```bash
+atlas-context status
+atlas-context empty
+atlas-context compact
+```
+
+`empty` inicia una conversación nueva conservando el contexto crucial. `compact`
+reduce el historial conversacional para mantener los hechos y decisiones más
+útiles; una pestaña WebScreen activa puede realizar una compactación semántica
+con Realtime antes de reiniciar su sesión.
+
 ## Seguridad
 
 Revisa cada script antes de utilizarlo fuera de ATLAS OS. Algunos comandos controlan servicios del sistema, audio, dispositivos de red o interfaces gráficas y pueden necesitar permisos elevados.

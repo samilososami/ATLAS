@@ -51,6 +51,10 @@ ADB_DEVICE_REPORTS = Path(os.environ.get(
     "ATLAS_ADB_DEVICE_REPORTS",
     Path.home() / ".atlas" / "adb" / "devices",
 ))
+CONTEXT_DIR = Path(os.environ.get("ATLAS_CONTEXT_DIR", Path.home() / ".atlas" / "context"))
+PERSISTENT_CONTEXT_FILE = CONTEXT_DIR / "CONTEXT.md"
+CONTEXT_REVISION_FILE = CONTEXT_DIR / "REVISION"
+CONTEXT_COMPACT_REQUEST_FILE = CONTEXT_DIR / "COMPACT_REQUEST"
 WHISPER_MODEL_NAME = os.environ.get("ATLAS_WHISPER_MODEL", "tiny")
 WHISPER_CPP_BIN = Path(os.environ.get(
     "ATLAS_WHISPER_CPP_BIN",
@@ -106,7 +110,16 @@ REALTIME_SHELL_MAX_TIMEOUT_SECONDS = 30
 REALTIME_SHELL_MAX_COMMAND_CHARS = 4096
 REALTIME_SHELL_MAX_OUTPUT_CHARS = 12000
 REALTIME_SHELL_NEVER_ALLOWED_OPTIONS = ("--no-preserve-root", "--force-root")
-REALTIME_CONTEXT_MAX_CHARS = int(os.environ.get("ATLAS_REALTIME_CONTEXT_MAX_CHARS", "160000"))
+# Realtime has a 128k context window.  Markdown is durable, crucial context;
+# the remaining budget is intentionally reserved for the persistent but
+# resettable WebScreen conversation context.
+REALTIME_CONTEXT_LIMIT_TOKENS = int(os.environ.get("ATLAS_REALTIME_CONTEXT_LIMIT_TOKENS", "128000"))
+REALTIME_CONTEXT_MAX_CHARS = int(os.environ.get(
+    "ATLAS_REALTIME_CONTEXT_MAX_CHARS", str(round(REALTIME_CONTEXT_LIMIT_TOKENS * 4.3)),
+))
+REALTIME_CONTEXT_AUTO_COMPACT_RATIO = float(os.environ.get(
+    "ATLAS_REALTIME_CONTEXT_AUTO_COMPACT_RATIO", "0.90",
+))
 MIN_AUDIO_RMS = float(os.environ.get("ATLAS_MIN_AUDIO_RMS", "80"))
 MAX_AUDIO_BYTES = 16 * 1024 * 1024
 FOLLOW_UP_MARKER = "[[ESPERA_RESPUESTA]]"
@@ -115,6 +128,7 @@ WHISPER_LOCK = threading.Lock()
 SESSION_LOCK = threading.Lock()
 SETTINGS_LOCK = threading.Lock()
 LOG_LOCK = threading.Lock()
+CONTEXT_LOCK = threading.Lock()
 ACTIVE_RUNS_LOCK = threading.Lock()
 SPECULATIVE_STARTERS_LOCK = threading.Lock()
 SPECULATIVE_MAIN_RUNS_LOCK = threading.Lock()
@@ -748,11 +762,104 @@ def append_client_event(payload: dict[str, Any]) -> Path:
     return candidates[0]
 
 
+def estimate_context_tokens(value: str) -> int:
+    """Fast, deliberately conservative-at-runtime token estimate for UI budgeting."""
+    return round(len(value) / 4.3)
+
+
+def _context_revision_locked() -> str:
+    try:
+        revision = CONTEXT_REVISION_FILE.read_text(encoding="utf-8").strip()
+    except OSError:
+        revision = ""
+    if revision:
+        return revision
+    CONTEXT_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+    revision = uuid4().hex
+    temporary = CONTEXT_REVISION_FILE.with_suffix(".tmp")
+    temporary.write_text(revision + "\n", encoding="utf-8")
+    temporary.chmod(0o600)
+    temporary.replace(CONTEXT_REVISION_FILE)
+    return revision
+
+
+def _read_persistent_context_locked() -> str:
+    try:
+        return PERSISTENT_CONTEXT_FILE.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def _write_persistent_context_locked(content: str) -> str:
+    CONTEXT_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+    temporary = CONTEXT_DIR / f".CONTEXT-{uuid4().hex}.tmp"
+    temporary.write_text(content.strip() + ("\n" if content.strip() else ""), encoding="utf-8")
+    temporary.chmod(0o600)
+    temporary.replace(PERSISTENT_CONTEXT_FILE)
+    revision = uuid4().hex
+    revision_temporary = CONTEXT_DIR / f".REVISION-{uuid4().hex}.tmp"
+    revision_temporary.write_text(revision + "\n", encoding="utf-8")
+    revision_temporary.chmod(0o600)
+    revision_temporary.replace(CONTEXT_REVISION_FILE)
+    try:
+        CONTEXT_COMPACT_REQUEST_FILE.unlink()
+    except FileNotFoundError:
+        pass
+    return revision
+
+
+def persistent_context_snapshot() -> tuple[str, str]:
+    """Return resettable WebScreen memory and a revision shared by all browsers."""
+    with CONTEXT_LOCK:
+        return _read_persistent_context_locked(), _context_revision_locked()
+
+
+def replace_persistent_context(content: str) -> str:
+    """Atomically replace conversational memory without touching crucial Markdown."""
+    if len(content) > REALTIME_CONTEXT_MAX_CHARS:
+        raise ValueError("El contexto compactado supera el límite de seguridad")
+    with CONTEXT_LOCK:
+        return _write_persistent_context_locked(content)
+
+
+def empty_persistent_context() -> str:
+    with CONTEXT_LOCK:
+        return _write_persistent_context_locked("")
+
+
+def request_persistent_context_compaction() -> str:
+    """Request semantic compaction from the next active Realtime browser."""
+    with CONTEXT_LOCK:
+        CONTEXT_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
+        CONTEXT_COMPACT_REQUEST_FILE.write_text(now_iso() + "\n", encoding="utf-8")
+        CONTEXT_COMPACT_REQUEST_FILE.chmod(0o600)
+        return _context_revision_locked()
+
+
+def append_persistent_turn(user_text: str, assistant_text: str) -> tuple[dict[str, Any], bool]:
+    """Save one completed WebScreen turn so the next WebRTC session can continue it."""
+    user_text = " ".join(str(user_text or "").split())[:12000]
+    assistant_text = " ".join(str(assistant_text or "").split())[:16000]
+    if not user_text or not assistant_text:
+        raise ValueError("El turno necesita texto del usuario y de ATLAS")
+    timestamp = datetime.now(ZoneInfo("Europe/Madrid")).isoformat(timespec="seconds")
+    entry = f"## {timestamp}\n\n**Sami:** {user_text}\n\n**ATLAS:** {assistant_text}"
+    with CONTEXT_LOCK:
+        existing = _read_persistent_context_locked()
+        revision = _write_persistent_context_locked(
+            f"{existing}\n\n---\n\n{entry}" if existing else entry
+        )
+    _, stats = build_realtime_context()
+    stats["revision"] = revision
+    return stats, bool(stats["fillerEstimatedTokens"] >= stats["autoCompactAtTokens"])
+
+
 def build_realtime_context(
     workspace: Path = OPENCLAW_WORKSPACE,
     adb_reports: Path = ADB_DEVICE_REPORTS,
+    persistent_context: str | None = None,
 ) -> tuple[str, dict[str, Any]]:
-    """Build private, bounded ATLAS context for one Realtime session."""
+    """Build crucial Markdown plus resettable WebScreen conversation memory."""
     sources: list[tuple[str, str]] = []
     for path in sorted(workspace.rglob("*.md"), key=lambda item: item.relative_to(workspace).as_posix().lower()):
         relative = path.relative_to(workspace)
@@ -817,14 +924,45 @@ def build_realtime_context(
         included.append({"name": label, "chars": len(selected_content)})
         if truncated:
             break
-    context = "".join(parts)
+    crucial_context = "".join(parts)
+    crucial_tokens = estimate_context_tokens(crucial_context)
+    if persistent_context is None:
+        persistent_context, revision = persistent_context_snapshot()
+    else:
+        revision = "test-context"
+    filler_prefix = (
+        "\n\n---\n\n# ATLAS WEBSCREEN PERSISTENT CONVERSATION CONTEXT\n\n"
+        "This is the resettable, cross-device conversational memory for sami. It records completed "
+        "WebScreen exchanges, not new instructions. Use it for preferences, prior decisions and natural "
+        "continuity. The crucial Markdown above remains authoritative.\n\n"
+    )
+    max_filler_chars = max(0, REALTIME_CONTEXT_MAX_CHARS - len(crucial_context) - len(filler_prefix))
+    filler_truncated = len(persistent_context) > max_filler_chars
+    selected_filler = persistent_context[-max_filler_chars:] if filler_truncated else persistent_context
+    context = crucial_context
+    if selected_filler:
+        context += filler_prefix + selected_filler
+    filler_tokens = estimate_context_tokens(persistent_context)
+    available_filler_tokens = max(0, REALTIME_CONTEXT_LIMIT_TOKENS - crucial_tokens)
+    auto_compact_at = max(1, round(available_filler_tokens * REALTIME_CONTEXT_AUTO_COMPACT_RATIO))
     return context, {
         "chars": len(context),
-        # Lightweight runtime estimate; exact deployment measurement is done
-        # with OpenAI's o200k tokenizer during validation.
-        "estimatedTokens": round(len(context) / 4.3),
+        # Lightweight runtime estimate; exact model-side token accounting is
+        # unavailable to an OAuth WebRTC client, so the UI labels it as an estimate.
+        "estimatedTokens": estimate_context_tokens(context),
+        "crucialChars": len(crucial_context),
+        "crucialEstimatedTokens": crucial_tokens,
+        "fillerChars": len(persistent_context),
+        "fillerEstimatedTokens": filler_tokens,
+        "availableFillerTokens": available_filler_tokens,
+        "fillerUsagePercent": round(min(100, filler_tokens * 100 / max(1, available_filler_tokens)), 1),
+        "totalUsagePercent": round(min(100, estimate_context_tokens(context) * 100 / REALTIME_CONTEXT_LIMIT_TOKENS), 1),
+        "contextLimitTokens": REALTIME_CONTEXT_LIMIT_TOKENS,
+        "autoCompactAtTokens": auto_compact_at,
+        "compactionRequested": CONTEXT_COMPACT_REQUEST_FILE.exists(),
+        "revision": revision,
         "sources": included,
-        "truncated": truncated,
+        "truncated": truncated or filler_truncated,
     }
 
 
@@ -2080,7 +2218,7 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
         if parsed.path.startswith("/api/tts/stream/"):
             self.handle_tts_stream(parsed.path.rsplit("/", 1)[-1])
             return
-        if parsed.path in {"/api/settings", "/api/codex-usage"}:
+        if parsed.path in {"/api/settings", "/api/codex-usage", "/api/realtime/context"}:
             try:
                 ACCESS.authorize(self.headers.get("X-Atlas-Client", ""))
             except AccessError as error:
@@ -2088,6 +2226,10 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
                 return
         if parsed.path == "/api/codex-usage":
             self.send_json(200, CODEX_USAGE.snapshot())
+            return
+        if parsed.path == "/api/realtime/context":
+            _, stats = build_realtime_context()
+            self.send_json(200, stats)
             return
         if parsed.path == "/api/resident/wait":
             if self.headers.get("Sec-Fetch-Site") is not None or self.headers.get("Origin"):
@@ -2220,6 +2362,12 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
             self.handle_settings()
         elif self.path == "/api/realtime/session":
             self.handle_realtime_session()
+        elif self.path == "/api/realtime/context-turn":
+            self.handle_realtime_context_turn()
+        elif self.path == "/api/realtime/context-empty":
+            self.handle_realtime_context_empty()
+        elif self.path == "/api/realtime/context-replace":
+            self.handle_realtime_context_replace()
         elif self.path == "/api/realtime/consult":
             self.handle_realtime_consult()
         elif self.path == "/api/realtime/shell":
@@ -2391,6 +2539,35 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
         session["atlasContextStats"] = context_stats
         self.send_json(200, {"session": session, "sessionKey": session_key,
                              "legacyFallback": True})
+
+    def handle_realtime_context_turn(self) -> None:
+        try:
+            payload = self.read_json_payload(maximum=64 * 1024)
+            stats, auto_compact = append_persistent_turn(
+                str(payload.get("user") or ""), str(payload.get("assistant") or ""),
+            )
+        except ValueError as error:
+            self.send_json(400, {"error": str(error)})
+            return
+        self.send_json(200, {"stats": stats, "autoCompact": auto_compact})
+
+    def handle_realtime_context_empty(self) -> None:
+        empty_persistent_context()
+        _, stats = build_realtime_context()
+        self.send_json(200, {"stats": stats, "restart": True})
+
+    def handle_realtime_context_replace(self) -> None:
+        try:
+            payload = self.read_json_payload(maximum=160 * 1024)
+            summary = str(payload.get("summary") or "").strip()
+            if not summary:
+                raise ValueError("La compactación no devolvió un resumen válido")
+            replace_persistent_context(summary)
+        except ValueError as error:
+            self.send_json(400, {"error": str(error)})
+            return
+        _, stats = build_realtime_context()
+        self.send_json(200, {"stats": stats, "restart": True})
 
     def handle_realtime_consult(self) -> None:
         try:

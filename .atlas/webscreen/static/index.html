@@ -64,6 +64,16 @@
             </div>
             <span class="usage-status" id="quota-status" role="status">Consultando límites…</span>
           </section>
+          <section class="context-usage" id="context-usage" aria-label="Contexto de ATLAS">
+            <div class="usage-heading"><span>CONTEXTO</span><span id="context-usage-percent">—</span></div>
+            <div class="context-row">
+              <span class="usage-label">Memoria</span>
+              <progress id="context-progress" max="100" value="0" aria-label="Uso del contexto conversacional"></progress>
+              <strong id="context-usage-value">—</strong>
+            </div>
+            <span class="context-detail" id="context-detail">Cargando contexto crucial…</span>
+            <button class="context-reset" id="context-reset" type="button" disabled>Reiniciar contexto</button>
+          </section>
           <button class="secondary activate-a1-main" id="access-activate-a1" type="button" hidden disabled>Activar en ATLAS A1</button>
           </div>
         </header>
@@ -175,8 +185,9 @@
     </div>
     <script src="/access.js?v=2026-08-31-wake-notes-1"></script>
     <script src="/kiosk.js?v=2026-08-28-kiosk-1"></script>
-    <script src="/realtime.js?v=2026-08-31-local-wake-2"></script>
-    <script src="/app.js?v=2026-08-31-local-wake-1"></script>
-    <script src="/quota.js?v=2026-08-28-access-1"></script>
+    <script src="/realtime.js?v=2026-08-31-persistent-context-1"></script>
+    <script src="/app.js?v=2026-08-31-persistent-context-1"></script>
+    <script src="/quota.js?v=2026-08-31-persistent-context-1"></script>
+    <script src="/context.js?v=2026-08-31-persistent-context-1"></script>
   </body>
 </html>

@@ -11,7 +11,7 @@ reversible y documentada en `Backups/WebScreen/legacy-preamble-2026-08-29`.
 3. El detector anterior de Chrome vuelve a ser la autoridad exclusiva de la wake word: exige `ATLAS` como palabra exacta al inicio de una ráfaga de voz cercana, después de cuatrocientos milisegundos de silencio medidos por la puerta acústica local. Solo entonces autoriza a Realtime para recibir la conversación. La transcripción orientativa de Realtime ya no puede despertar al asistente por confundir ruido u otra palabra con `ATLAS`.
 4. Tras una respuesta quedan diez segundos de continuación natural sin repetir la wake word. Mientras ATLAS habla, una interrupción también debe ser autorizada por el detector local exacto. El VAD de Realtime no corta el audio por sí solo: esto evita que el altavoz HDMI o una transcripción aproximada interrumpan al A1.
 5. OpenAI Realtime responde directamente y usa `atlas_shell` para consultar archivos, red y estado real o para ejecutar las acciones autorizadas. El backend rechaza de forma permanente cualquier `rm` que combine borrado recursivo y forzado, además de `--no-preserve-root`, con independencia de lo que solicite o genere el modelo. En esta etapa no deriva el turno a Luna.
-6. La sesión recibe `REALTIME_INSTRUCTIONS.md`, todos los Markdown del workspace salvo los episodios de `memory/`, y los reportes actuales de dispositivos en `.atlas/adb/devices/`. `AGENTS.md` sigue siendo el mapa para localizar contexto adicional y `NOTES.md` funciona como cuaderno operativo compacto.
+6. La sesión recibe `REALTIME_INSTRUCTIONS.md`, todos los Markdown del workspace salvo los episodios de `memory/`, los reportes actuales de dispositivos en `.atlas/adb/devices/` y el contexto conversacional persistente de WebScreen. `AGENTS.md` sigue siendo el mapa para localizar contexto adicional y `NOTES.md` funciona como cuaderno operativo compacto.
 7. Los turnos directos y delegados producen logs JSON Lines. Si falla la reserva, WebRTC o el proveedor, WebScreen reactiva el pipeline legacy sin perder la copia recuperable.
 
 La voz nativa Realtime utiliza la sesión OAuth aceptada por OpenClaw. La cuota
@@ -136,6 +136,28 @@ una lectura compartida durante sesenta segundos. No crea turnos del agente ni
 devuelve tokens, datos de cuenta o facturación. Si la lectura falla, se indica
 que el dato está desactualizado; una cuota desconocida nunca se presenta como
 cero. `static/quota.js` actualiza el indicador sin bloquear la conversación.
+
+### Contexto persistente de WebScreen
+
+El contexto se separa deliberadamente en dos capas. El **contexto crucial** es
+el conjunto de Markdown de workspace y los informes ADB que se carga al crear
+cualquier sesión. El **contexto de relleno** es la memoria de conversaciones
+completadas de WebScreen y se guarda de forma privada en
+`/home/atlas/.atlas/context/CONTEXT.md`, por lo que sobrevive a reinicios de
+WebScreen, Gateway, Raspberry Pi y cambios de navegador.
+
+La tarjeta superior muestra una estimación de tokens del relleno frente al
+presupuesto libre después del contexto crucial. El botón **Reiniciar contexto**
+vacía exclusivamente ese archivo y crea una sesión Realtime nueva. Cuando se
+aproxima al noventa por ciento de su presupuesto, la pestaña activa pide a
+Realtime una compactación semántica silenciosa y reinicia la sesión con el
+resumen. Realtime conserva además una ventana reciente mediante
+`retention_ratio`, como red de seguridad del turno activo; la persistencia no
+depende de ese truncado del proveedor.
+
+`atlas-context empty` y `atlas-context compact` ofrecen el mismo mantenimiento
+desde la terminal. Estos comandos no afectan a OpenClaw ni alteran los archivos
+Markdown cruciales.
 
 La semántica de porcentaje usado y renovación procede de la
 [documentación oficial de Codex](https://developers.openai.com/codex/app-server#6-rate-limits-chatgpt).

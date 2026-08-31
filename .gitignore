@@ -27,3 +27,6 @@ runtime/
 logs/
 .atlas/webscreen/workspace/*
 !.atlas/webscreen/workspace/.gitkeep
+.atlas/context/CONTEXT.md
+.atlas/context/REVISION
+.atlas/context/COMPACT_REQUEST

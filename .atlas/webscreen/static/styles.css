@@ -359,6 +359,25 @@ input { font: inherit; }
 .usage-row.unavailable progress { opacity: .25; }
 .usage-status { display: block; margin-top: 8px; color: var(--muted); font-size: 9px; }
 .codex-usage.stale .usage-status { color: #ffbd69; }
+.context-usage {
+  width: 100%;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #0b1421;
+  box-shadow: 0 6px 24px #0003;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.context-row { display: grid; grid-template-columns: 49px 1fr 54px; gap: 8px; align-items: center; }
+.context-row progress { width: 100%; height: 5px; border: 0; border-radius: 8px; overflow: hidden; appearance: none; background: #233044; }
+.context-row progress::-webkit-progress-bar { background: #233044; border-radius: 8px; }
+.context-row progress::-webkit-progress-value { background: #6d8bff; border-radius: 8px; }
+.context-row progress::-moz-progress-bar { background: #6d8bff; border-radius: 8px; }
+.context-detail { display: block; margin-top: 7px; color: var(--muted); font-size: 10px; line-height: 1.35; }
+.context-reset { width: 100%; margin-top: 9px; min-height: 29px; border: 1px solid #31577f; border-radius: 7px; background: #0b1b2d; color: #dceeff; font: inherit; cursor: pointer; }
+.context-reset:not(:disabled):hover { border-color: var(--cyan); color: #fff; }
+.context-reset:disabled { cursor: wait; opacity: .56; }
 
 @media (max-width: 600px) {
   .topbar { align-items: flex-start; min-height: 183px; }
