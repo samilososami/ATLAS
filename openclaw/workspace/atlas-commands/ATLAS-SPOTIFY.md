@@ -3,6 +3,9 @@
 `atlas-spotify` is the local command interface for Sami's Spotify account. It
 uses Spotify OAuth with PKCE: the account password is never given to ATLAS and
 the renewable authorization is private state under `/home/atlas/.atlas/spotify/`.
+The separate `atlas-spotifyd.service` is the local Spotify Connect player named
+**ATLAS A1**. It includes librespot internally; do not launch a second standalone
+librespot daemon beside it.
 
 ## Core controls
 
@@ -37,11 +40,10 @@ command prints the exact one-line local tunnel needed before opening the URL;
 the browser and that tunnel must run on the same computer. This keeps the OAuth
 callback private instead of exposing a credential receiver to the LAN.
 
-## Music output
+## ATLAS A1 music output
 
-The future `atlas-spotify output ...` group is reserved for the local Spotify
-Connect service. It will route music to a selected Bluetooth speaker without
-changing ATLAS speech, which remains on the display HDMI output. Until that
-local Connect service is installed, do not pretend that Bluetooth selection is
-available through this command; use `atlas-audio` for the physical system output.
-
+The player initially sends music to the HDMI speakers of ATLAS A1 while spoken
+ATLAS output stays on its normal PulseAudio default. `atlas-spotify output`
+shows this dedicated local player state. A later output selector may route only
+Spotify to a Bluetooth speaker without moving ATLAS speech; until then, use
+`atlas-audio` only when Sami explicitly wants to change the global system output.

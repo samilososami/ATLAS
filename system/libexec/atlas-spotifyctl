@@ -140,7 +140,16 @@ def spotify_api(path: str, method: str = "GET", body: dict[str, Any] | None = No
     try:
         with urlopen(request, timeout=20) as response:
             raw = response.read().decode("utf-8", "replace")
-            return response.status, json.loads(raw) if raw.strip() else None
+            # Player mutations conventionally return HTTP 204, but some
+            # intermediaries append a non-JSON marker.  A successful mutation
+            # must never turn into a Python traceback merely because its body
+            # is not an object we need.
+            if not raw.strip():
+                return response.status, None
+            try:
+                return response.status, json.loads(raw)
+            except json.JSONDecodeError:
+                return response.status, raw
     except HTTPError as exc:
         raw = exc.read().decode("utf-8", "replace")
         if exc.code == 401 and retry:
@@ -256,8 +265,22 @@ def cmd_device_connect(args: argparse.Namespace) -> int:
 
 
 def cmd_output(_: argparse.Namespace) -> int:
-    print("Spotify local output: not configured yet.")
-    print("ATLAS speech remains on the current atlas-audio output. A dedicated Spotify Connect service is required before music-only routing can be selected.")
+    service = subprocess.run(
+        ["systemctl", "--user", "is-active", "atlas-spotifyd.service"],
+        text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False,
+    ).stdout.strip() or "inactive"
+    configured_device = "unknown"
+    config = Path("/home/atlas/.atlas/spotifyd/spotifyd.conf")
+    try:
+        for line in config.read_text(encoding="utf-8").splitlines():
+            if line.strip().startswith("device ="):
+                configured_device = line.split("=", 1)[1].strip().strip('"')
+                break
+    except OSError:
+        pass
+    print(f"Spotifyd service: {service}")
+    print(f"Dedicated music output: {configured_device}")
+    print("ATLAS speech remains on the normal atlas-audio default output.")
     return 0
 
 
@@ -365,7 +388,14 @@ def parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     if os.geteuid() == 0 and os.environ.get("ATLAS_SPOTIFY_AS_SAMI") != "1":
-        os.execvp("runuser", ["runuser", "-u", ATLAS_USER, "--", "env", "ATLAS_SPOTIFY_AS_SAMI=1", sys.executable, str(Path(__file__).resolve()), *sys.argv[1:]])
+        os.execvp("runuser", [
+            "runuser", "-u", ATLAS_USER, "--", "env",
+            "ATLAS_SPOTIFY_AS_SAMI=1", "HOME=/home/atlas", "USER=sami", "LOGNAME=sami",
+            "XDG_RUNTIME_DIR=/run/user/1000",
+            "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus",
+            "PULSE_SERVER=unix:/run/user/1000/pulse/native",
+            sys.executable, str(Path(__file__).resolve()), *sys.argv[1:],
+        ])
     args = parser().parse_args()
     try:
         return int(args.handler(args))

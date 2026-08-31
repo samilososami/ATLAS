@@ -123,10 +123,10 @@ atlas-spotify pause
 atlas-spotify queue spotify:track:...
 ```
 
-El control de reproducción exige Spotify Premium. `device connect` se refiere a
-transferir la reproducción entre dispositivos Spotify Connect; no cambia todavía
-la salida física de voz de ATLAS. Esa ruta se añadirá cuando se instale el
-servicio local de Spotify Connect.
+El control de reproducción exige Spotify Premium. `device connect` transfiere la
+reproducción entre dispositivos Spotify Connect. El servicio local `spotifyd`
+aparece como **ATLAS A1**, incluye librespot internamente y empieza enviando solo
+la música al HDMI de la pantalla; no sustituye la salida de voz de ATLAS.
 
 ## Seguridad
 
