@@ -163,13 +163,23 @@ La semántica de porcentaje usado y renovación procede de la
 [documentación oficial de Codex](https://developers.openai.com/codex/app-server#6-rate-limits-chatgpt).
 Pruebas del adaptador: `python3 -m unittest -v test_codex_usage.py`.
 
-El menú lateral separa cuatro vistas: `ATLAS` conserva la conversación normal;
+El menú lateral separa cinco vistas: `ATLAS` conserva la conversación normal;
 `Transcripción` reutiliza el reconocimiento continuo de Chrome y separa bloques
 tras setecientos milisegundos de silencio; `Texto a voz` permite comparar la voz
-del navegador con ElevenLabs y mide generación y reproducción; `Ajustes`
-permite cambiar el Voice ID de ElevenLabs sin exponer la API key al navegador.
+del navegador con ElevenLabs y mide generación y reproducción; `Wake word`
+graba, desde cualquier navegador que tenga el control, cinco muestras de
+**Atlas** y una breve muestra de voz natural en el perfil privado de A1;
+`Ajustes` permite cambiar el Voice ID de ElevenLabs sin exponer la API key al navegador.
 El Voice ID personalizado se guarda con permisos restringidos en
 `.runtime/webscreen-settings.json`.
+
+El tab `Wake word` no cambia el detector activo. Envía el audio directamente a
+la Pi, donde el backend lo convierte a WAV mono de 16 kHz y lo conserva bajo
+`/home/atlas/.atlas/wakeword/profiles/`. Los ficheros no se devuelven al
+navegador, no entran en Git y no se suben a un proveedor. El modelo comunitario
+`Hey Atlas` solo demostró la compatibilidad del runtime: la frase de producción
+continúa siendo **Atlas** y solo se sustituirá el detector Chrome tras entrenar
+y medir un modelo personalizado con esas muestras.
 
 ## Uso
 

@@ -12,9 +12,9 @@ Atlas"**. It validates the exact runtime used by ATLAS A1: a 16 kHz stream,
 80 ms chunks and local TensorFlow Lite inference. It is not committed here;
 the installation retrieves the pinned public release.
 
-The production phrase is still under evaluation. A single **"Atlas"** is much
-more prone to accidental activation than a two-word phrase, so it must earn its
-place with measured recordings rather than confidence alone.
+ATLAS A1's intended and current production phrase is **"Atlas"**. The temporary
+two-word model is only a compatibility check; profiles collected here train and
+test the future custom detector for the single production word.
 
 ## Voice profiles
 

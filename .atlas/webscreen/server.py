@@ -55,6 +55,10 @@ CONTEXT_DIR = Path(os.environ.get("ATLAS_CONTEXT_DIR", Path.home() / ".atlas" / 
 PERSISTENT_CONTEXT_FILE = CONTEXT_DIR / "CONTEXT.md"
 CONTEXT_REVISION_FILE = CONTEXT_DIR / "REVISION"
 CONTEXT_COMPACT_REQUEST_FILE = CONTEXT_DIR / "COMPACT_REQUEST"
+WAKEWORD_DIR = Path(os.environ.get("ATLAS_WAKEWORD_DIR", Path.home() / ".atlas" / "wakeword"))
+WAKEWORD_PROFILES_DIR = WAKEWORD_DIR / "profiles"
+WAKEWORD_SAMPLE_RATE = 16_000
+WAKEWORD_MAX_UPLOAD_BYTES = 2 * 1024 * 1024
 WHISPER_MODEL_NAME = os.environ.get("ATLAS_WHISPER_MODEL", "tiny")
 WHISPER_CPP_BIN = Path(os.environ.get(
     "ATLAS_WHISPER_CPP_BIN",
@@ -1626,6 +1630,62 @@ def transcribe_audio(audio_path: Path, wav_path: Path) -> str:
     return clean_transcript(str(result.get("text", "")))
 
 
+def wake_profile_name(value: str) -> str:
+    """Keep profile names private, readable and unable to escape their directory."""
+    cleaned = re.sub(r"[^a-z0-9_-]+", "-", str(value or "").strip().lower()).strip("-_")
+    if not cleaned or len(cleaned) > 48:
+        raise ValueError("El perfil solo puede usar letras, números, - y _.")
+    return cleaned
+
+
+def wake_profile_summary(profile_dir: Path) -> dict[str, Any]:
+    wake_samples = len(list((profile_dir / "wake-positives").glob("take-*.wav")))
+    normal_samples = len(list((profile_dir / "normal-speech").glob("*.wav")))
+    manifest: dict[str, Any] = {}
+    try:
+        payload = json.loads((profile_dir / "profile.json").read_text(encoding="utf-8"))
+        manifest = payload if isinstance(payload, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        pass
+    return {
+        "profile": profile_dir.name,
+        "wakeSamples": wake_samples,
+        "normalSpeechSamples": normal_samples,
+        "readyForVerifier": wake_samples >= 5 and normal_samples >= 1,
+        "state": manifest.get("state", "samples pending"),
+    }
+
+
+def wake_profiles_snapshot() -> dict[str, Any]:
+    profiles = []
+    if WAKEWORD_PROFILES_DIR.is_dir():
+        profiles = [wake_profile_summary(path) for path in sorted(WAKEWORD_PROFILES_DIR.iterdir()) if path.is_dir()]
+    return {"phrase": "Atlas", "productionDetector": "chrome", "profiles": profiles}
+
+
+def convert_wake_sample(input_path: Path, wav_path: Path) -> float:
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        raise RuntimeError("No se encuentra ffmpeg")
+    conversion = subprocess.run([
+        ffmpeg, "-hide_banner", "-loglevel", "error", "-y", "-i", str(input_path),
+        "-ac", "1", "-ar", str(WAKEWORD_SAMPLE_RATE), "-c:a", "pcm_s16le", str(wav_path),
+    ], capture_output=True, text=True, timeout=30, check=False)
+    if conversion.returncode != 0:
+        detail = conversion.stderr.strip().splitlines()[-1:] or ["audio no válido"]
+        raise RuntimeError(f"No se pudo convertir la muestra: {detail[0]}")
+    try:
+        with wave.open(str(wav_path), "rb") as wav_file:
+            if wav_file.getframerate() != WAKEWORD_SAMPLE_RATE or wav_file.getnchannels() != 1:
+                raise RuntimeError("La muestra convertida no tiene el formato esperado")
+            duration = wav_file.getnframes() / float(WAKEWORD_SAMPLE_RATE)
+    except (OSError, wave.Error) as error:
+        raise RuntimeError("No se pudo comprobar la muestra de voz") from error
+    if wav_rms(wav_path) < MIN_AUDIO_RMS:
+        raise RuntimeError("La muestra está demasiado baja o no contiene voz")
+    return duration
+
+
 def instruction_section(name: str) -> str:
     try:
         document = INSTRUCTIONS_FILE.read_text(encoding="utf-8")
@@ -2218,7 +2278,7 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
         if parsed.path.startswith("/api/tts/stream/"):
             self.handle_tts_stream(parsed.path.rsplit("/", 1)[-1])
             return
-        if parsed.path in {"/api/settings", "/api/codex-usage", "/api/realtime/context"}:
+        if parsed.path in {"/api/settings", "/api/codex-usage", "/api/realtime/context", "/api/wake/profiles"}:
             try:
                 ACCESS.authorize(self.headers.get("X-Atlas-Client", ""))
             except AccessError as error:
@@ -2230,6 +2290,9 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/realtime/context":
             _, stats = build_realtime_context()
             self.send_json(200, stats)
+            return
+        if parsed.path == "/api/wake/profiles":
+            self.send_json(200, wake_profiles_snapshot())
             return
         if parsed.path == "/api/resident/wait":
             if self.headers.get("Sec-Fetch-Site") is not None or self.headers.get("Origin"):
@@ -2374,6 +2437,8 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
             self.handle_realtime_shell()
         elif self.path == "/api/realtime/event":
             self.handle_realtime_event()
+        elif self.path == "/api/wake/sample":
+            self.handle_wake_sample()
         elif self.path == "/api/text":
             self.handle_text()
         elif self.path == "/api/voice":
@@ -2395,6 +2460,76 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
         if not isinstance(payload, dict):
             raise ValueError("Formato inválido")
         return payload
+
+    def handle_wake_sample(self) -> None:
+        """Store one browser-recorded wake-profile sample locally on ATLAS A1."""
+        try:
+            content_length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            content_length = 0
+        if content_length <= 0 or content_length > WAKEWORD_MAX_UPLOAD_BYTES:
+            self.send_json(413, {"error": "Muestra vacía o demasiado grande"})
+            return
+        try:
+            profile = wake_profile_name(self.headers.get("X-Atlas-Wake-Profile", ""))
+            sample_kind = self.headers.get("X-Atlas-Wake-Sample-Kind", "").strip().lower()
+            sample_index = int(self.headers.get("X-Atlas-Wake-Sample-Index", "0"))
+            if sample_kind not in {"wake", "normal"}:
+                raise ValueError("Tipo de muestra inválido")
+            if sample_kind == "wake" and not 1 <= sample_index <= 5:
+                raise ValueError("Índice de muestra wake inválido")
+            if sample_kind == "normal" and sample_index != 1:
+                raise ValueError("Índice de muestra normal inválido")
+            content_type = self.headers.get("Content-Type", "audio/webm").split(";", 1)[0].lower()
+            suffix = {"audio/webm": ".webm", "audio/ogg": ".ogg", "audio/mp4": ".m4a"}.get(content_type)
+            if not suffix:
+                raise ValueError("Formato de audio no admitido")
+            audio_bytes = self.rfile.read(content_length)
+        except ValueError as error:
+            self.send_json(400, {"error": str(error)[:300]})
+            return
+
+        profile_dir = WAKEWORD_PROFILES_DIR / profile
+        target_dir = profile_dir / ("wake-positives" if sample_kind == "wake" else "normal-speech")
+        target_name = f"take-{sample_index:02d}.wav" if sample_kind == "wake" else "reference-01.wav"
+        try:
+            with tempfile.TemporaryDirectory(prefix="wake-upload-", dir=RUNTIME_DIR) as temp_dir:
+                source = Path(temp_dir) / f"input{suffix}"
+                converted = Path(temp_dir) / "sample.wav"
+                source.write_bytes(audio_bytes)
+                duration = convert_wake_sample(source, converted)
+                minimum = 1.0 if sample_kind == "wake" else 5.0
+                maximum = 6.0 if sample_kind == "wake" else 20.0
+                if not minimum <= duration <= maximum:
+                    raise RuntimeError(
+                        f"La muestra debe durar entre {minimum:.0f} y {maximum:.0f} segundos; recibió {duration:.1f}."
+                    )
+                target_dir.mkdir(parents=True, exist_ok=True)
+                replacement = target_dir / f".{target_name}.{uuid4().hex}.tmp"
+                shutil.copyfile(converted, replacement)
+                replacement.replace(target_dir / target_name)
+
+            summary = wake_profile_summary(profile_dir)
+            if sample_kind == "normal" and summary["wakeSamples"] >= 5:
+                manifest = {
+                    "profile": profile,
+                    "phrase": "Atlas",
+                    "sampleRate": WAKEWORD_SAMPLE_RATE,
+                    "wakeSamples": summary["wakeSamples"],
+                    "normalSpeechSamples": summary["normalSpeechSamples"],
+                    "createdAt": datetime.now(ZoneInfo("UTC")).isoformat(),
+                    "recordingMethod": "webscreen",
+                    "state": "samples collected; verifier not trained yet",
+                }
+                (profile_dir / "profile.json").write_text(
+                    json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+                )
+                summary = wake_profile_summary(profile_dir)
+            self.send_json(200, {"saved": True, "kind": sample_kind,
+                                 "index": sample_index, "durationSeconds": round(duration, 2),
+                                 "profile": summary})
+        except (OSError, RuntimeError) as error:
+            self.send_json(400, {"error": str(error)[:500]})
 
     def handle_tts_preview(self) -> None:
         try:

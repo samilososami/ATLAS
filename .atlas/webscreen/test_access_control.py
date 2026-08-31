@@ -2,6 +2,7 @@ import concurrent.futures
 import http.client
 import json
 import threading
+import tempfile
 import unittest
 from functools import partial
 from http.server import ThreadingHTTPServer
@@ -124,13 +125,13 @@ class HTTPAccessTests(unittest.TestCase):
         return status, json.loads(data)
 
     def test_all_control_routes_reject_other_client_before_work(self):
-        for path in ('text', 'voice', 'starter', 'cancel', 'settings', 'tts', 'client-event',
+        for path in ('text', 'voice', 'starter', 'cancel', 'settings', 'tts', 'client-event', 'wake/sample',
                      'tts/stream-ticket', 'realtime/session', 'realtime/consult',
                      'realtime/shell', 'realtime/event'):
             for token, status in ((self.b, 423), ('', 401)):
                 with self.subTest(path=path, token=bool(token)):
                     self.assertEqual(self.request('/api/' + path, token)[0], status)
-        for path in ('settings', 'codex-usage'):
+        for path in ('settings', 'codex-usage', 'wake/profiles'):
             self.assertEqual(self.request('/api/' + path, self.b, method='GET')[0], 423)
 
     def test_real_http_direct_takeover(self):
@@ -161,6 +162,29 @@ class HTTPAccessTests(unittest.TestCase):
         self.assertEqual(self.request('/api/access/connect', extra={'X-Atlas-Access': ''})[0], 403)
         self.assertEqual(self.request('/api/resident/wait?phase=next', method='GET',
                                      extra={'Sec-Fetch-Site': 'same-origin'})[0], 403)
+
+
+class WakeProfileTests(unittest.TestCase):
+    def test_profile_names_are_bounded_and_safe(self):
+        self.assertEqual(app.wake_profile_name(' Sami González '), 'sami-gonz-lez')
+        self.assertEqual(app.wake_profile_name('../../root'), 'root')
+        with self.assertRaises(ValueError):
+            app.wake_profile_name('***')
+
+    def test_snapshot_reports_counts_without_audio(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = app.Path(temporary)
+            profile = root / 'sami'
+            (profile / 'wake-positives').mkdir(parents=True)
+            (profile / 'normal-speech').mkdir()
+            for index in range(1, 6):
+                (profile / 'wake-positives' / f'take-{index:02d}.wav').write_bytes(b'not read')
+            (profile / 'normal-speech' / 'reference-01.wav').write_bytes(b'not read')
+            with patch.object(app, 'WAKEWORD_PROFILES_DIR', root):
+                snapshot = app.wake_profiles_snapshot()
+            self.assertEqual(snapshot['phrase'], 'Atlas')
+            self.assertEqual(snapshot['profiles'][0]['profile'], 'sami')
+            self.assertTrue(snapshot['profiles'][0]['readyForVerifier'])
 
 
 if __name__ == '__main__':

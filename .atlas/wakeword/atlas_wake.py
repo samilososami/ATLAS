@@ -58,7 +58,8 @@ def print_status(_: argparse.Namespace) -> int:
     profiles = sorted(path for path in PROFILES.iterdir() if path.is_dir()) if PROFILES.exists() else []
     print("ATLAS Wake")
     print(f"Runtime model: {DEFAULT_MODEL.name} ({model_state})")
-    print("Wake phrase: Hey Atlas (temporary validation model)")
+    print("Runtime phrase: Hey Atlas (temporary validation model only)")
+    print("Custom-model recording target: Atlas")
     print("Production detector: Chrome wake detection remains active")
     print(f"Voice profiles: {len(profiles)}")
     for profile in profiles:
@@ -183,7 +184,7 @@ def main() -> int:
 
     enroll_parser = subparsers.add_parser("enroll", help="record a local voice profile")
     enroll_parser.add_argument("profile", help="profile name, e.g. sami or padre")
-    enroll_parser.add_argument("--phrase", default="Hey Atlas")
+    enroll_parser.add_argument("--phrase", default="Atlas")
     enroll_parser.add_argument("--takes", type=int, default=5)
     enroll_parser.add_argument("--take-seconds", type=float, default=2.5)
     enroll_parser.add_argument("--negative-seconds", type=float, default=12.0)

@@ -178,6 +178,7 @@ function switchView(view) {
   if (!appViews.some((element) => element.dataset.viewPanel === view)) return;
   if (activeView === "transcription" && view !== "transcription") stopDictation();
   if (activeView === "tts" && view !== "tts") stopTtsLab();
+  if (activeView === "wakeword" && view !== "wakeword") window.AtlasWakeEnrollment?.stop?.();
   activeView = view;
   for (const element of appViews) {
     const selected = element.dataset.viewPanel === view;
@@ -196,6 +197,7 @@ function switchView(view) {
     realtimeController?.stop();
     stopRecognition();
   }
+  window.AtlasWakeEnrollment?.onViewChanged?.(view);
   setPanelOpen(false);
 }
 
@@ -2076,6 +2078,7 @@ window.addEventListener("beforeunload", () => {
   stopCurrentPlayback();
   stopDictation();
   stopTtsLab();
+  window.AtlasWakeEnrollment?.stop?.();
 });
 
 transcriptElement.classList.add("placeholder");
@@ -2107,6 +2110,7 @@ window.atlasAccess.bind({
     stopCurrentPlayback();
     stopDictation();
     stopTtsLab();
+    window.AtlasWakeEnrollment?.stop?.();
     resetInteractionState();
     setPanelOpen(false);
     enableButton.hidden = false;

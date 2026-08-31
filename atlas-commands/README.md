@@ -113,8 +113,9 @@ con Realtime antes de reiniciar su sesión.
 Inspecciona y valida el detector local de wake word en pruebas. `status` y
 `profiles` son de solo lectura; `enroll <nombre>` graba un perfil de voz local y
 `listen` realiza una prueba explícita del micrófono. El modelo actual es una
-validación temporal para `Hey Atlas`: no sustituye el detector de Chrome hasta
-medirlo con el micrófono, ruido ambiente y voces reales de ATLAS A1.
+validación temporal para `Hey Atlas`; el objetivo del modelo personalizado y
+la frase de producción continúan siendo `Atlas`. No sustituye el detector de
+Chrome hasta medirlo con el micrófono, ruido ambiente y voces reales de ATLAS A1.
 
 ```bash
 atlas-wake status

@@ -2,9 +2,9 @@
 
 `atlas-wake` is ATLAS A1's isolated local laboratory for wake-word detection.
 It is intentionally separate from WebScreen while the trigger is being measured
-in the real room. The current validation model listens for `Hey Atlas`, not the
-production word `Atlas`, and it must not be silently enabled as the production
-listener.
+in the real room. The current validation runtime model listens for `Hey Atlas`,
+but all new voice profiles record the production word `Atlas`. Neither model
+may be silently enabled as the production listener.
 
 ## Commands
 

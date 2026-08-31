@@ -8,7 +8,7 @@
     <meta name="google" content="notranslate" />
     <title>ATLAS WebScreen</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/styles.css?v=2026-08-31-wake-notes-1" />
+    <link rel="stylesheet" href="/styles.css?v=2026-08-31-wake-enrollment-1" />
   </head>
   <body>
     <section class="access-blocked" id="access-blocked" aria-labelledby="access-title">
@@ -36,6 +36,7 @@
         <button class="tool-tab active" type="button" data-view="atlas" aria-selected="true">ATLAS</button>
         <button class="tool-tab" type="button" data-view="transcription" aria-selected="false">Transcripción</button>
         <button class="tool-tab" type="button" data-view="tts" aria-selected="false">Texto a voz</button>
+        <button class="tool-tab" type="button" data-view="wakeword" aria-selected="false">Wake word</button>
         <button class="tool-tab" type="button" data-view="settings" aria-selected="false">Ajustes</button>
       </nav>
     </aside>
@@ -166,6 +167,35 @@
       </main>
     </section>
 
+    <section class="app-view" id="view-wakeword" data-view-panel="wakeword" hidden>
+      <main class="tool-shell compact-tool">
+        <header class="tool-header">
+          <span class="brand">Wake word</span>
+          <span>Perfil de voz local</span>
+        </header>
+        <section class="wake-enrollment" aria-labelledby="wake-title">
+          <h1 id="wake-title">Entrenar “Atlas”</h1>
+          <p>Graba cinco muestras de la wake word “Atlas” y una muestra de voz natural. El audio va directamente a ATLAS A1, se convierte a WAV de 16 kHz y se guarda solo en su perfil privado.</p>
+          <label for="wake-profile">Perfil</label>
+          <input id="wake-profile" maxlength="48" autocomplete="off" spellcheck="false" value="sami" placeholder="sami" />
+          <div class="wake-progress" aria-live="polite">
+            <span id="wake-step">Preparado para empezar.</span>
+            <progress id="wake-progress" max="6" value="0" aria-label="Progreso de registro de voz"></progress>
+          </div>
+          <div class="actions wake-actions">
+            <button class="primary" id="wake-start" type="button">Empezar registro</button>
+            <button class="secondary" id="wake-record" type="button" hidden disabled>Grabar muestra</button>
+            <button class="danger" id="wake-cancel" type="button" hidden>Cancelar</button>
+          </div>
+          <output class="tool-result" id="wake-result" aria-live="polite">El detector de Chrome sigue activo hasta que estas pruebas estén validadas.</output>
+          <section class="wake-profiles" aria-labelledby="wake-profiles-title">
+            <h2 id="wake-profiles-title">Perfiles locales</h2>
+            <ul id="wake-profiles-list"><li>Cargando perfiles…</li></ul>
+          </section>
+        </section>
+      </main>
+    </section>
+
     <section class="app-view" id="view-settings" data-view-panel="settings" hidden>
       <main class="tool-shell compact-tool">
         <header class="tool-header">
@@ -187,10 +217,11 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a4 4 0 0 0 4-4V6a4 4 0 1 0-8 0v5a4 4 0 0 0 4 4Z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v4M8 22h8"/></svg>
       <span>Silenciar</span>
     </button>
-    <script src="/access.js?v=2026-08-31-wake-notes-1"></script>
+    <script src="/access.js?v=2026-08-31-wake-enrollment-1"></script>
     <script src="/kiosk.js?v=2026-08-28-kiosk-1"></script>
     <script src="/realtime.js?v=2026-08-31-persistent-context-1"></script>
-    <script src="/app.js?v=2026-08-31-mic-mute-1"></script>
+    <script src="/app.js?v=2026-08-31-wake-enrollment-1"></script>
+    <script src="/wakeword.js?v=2026-08-31-wake-enrollment-1"></script>
     <script src="/quota.js?v=2026-08-31-persistent-context-1"></script>
     <script src="/context.js?v=2026-08-31-persistent-context-1"></script>
   </body>
