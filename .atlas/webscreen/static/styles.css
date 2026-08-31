@@ -64,6 +64,39 @@ input { font: inherit; }
   background: #dfe7f3;
 }
 
+.microphone-mute {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 41;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid #31577f;
+  border-radius: 11px;
+  background: rgba(11, 27, 45, .94);
+  color: #dceeff;
+  box-shadow: 0 6px 24px #0005;
+  backdrop-filter: blur(12px);
+  cursor: pointer;
+}
+
+.microphone-mute svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.microphone-mute:not(:disabled):hover { border-color: var(--cyan); color: #fff; }
+.microphone-mute[aria-pressed="true"] { border-color: #ff6a74; background: rgba(74, 18, 29, .96); color: #ffd9dc; }
+.microphone-mute:disabled { display: none; }
+
 .panel-backdrop {
   position: fixed;
   inset: 0;

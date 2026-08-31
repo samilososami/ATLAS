@@ -62,9 +62,11 @@ const settingsForm = document.querySelector("#settings-form");
 const voiceIdInput = document.querySelector("#elevenlabs-voice-id");
 const settingsSubmit = document.querySelector("#settings-submit");
 const settingsResult = document.querySelector("#settings-result");
+const microphoneMuteButton = document.querySelector("#microphone-mute");
 
 let microphoneStream = null;
 let microphoneInitializing = false;
+let microphoneMuted = false;
 let microphoneGeneration = 0;
 let voiceAudioContext = null;
 let voiceAnalyser = null;
@@ -627,6 +629,13 @@ function attachRealtimeWakeInput(stream) {
   recognitionRunning = false;
   stopVoiceActivityGate();
   microphoneStream = stream || null;
+  microphoneMuteButton.disabled = !stream;
+  if (stream && microphoneMuted) {
+    stream.getAudioTracks().forEach((track) => { track.enabled = false; });
+    recognitionEnabled = false;
+    realtimeController?.setLocalWakeDetectorReady(false);
+    return;
+  }
   if (!stream || !SpeechRecognitionAPI || realtimeFallbackActive) {
     recognitionEnabled = false;
     realtimeController?.setLocalWakeDetectorReady(false);
@@ -638,6 +647,33 @@ function attachRealtimeWakeInput(stream) {
   realtimeController?.setLocalWakeDetectorReady(true);
   scheduleRecognitionRestart(100);
   addLog("Detector local de wake word conectado a Realtime");
+}
+
+function setMicrophoneMuted(muted) {
+  microphoneMuted = Boolean(muted);
+  microphoneStream?.getAudioTracks().forEach((track) => { track.enabled = !microphoneMuted; });
+  microphoneMuteButton.setAttribute("aria-pressed", String(microphoneMuted));
+  microphoneMuteButton.setAttribute("aria-label", microphoneMuted ? "Activar micrófono" : "Silenciar micrófono");
+  microphoneMuteButton.querySelector("span").textContent = microphoneMuted ? "Activar micro" : "Silenciar";
+  microphoneMuteButton.disabled = !microphoneStream;
+
+  if (microphoneMuted) {
+    recognitionEnabled = false;
+    stopRecognition();
+    stopVoiceActivityGate();
+    realtimeController?.setLocalWakeDetectorReady(false);
+    addLog("Micrófono silenciado localmente");
+    return;
+  }
+
+  if (microphoneStream && SpeechRecognitionAPI && !realtimeFallbackActive) {
+    startVoiceActivityGate(microphoneStream);
+    recognitionEnabled = true;
+    configureRecognition();
+    realtimeController?.setLocalWakeDetectorReady(true);
+    scheduleRecognitionRestart(100);
+  }
+  addLog("Micrófono activado de nuevo");
 }
 
 function parseWakeUtterance(text) {
@@ -1821,6 +1857,13 @@ async function initializeMicrophone(forceLegacy = false) {
       return;
     }
     microphoneStream = stream;
+    microphoneMuteButton.disabled = false;
+    if (microphoneMuted) {
+      stream.getAudioTracks().forEach((track) => { track.enabled = false; });
+      recognitionEnabled = false;
+      setScreen("MICRÓFONO SILENCIADO", "Micrófono silenciado", "Actívalo con el botón de la esquina inferior derecha.", "idle");
+      return;
+    }
     startVoiceActivityGate(stream);
     recognitionEnabled = true;
     configureRecognition();
@@ -1977,6 +2020,7 @@ dictationToggle.addEventListener("click", () => {
 });
 ttsForm.addEventListener("submit", runTtsLab);
 settingsForm.addEventListener("submit", saveSettings);
+microphoneMuteButton.addEventListener("click", () => setMicrophoneMuted(!microphoneMuted));
 
 enableButton.addEventListener("click", () => void initializeMicrophone());
 recordButton.addEventListener("click", () => {
