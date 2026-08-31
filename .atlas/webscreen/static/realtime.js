@@ -330,8 +330,20 @@
         this.callbacks.addLog?.(`Contexto privado cargado: aproximadamente ${contextTokens} tokens`);
       }
       this.callbacks.onContextStats?.(this.session?.atlasContextStats || {});
+      const persistentTokens = Number(this.session?.atlasContextStats?.fillerEstimatedTokens || 0);
+      const compactAt = Number(this.session?.atlasContextStats?.autoCompactAtTokens || Infinity);
+      if (persistentTokens >= compactAt) {
+        this.contextCompactionQueued = true;
+        this.callbacks.addLog?.("El contexto persistente se cargó cerca del límite; preparo su compactación");
+      }
       this.callbacks.onReady?.({ model, voice, output: this.outputMode() });
       this.showWaiting();
+      if (this.contextCompactionQueued) {
+        window.setTimeout(() => {
+          this.contextCompactionQueued = false;
+          void this.compactPersistentContext(true);
+        }, 200);
+      }
       this.postEvent("session.ready", "Sesión OpenAI Realtime preparada", { model, voice, durationMs });
     }
 
