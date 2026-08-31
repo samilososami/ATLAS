@@ -66,6 +66,12 @@
     catch { return {}; }
   }
 
+  function commandLabel(value) {
+    const command = String(value || "").replace(/\s+/gu, " ").trim();
+    if (!command) return "un comando vacío";
+    return command.length > 110 ? `${command.slice(0, 107)}...` : command;
+  }
+
   async function readEventStream(stream, onEvent) {
     const reader = stream.getReader();
     const decoder = new TextDecoder();
@@ -126,6 +132,9 @@
       this.startPromise = null;
       this.configurationTimer = 0;
       this.connectionStartedAt = 0;
+      this.localWakeDetectorReady = false;
+      this.localWakeAuthorizedUntil = 0;
+      this.localWakeEvidence = "";
     }
 
     isIdle() {
@@ -183,6 +192,7 @@
           video: false,
           audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
         });
+        this.callbacks.onInputStream?.(this.media);
         for (const track of this.media.getAudioTracks()) this.peer.addTrack(track, this.media);
         this.channel = this.peer.createDataChannel("oai-events");
         this.channel.addEventListener("open", () => {
@@ -208,7 +218,6 @@
                   transcription: {
                     model: "gpt-4o-mini-transcribe",
                     language: "es",
-                    prompt: "Conversación en español. El asistente se llama ATLAS; conserva exactamente el nombre ATLAS cuando se pronuncie al inicio.",
                   },
                   turn_detection: {
                     type: "server_vad",
@@ -316,6 +325,56 @@
 
     send(payload) {
       if (this.channel?.readyState === "open") this.channel.send(JSON.stringify(payload));
+    }
+
+    setLocalWakeDetectorReady(ready) {
+      const nextReady = Boolean(ready);
+      const changed = this.localWakeDetectorReady !== nextReady;
+      this.localWakeDetectorReady = nextReady;
+      if (!this.localWakeDetectorReady) this.clearLocalWakeAuthorization();
+      if (changed && this.localWakeDetectorReady) {
+        this.postEvent("wake.detector_ready", "Detector local de wake word preparado");
+      }
+    }
+
+    isOutputActive() {
+      return this.conversationActive && (
+        this.responseActive || this.nativePlaybackActive
+        || this.externalPlaybackActive || this.toolActive
+      );
+    }
+
+    authorizeLocalWake(text) {
+      if (this.closed || this.state !== "ready") return false;
+      const evidence = String(text || "").trim();
+      const alreadyAuthorized = performance.now() <= this.localWakeAuthorizedUntil;
+      this.localWakeAuthorizedUntil = performance.now() + 5000;
+      this.localWakeEvidence = evidence;
+      if (!this.currentInteractionId) {
+        this.currentInteractionId = requestId();
+        this.currentRequestId = requestId();
+      }
+      if (!alreadyAuthorized) {
+        this.callbacks.addLog?.("Wake word exacta validada por el detector local de Chrome");
+        this.postEvent("wake.local_authorized", "El detector local autorizó la wake word ATLAS",
+          { text: evidence });
+      }
+      return true;
+    }
+
+    consumeLocalWakeAuthorization() {
+      if (performance.now() > this.localWakeAuthorizedUntil) {
+        this.clearLocalWakeAuthorization();
+        return "";
+      }
+      const evidence = this.localWakeEvidence;
+      this.clearLocalWakeAuthorization();
+      return evidence;
+    }
+
+    clearLocalWakeAuthorization() {
+      this.localWakeAuthorizedUntil = 0;
+      this.localWakeEvidence = "";
     }
 
     handleEvent(raw) {
@@ -534,7 +593,9 @@
       }
       if (this.speechOverActiveOutput) {
         this.speechOverActiveOutput = false;
-        const directBargeIn = wakeInvocation(text);
+        const localWakeEvidence = this.consumeLocalWakeAuthorization();
+        const directBargeIn = Boolean(localWakeEvidence)
+          || (!this.localWakeDetectorReady && wakeInvocation(text));
         const inputWords = normalized(text).split(/\s+/u).filter(Boolean);
         const likelySpokenByAtlas = inputWords.length >= 3
           && normalized(this.currentAssistantText).includes(normalized(text));
@@ -559,12 +620,15 @@
       }
       if (!this.conversationActive) {
         const directWake = wakeInvocation(text);
+        const localWakeEvidence = this.consumeLocalWakeAuthorization();
         // Keep the 0.4 s guard for a bare wake word. A complete direct address
         // ("ATLAS, haz...") is already strong evidence of intent and must not
         // be rejected because VAD briefly heard a fan, television or another
         // noise immediately beforehand.
         const silenceValidated = this.preSpeechSilenceMs >= WAKE_PRE_SILENCE_MS;
-        const validWake = directWake && (silenceValidated || wakeHasRequest(text));
+        const validWake = this.localWakeDetectorReady
+          ? Boolean(localWakeEvidence)
+          : directWake && (silenceValidated || wakeHasRequest(text));
         if (!validWake) {
           this.cancelProviderResponse();
           this.deleteInputItem();
@@ -580,8 +644,20 @@
         }
         this.conversationActive = true;
         this.setOutputEnabled(true);
-        this.callbacks.addLog?.("Wake word validada por la transcripción de OpenAI Realtime");
+        this.callbacks.addLog?.(this.localWakeDetectorReady
+          ? "Wake word autorizada por el detector local; Realtime recibe la conversación"
+          : "Wake word validada por la transcripción de OpenAI Realtime en modo degradado");
         this.postEvent("wake.accepted", "Wake word ATLAS validada", { text });
+        const hasRequest = wakeHasRequest(text) || wakeHasRequest(localWakeEvidence);
+        if (!hasRequest) {
+          this.deleteInputItem();
+          this.turnInputPending = false;
+          this.responseAfterInput = false;
+          this.callbacks.setScreen?.("ESCUCHANDO", "Te escucho",
+            "Wake word validada localmente; continúa con la petición.", "listening");
+          this.scheduleFollowUp();
+          return;
+        }
       }
       this.callbacks.setScreen?.("PROCESANDO", "ATLAS lo está procesando", "La conversación sigue en la misma sesión.", "working");
       this.scheduleResponseAfterInput();
@@ -673,6 +749,7 @@
       const name = buffered.name || event.name || "";
       const callId = buffered.callId || event.call_id || "";
       const args = parseToolArguments(buffered.args || event.arguments || "{}");
+      const displayCommand = commandLabel(args.command);
       if (!callId) return;
       if (name === "openclaw_agent_control") {
         const mode = String(args.mode || "status");
@@ -685,8 +762,7 @@
         return;
       }
       this.toolActive = true;
-      this.callbacks.setScreen?.("SHELL", "ATLAS está actuando", "Consultando el sistema directamente.", "working");
-      this.callbacks.addLog?.("OpenAI Realtime ejecuta una acción directa en la shell");
+      this.callbacks.setScreen?.("SHELL", "ATLAS está actuando", `Ejecutando ${displayCommand}`, "working");
       this.postEvent("shell.started", "OpenAI Realtime ejecuta una orden en la shell",
         { text: String(args.command || "") });
       this.consultController = new AbortController();
@@ -705,6 +781,7 @@
           throw new Error(payload.error || `La shell respondió con HTTP ${response.status}`);
         }
         const result = await response.json();
+        this.callbacks.addLog?.(`Realtime ejecutó ${displayCommand}`, performance.now() - started);
         this.postEvent("shell.completed", "La shell devolvió su resultado",
           { durationMs: performance.now() - started, text: String(result.output || "") });
         this.submitToolResult(callId, result);
@@ -772,6 +849,7 @@
         if (this.responseActive || this.toolActive) return;
         this.conversationActive = false;
         this.setOutputEnabled(false);
+        this.clearLocalWakeAuthorization();
         this.showWaiting();
       }, FOLLOW_UP_IDLE_MS);
     }
@@ -827,6 +905,7 @@
       this.pendingTranscripts = 0;
       this.turnInputPending = false;
       this.setOutputEnabled(false);
+      this.clearLocalWakeAuthorization();
       this.showWaiting();
     }
 
@@ -837,7 +916,7 @@
     }
 
     postEvent(stage, message, extra = {}) {
-      if (!this.currentInteractionId && stage !== "session.ready") return;
+      if (!this.currentInteractionId && !["session.ready", "wake.detector_ready"].includes(stage)) return;
       const interactionId = this.currentInteractionId || requestId();
       void this.fetch("/api/realtime/event", {
         method: "POST", cache: "no-store",
@@ -879,12 +958,15 @@
       this.responseAfterInput = false;
       this.speechOverActiveOutput = false;
       this.toolActive = false;
+      this.localWakeDetectorReady = false;
+      this.clearLocalWakeAuthorization();
       this.channel?.close();
       this.channel = null;
       this.peer?.close();
       this.peer = null;
       this.media?.getTracks().forEach((track) => track.stop());
       this.media = null;
+      this.callbacks.onInputStream?.(null);
       if (this.remoteAudio) {
         this.remoteAudio.pause();
         this.remoteAudio.srcObject = null;
@@ -900,6 +982,6 @@
     create(options) { return new RealtimeController(options); },
     model: MODEL,
     voice: DEFAULT_VOICE,
-    _test: { normalized, wakeInvocation, wakeHasRequest, silenceInvocation, withTurnSeparator },
+    _test: { normalized, wakeInvocation, wakeHasRequest, silenceInvocation, withTurnSeparator, commandLabel },
   };
 })();

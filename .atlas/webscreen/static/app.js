@@ -1,5 +1,5 @@
 const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
-const CLIENT_BUILD = "2026-08-30-echo-gate-1";
+const CLIENT_BUILD = "2026-08-31-local-wake-realtime-1";
 const REALTIME_PRIMARY = Boolean(window.AtlasRealtime);
 const accessFetch = (url, options) => window.atlasAccess.fetch(url, options);
 const hasControl = () => window.atlasAccess.hasControl();
@@ -80,6 +80,7 @@ let wakeBurstSilenceBeforeMs = 0;
 let wakeContextResultIndex = 0;
 let lastRecognitionResultCount = 0;
 let ignoredWakeResultIndex = -1;
+let acceptedWakeResultIndex = -1;
 let voiceNoiseFloor = 0.008;
 let voiceLastRms = 0;
 let voiceLastPeak = 0;
@@ -521,6 +522,7 @@ function beginVoiceBurst(startedAt) {
   wakeBurstSilenceBeforeMs = Math.max(0, startedAt - voiceLastEndedAt);
   wakeContextResultIndex = lastRecognitionResultCount;
   ignoredWakeResultIndex = -1;
+  acceptedWakeResultIndex = -1;
 }
 
 function endVoiceBurst(endedAt) {
@@ -592,6 +594,7 @@ function stopVoiceActivityGate() {
   wakeContextResultIndex = 0;
   lastRecognitionResultCount = 0;
   ignoredWakeResultIndex = -1;
+  acceptedWakeResultIndex = -1;
   voiceLastRms = 0;
   voiceLastPeak = 0;
   voiceLastThreshold = VOICE_MIN_RMS;
@@ -617,6 +620,24 @@ function startVoiceActivityGate(stream) {
     stopVoiceActivityGate();
     addLog(`El filtro local de voz no pudo iniciarse: ${error.message}`, null, "error");
   }
+}
+
+function attachRealtimeWakeInput(stream) {
+  stopRecognition();
+  recognitionRunning = false;
+  stopVoiceActivityGate();
+  microphoneStream = stream || null;
+  if (!stream || !SpeechRecognitionAPI || realtimeFallbackActive) {
+    recognitionEnabled = false;
+    realtimeController?.setLocalWakeDetectorReady(false);
+    return;
+  }
+  startVoiceActivityGate(stream);
+  recognitionEnabled = true;
+  configureRecognition();
+  realtimeController?.setLocalWakeDetectorReady(true);
+  scheduleRecognitionRestart(100);
+  addLog("Detector local de wake word conectado a Realtime");
 }
 
 function parseWakeUtterance(text) {
@@ -855,9 +876,13 @@ function configureRecognition() {
   recognition.onstart = () => {
     if (!hasControl()) { recognition.abort(); return; }
     recognitionRunning = true;
+    if (REALTIME_PRIMARY && !realtimeFallbackActive) {
+      realtimeController?.setLocalWakeDetectorReady(true);
+    }
     lastRecognitionResultCount = 0;
     wakeContextResultIndex = 0;
     ignoredWakeResultIndex = -1;
+    acceptedWakeResultIndex = -1;
     if (voiceGateReady && voiceActive) {
       // A recognition restart in the middle of speech must not manufacture a
       // fresh, apparently silent wake-word window.
@@ -889,8 +914,11 @@ function configureRecognition() {
     if (["not-allowed", "service-not-allowed", "audio-capture"].includes(event.error)) {
       recognitionEnabled = false;
       stopVoiceActivityGate();
-      microphoneStream?.getTracks().forEach(track => track.stop());
-      microphoneStream = null;
+      realtimeController?.setLocalWakeDetectorReady(false);
+      if (!REALTIME_PRIMARY || realtimeFallbackActive) {
+        microphoneStream?.getTracks().forEach(track => track.stop());
+        microphoneStream = null;
+      }
       enableButton.hidden = false;
       enableButton.disabled = false;
       recordButton.hidden = true;
@@ -984,7 +1012,12 @@ function configureRecognition() {
         ...evaluationResults.slice(0, wakeResultPosition).map(result => result.text),
         parsedWake.prefix,
       ].filter(Boolean).join(" ");
-      if (!wakeVoiceGateAllows(prefix)) {
+      const realtimeWakeMode = REALTIME_PRIMARY && !realtimeFallbackActive;
+      const localBargeIn = realtimeWakeMode && Boolean(realtimeController?.isOutputActive());
+      const gateAllowsWake = localBargeIn
+        ? !String(prefix || "").trim()
+        : wakeVoiceGateAllows(prefix);
+      if (!gateAllowsWake) {
         if (ignoredWakeResultIndex !== wakeResult.index) {
           ignoredWakeResultIndex = wakeResult.index;
           addLog(prefix
@@ -1005,6 +1038,21 @@ function configureRecognition() {
         .slice(wakeResultPosition)
         .every(result => result.isFinal);
       wakeDetectedIso = new Date().toISOString();
+      if (realtimeWakeMode) {
+        // Chrome's exact wake recognizer and the local acoustic gate decide
+        // whether somebody called ATLAS. Realtime still receives the original
+        // audio and owns the conversation, but its rough transcript no longer
+        // has authority to wake or interrupt the assistant.
+        const wakeEvidence = ["ATLAS", initialRequest].filter(Boolean).join(", ");
+        if (acceptedWakeResultIndex !== wakeResult.index) {
+          acceptedWakeResultIndex = wakeResult.index;
+          realtimeController?.authorizeLocalWake(wakeEvidence);
+          addLog(localBargeIn
+            ? "Interrupción “ATLAS” validada por el detector local"
+            : "Wake word “ATLAS” validada por el detector local");
+        }
+        return;
+      }
       addLog(initialRequest
         ? "Wake word “ATLAS” y comienzo de la petición detectados sin pausa"
         : "Wake word “ATLAS” detectada");
@@ -1889,6 +1937,7 @@ realtimeController = window.AtlasRealtime?.create({
     onStopped() {
       enableButton.hidden = false;
     },
+    onInputStream: attachRealtimeWakeInput,
     playExternalText: playRealtimeExternalText,
     stopExternalSpeech: stopRealtimeExternalSpeech,
   },

@@ -18,7 +18,7 @@ vm.runInNewContext(fs.readFileSync(`${__dirname}/static/realtime.js`, 'utf8'), {
   setTimeout, clearTimeout, console, JSON, String, Number, RegExp, Object, Array, Error,
 });
 
-const { wakeInvocation, wakeHasRequest, silenceInvocation, withTurnSeparator } = window.AtlasRealtime._test;
+const { wakeInvocation, wakeHasRequest, silenceInvocation, withTurnSeparator, commandLabel } = window.AtlasRealtime._test;
 assert.equal(wakeInvocation('Atlas, qué hora es'), true);
 assert.equal(wakeInvocation('Oye Atlas, dime la hora'), true);
 assert.equal(wakeInvocation('Adlas, mira el almacenamiento'), true);
@@ -33,6 +33,8 @@ assert.equal(silenceInvocation('Atlas, no quiero que borres nada'), false);
 assert.equal(withTurnSeparator('Dame un momento.'), 'Dame un momento. ');
 assert.equal(withTurnSeparator('Dame un momento. '), 'Dame un momento. ');
 assert.equal(withTurnSeparator(''), '');
+assert.equal(commandLabel('atlas-status'), 'atlas-status');
+assert.equal(commandLabel('  vcgencmd   measure_temp\n'), 'vcgencmd measure_temp');
 
 const sent = [];
 const idleScreens = [];
@@ -57,6 +59,24 @@ assert.equal(sent.at(-1).type, 'response.create');
 assert.equal(fakeAudio.muted, false);
 controller.setOutputEnabled(false);
 assert.equal(fakeAudio.muted, true);
+
+// In the normal Chrome setup, Realtime transcription is never allowed to
+// wake ATLAS on its own. The exact legacy detector must authorize the turn.
+const strictSent = [];
+const strict = window.AtlasRealtime.create({ fetch: async () => ({ ok: true }), callbacks: {} });
+strict.closed = false;
+strict.state = 'ready';
+strict.channel = { readyState: 'open', send: value => strictSent.push(JSON.parse(value)) };
+strict.setLocalWakeDetectorReady(true);
+strict.preSpeechSilenceMs = 2000;
+strict.handleUserTranscript({ item_id: 'false-atlas', transcript: 'ATLAS, qué hora es' });
+strict.flushResponseAfterInput();
+assert.equal(strictSent.some(event => event.type === 'response.create'), false);
+assert.equal(strictSent.some(event => event.type === 'conversation.item.delete'), true);
+strict.authorizeLocalWake('ATLAS, qué hora es');
+strict.handleUserTranscript({ item_id: 'real-atlas', transcript: 'ATLAS, qué hora es' });
+strict.flushResponseAfterInput();
+assert.equal(strictSent.filter(event => event.type === 'response.create').length, 1);
 
 // A full direct request must survive a noisy VAD boundary even when the
 // server reports less than 0.4 s before the utterance. A bare wake still keeps
@@ -211,10 +231,15 @@ assert.equal(bufferedSent.filter(event => event.type === 'response.create').leng
 buffered.stop(false);
 
 const source = fs.readFileSync(`${__dirname}/static/realtime.js`, 'utf8');
+const appSource = fs.readFileSync(`${__dirname}/static/app.js`, 'utf8');
 assert.match(source, /interrupt_response:\s*false/);
 assert.match(source, /language:\s*"es"/);
 assert.match(source, /noise_reduction:\s*\{\s*type:\s*"far_field"\s*\}/);
 assert.match(source, /session\.atlasContext/);
 assert.match(source, /output_audio_buffer\.stopped/);
+assert.match(source, /localWakeDetectorReady/);
+assert.doesNotMatch(source, /prompt:\s*"Conversación en español/);
 assert.doesNotMatch(source, /estimatedSpeechMs/);
+assert.match(appSource, /attachRealtimeWakeInput/);
+assert.match(appSource, /realtimeController\?\.authorizeLocalWake/);
 console.log('realtime wake and silence filters: ok');
