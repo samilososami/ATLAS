@@ -1,0 +1,381 @@
+#!/usr/bin/env python3
+"""Private Spotify Web API controller for ATLAS A1.
+
+The command deliberately uses OAuth PKCE.  It has no client secret and never
+stores a Spotify password.  Account tokens live outside the repository.
+"""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import hashlib
+import json
+import os
+import secrets
+import shutil
+import subprocess
+import sys
+import time
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
+from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.parse import parse_qs, quote, urlencode, urlparse
+from urllib.request import Request, urlopen
+
+
+ATLAS_USER = "sami"
+ROOT = Path(os.environ.get("ATLAS_SPOTIFY_DIR", "/home/atlas/.atlas/spotify"))
+CONFIG = ROOT / "config.json"
+TOKENS = ROOT / "tokens.json"
+AUTHORIZE_URL = "https://accounts.spotify.com/authorize"
+TOKEN_URL = "https://accounts.spotify.com/api/token"
+API_ROOT = "https://api.spotify.com/v1"
+CALLBACK_HOST = "127.0.0.1"
+CALLBACK_PORT = int(os.environ.get("ATLAS_SPOTIFY_CALLBACK_PORT", "8769"))
+REDIRECT_URI = f"http://{CALLBACK_HOST}:{CALLBACK_PORT}/callback"
+SCOPES = "user-modify-playback-state user-read-playback-state user-read-currently-playing"
+
+
+class SpotifyError(RuntimeError):
+    """An expected user-facing Spotify failure."""
+
+
+def private_dir() -> None:
+    ROOT.mkdir(parents=True, exist_ok=True, mode=0o700)
+    ROOT.chmod(0o700)
+
+
+def write_private_json(path: Path, value: dict[str, Any]) -> None:
+    private_dir()
+    temporary = ROOT / f".{path.name}.{secrets.token_hex(8)}.tmp"
+    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    temporary.chmod(0o600)
+    temporary.replace(path)
+
+
+def read_json(path: Path) -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        if path == TOKENS:
+            raise SpotifyError("Spotify aún no está vinculado. Ejecuta atlas-spotify login.") from exc
+        raise SpotifyError("Spotify no está configurado todavía. Ejecuta atlas-spotify login.") from exc
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SpotifyError(f"No se pudo leer {path.name}: {exc}") from exc
+    if not isinstance(value, dict):
+        raise SpotifyError(f"{path.name} no tiene un formato válido.")
+    return value
+
+
+def client_id() -> str:
+    configured = os.environ.get("ATLAS_SPOTIFY_CLIENT_ID", "").strip()
+    if not configured:
+        configured = str(read_json(CONFIG).get("client_id", "")).strip()
+    if not configured:
+        raise SpotifyError("Falta el Client ID privado de Spotify. Configura atlas-spotify antes de iniciar sesión.")
+    return configured
+
+
+def install_config(value: str) -> None:
+    if len(value) < 16 or not value.replace("-", "").isalnum():
+        raise SpotifyError("El Client ID no tiene un formato válido.")
+    write_private_json(CONFIG, {"client_id": value, "redirect_uri": REDIRECT_URI})
+    print("Spotify Client ID configured privately for ATLAS.")
+
+
+def post_form(url: str, values: dict[str, str]) -> dict[str, Any]:
+    encoded = urlencode(values).encode("utf-8")
+    request = Request(url, data=encoded, headers={"Content-Type": "application/x-www-form-urlencoded"}, method="POST")
+    try:
+        with urlopen(request, timeout=20) as response:
+            payload = response.read().decode("utf-8")
+    except HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace")[:700]
+        raise SpotifyError(f"Spotify rechazó la autorización ({exc.code}): {detail}") from exc
+    except URLError as exc:
+        raise SpotifyError(f"No se pudo contactar con Spotify: {exc.reason}") from exc
+    try:
+        parsed = json.loads(payload)
+    except json.JSONDecodeError as exc:
+        raise SpotifyError("Spotify devolvió una respuesta de autorización no válida.") from exc
+    if not isinstance(parsed, dict):
+        raise SpotifyError("Spotify devolvió una respuesta de autorización no válida.")
+    return parsed
+
+
+def refresh_token(tokens: dict[str, Any]) -> dict[str, Any]:
+    refresh = str(tokens.get("refresh_token", "")).strip()
+    if not refresh:
+        raise SpotifyError("La sesión de Spotify no tiene refresh token. Ejecuta atlas-spotify login otra vez.")
+    refreshed = post_form(TOKEN_URL, {"grant_type": "refresh_token", "refresh_token": refresh, "client_id": client_id()})
+    access = str(refreshed.get("access_token", "")).strip()
+    if not access:
+        raise SpotifyError("Spotify no devolvió un access token al renovar la sesión.")
+    updated = dict(tokens)
+    updated.update(refreshed)
+    updated["refresh_token"] = str(refreshed.get("refresh_token") or refresh)
+    updated["expires_at"] = int(time.time()) + int(refreshed.get("expires_in", 3600))
+    write_private_json(TOKENS, updated)
+    return updated
+
+
+def active_tokens() -> dict[str, Any]:
+    tokens = read_json(TOKENS)
+    if not str(tokens.get("access_token", "")).strip() or int(tokens.get("expires_at", 0)) <= int(time.time()) + 45:
+        return refresh_token(tokens)
+    return tokens
+
+
+def spotify_api(path: str, method: str = "GET", body: dict[str, Any] | None = None, retry: bool = True) -> tuple[int, Any]:
+    tokens = active_tokens()
+    data = json.dumps(body).encode("utf-8") if body is not None else None
+    request = Request(
+        API_ROOT + path,
+        data=data,
+        method=method,
+        headers={"Authorization": f"Bearer {tokens['access_token']}", "Content-Type": "application/json"},
+    )
+    try:
+        with urlopen(request, timeout=20) as response:
+            raw = response.read().decode("utf-8", "replace")
+            return response.status, json.loads(raw) if raw.strip() else None
+    except HTTPError as exc:
+        raw = exc.read().decode("utf-8", "replace")
+        if exc.code == 401 and retry:
+            refresh_token(tokens)
+            return spotify_api(path, method, body, retry=False)
+        try:
+            detail = json.loads(raw).get("error", {}).get("message", raw)
+        except json.JSONDecodeError:
+            detail = raw
+        raise SpotifyError(f"Spotify respondió {exc.code}: {str(detail)[:500]}") from exc
+    except URLError as exc:
+        raise SpotifyError(f"No se pudo contactar con Spotify: {exc.reason}") from exc
+
+
+def format_duration(milliseconds: int | None) -> str:
+    seconds = int(milliseconds or 0) // 1000
+    return f"{seconds // 60}:{seconds % 60:02d}"
+
+
+def cmd_status(_: argparse.Namespace) -> int:
+    code, state = spotify_api("/me/player")
+    if code == 204 or not state:
+        print("Spotify: no active playback device.")
+        return 0
+    item = state.get("item") or {}
+    artists = ", ".join(artist.get("name", "") for artist in item.get("artists", []) if artist.get("name"))
+    device = state.get("device") or {}
+    print(f"Spotify: {'playing' if state.get('is_playing') else 'paused'}")
+    print(f"Track: {item.get('name', 'Unknown')}{' — ' + artists if artists else ''}")
+    print(f"Device: {device.get('name', 'Unknown')} ({device.get('type', 'unknown')})")
+    print(f"Volume: {device.get('volume_percent', 'unknown')}%")
+    return 0
+
+
+def cmd_search(args: argparse.Namespace) -> int:
+    query = quote(args.query)
+    _, payload = spotify_api(f"/search?q={query}&type=track&limit={args.limit}")
+    items = ((payload or {}).get("tracks") or {}).get("items") or []
+    if not items:
+        print("No Spotify tracks found.")
+        return 0
+    for index, track in enumerate(items, 1):
+        artists = ", ".join(artist.get("name", "") for artist in track.get("artists", []) if artist.get("name"))
+        print(f"{index}. {track.get('name', 'Unknown')} — {artists} [{format_duration(track.get('duration_ms'))}]")
+        print(f"   {track.get('uri', '')}")
+    return 0
+
+
+def require_uri(value: str) -> str:
+    value = value.strip()
+    if value.startswith("https://open.spotify.com/"):
+        pieces = urlparse(value).path.strip("/").split("/")
+        if len(pieces) >= 2:
+            return f"spotify:{pieces[-2]}:{pieces[-1]}"
+    if value.startswith("spotify:"):
+        return value
+    raise SpotifyError("Usa una URI Spotify (spotify:track:...) o un enlace open.spotify.com.")
+
+
+def cmd_play(args: argparse.Namespace) -> int:
+    body = {"uris": [require_uri(args.uri)]} if args.uri else None
+    spotify_api("/me/player/play", "PUT", body)
+    print("Spotify playback started." if args.uri else "Spotify playback resumed.")
+    return 0
+
+
+def cmd_pause(_: argparse.Namespace) -> int:
+    spotify_api("/me/player/pause", "PUT")
+    print("Spotify playback paused.")
+    return 0
+
+
+def cmd_volume(args: argparse.Namespace) -> int:
+    if not 0 <= args.percent <= 100:
+        raise SpotifyError("El volumen debe estar entre 0 y 100.")
+    spotify_api(f"/me/player/volume?volume_percent={args.percent}", "PUT")
+    print(f"Spotify volume set to {args.percent}%.")
+    return 0
+
+
+def cmd_queue(args: argparse.Namespace) -> int:
+    spotify_api("/me/player/queue?uri=" + quote(require_uri(args.uri), safe=""), "POST")
+    print("Track added to the Spotify queue.")
+    return 0
+
+
+def devices() -> list[dict[str, Any]]:
+    _, payload = spotify_api("/me/player/devices")
+    return list((payload or {}).get("devices") or [])
+
+
+def cmd_devices(_: argparse.Namespace) -> int:
+    items = devices()
+    if not items:
+        print("No Spotify Connect devices available.")
+        return 0
+    for item in items:
+        marker = "*" if item.get("is_active") else " "
+        print(f"{marker} {item.get('name', 'Unknown')} | {item.get('type', 'unknown')} | {item.get('id', '')}")
+    return 0
+
+
+def cmd_device_connect(args: argparse.Namespace) -> int:
+    target = args.target.strip().casefold()
+    matches = [item for item in devices() if target in {str(item.get('id', '')).casefold(), str(item.get('name', '')).casefold()}]
+    if not matches:
+        raise SpotifyError("No hay un dispositivo Spotify Connect con ese nombre o ID. Ejecuta atlas-spotify devices.")
+    if len(matches) > 1:
+        raise SpotifyError("Hay más de un dispositivo con ese nombre. Usa el ID exacto de atlas-spotify devices.")
+    spotify_api("/me/player", "PUT", {"device_ids": [matches[0]["id"]], "play": False})
+    print(f"Spotify playback transferred to {matches[0].get('name', 'device')}.")
+    return 0
+
+
+def cmd_output(_: argparse.Namespace) -> int:
+    print("Spotify local output: not configured yet.")
+    print("ATLAS speech remains on the current atlas-audio output. A dedicated Spotify Connect service is required before music-only routing can be selected.")
+    return 0
+
+
+def cmd_login(args: argparse.Namespace) -> int:
+    verifier = base64.urlsafe_b64encode(secrets.token_bytes(48)).rstrip(b"=").decode("ascii")
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode("ascii")).digest()).rstrip(b"=").decode("ascii")
+    state = secrets.token_urlsafe(24)
+    parameters = urlencode({
+        "response_type": "code", "client_id": client_id(), "redirect_uri": REDIRECT_URI,
+        "scope": SCOPES, "state": state, "code_challenge_method": "S256", "code_challenge": challenge,
+    })
+    url = f"{AUTHORIZE_URL}?{parameters}"
+    result: dict[str, str] = {}
+
+    class Callback(BaseHTTPRequestHandler):
+        def log_message(self, _format: str, *_values: object) -> None:
+            return
+
+        def do_GET(self) -> None:  # noqa: N802
+            received = parse_qs(urlparse(self.path).query)
+            result["code"] = received.get("code", [""])[0]
+            result["state"] = received.get("state", [""])[0]
+            result["error"] = received.get("error", [""])[0]
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(b"<html><body style='font-family:sans-serif;background:#07142b;color:#fff;padding:3rem'><h1>ATLAS Spotify connected</h1><p>You can return to ATLAS.</p></body></html>")
+
+    try:
+        server = HTTPServer((CALLBACK_HOST, CALLBACK_PORT), Callback)
+    except OSError as exc:
+        raise SpotifyError(f"No se pudo reservar el callback local {REDIRECT_URI}: {exc}") from exc
+    server.timeout = 1
+    print("Spotify authorization is ready. No account password is handled by ATLAS.")
+    print(f"Redirect URI: {REDIRECT_URI}")
+    print(f"Authorization URL:\n{url}")
+    if args.browser:
+        opener = shutil.which("xdg-open")
+        if opener:
+            subprocess.Popen([opener, url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+            print("Opening the local ATLAS browser...")
+        else:
+            print("No local browser launcher found; open the URL shown above.")
+    print("\nIf this URL is opened from another computer, first run there:")
+    print(f"  ssh -N -L {CALLBACK_PORT}:127.0.0.1:{CALLBACK_PORT} sami@192.168.1.142")
+    print("Then open the URL in that same computer. Waiting up to 5 minutes for Spotify...")
+    deadline = time.monotonic() + args.timeout
+    while time.monotonic() < deadline and not result:
+        server.handle_request()
+    server.server_close()
+    if not result:
+        raise SpotifyError("Tiempo de autorización agotado. No se guardó ninguna sesión.")
+    if result.get("error"):
+        raise SpotifyError(f"Spotify authorization cancelled: {result['error']}")
+    if result.get("state") != state or not result.get("code"):
+        raise SpotifyError("El callback de Spotify no coincide con esta solicitud. No se guardó ninguna sesión.")
+    tokens = post_form(TOKEN_URL, {
+        "grant_type": "authorization_code", "code": result["code"], "redirect_uri": REDIRECT_URI,
+        "client_id": client_id(), "code_verifier": verifier,
+    })
+    if not tokens.get("access_token") or not tokens.get("refresh_token"):
+        raise SpotifyError("Spotify no devolvió una sesión renovable. Intenta atlas-spotify login de nuevo.")
+    tokens["expires_at"] = int(time.time()) + int(tokens.get("expires_in", 3600))
+    write_private_json(TOKENS, tokens)
+    print("Spotify linked to ATLAS successfully.")
+    return 0
+
+
+def parser() -> argparse.ArgumentParser:
+    root = argparse.ArgumentParser(prog="atlas-spotify", description="ATLAS Spotify control")
+    sub = root.add_subparsers(dest="command", required=True)
+    configure = sub.add_parser("configure", help="store a private Spotify Client ID")
+    configure.add_argument("--client-id", required=True)
+    configure.set_defaults(handler=lambda args: (install_config(args.client_id) or 0))
+    login = sub.add_parser("login", help="link a Spotify account using PKCE")
+    login.add_argument("--browser", action="store_true", help="open the authorization URL on ATLAS A1")
+    login.add_argument("--timeout", type=int, default=300, choices=range(30, 601), metavar="SECONDS")
+    login.set_defaults(handler=cmd_login)
+    sub.add_parser("status", help="show current Spotify playback").set_defaults(handler=cmd_status)
+    search = sub.add_parser("search", help="search Spotify tracks")
+    search.add_argument("query")
+    search.add_argument("--limit", type=int, default=5, choices=range(1, 11))
+    search.set_defaults(handler=cmd_search)
+    play = sub.add_parser("play", help="play a Spotify URI or resume")
+    play.add_argument("uri", nargs="?")
+    play.set_defaults(handler=cmd_play)
+    sub.add_parser("resume", help="resume Spotify playback").set_defaults(handler=lambda args: cmd_play(argparse.Namespace(uri=None)))
+    sub.add_parser("pause", help="pause Spotify playback").set_defaults(handler=cmd_pause)
+    volume = sub.add_parser("volume", help="set Spotify device volume")
+    volume.add_argument("percent", type=int)
+    volume.set_defaults(handler=cmd_volume)
+    queue = sub.add_parser("queue", help="add a Spotify URI to queue")
+    queue.add_argument("uri")
+    queue.set_defaults(handler=cmd_queue)
+    sub.add_parser("devices", help="list Spotify Connect devices").set_defaults(handler=cmd_devices)
+    device = sub.add_parser("device", help="manage Spotify Connect devices")
+    device_sub = device.add_subparsers(dest="device_command", required=True)
+    connect = device_sub.add_parser("connect", help="transfer playback to a Spotify device")
+    connect.add_argument("target")
+    connect.set_defaults(handler=cmd_device_connect)
+    output = sub.add_parser("output", help="show dedicated local music output state")
+    output.set_defaults(handler=cmd_output)
+    return root
+
+
+def main() -> int:
+    if os.geteuid() == 0 and os.environ.get("ATLAS_SPOTIFY_AS_SAMI") != "1":
+        os.execvp("runuser", ["runuser", "-u", ATLAS_USER, "--", "env", "ATLAS_SPOTIFY_AS_SAMI=1", sys.executable, str(Path(__file__).resolve()), *sys.argv[1:]])
+    args = parser().parse_args()
+    try:
+        return int(args.handler(args))
+    except SpotifyError as exc:
+        print(f"atlas-spotify: {exc}", file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print("atlas-spotify: cancelled", file=sys.stderr)
+        return 130
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

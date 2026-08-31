@@ -171,6 +171,7 @@ Use them when they match the task. Detailed command docs live in `atlas-commands
 - `atlas-commands/ATLAS-AUDIO.md` — `atlas-audio`, speaker/audio output control, fast Bluetooth/HDMI switching, volume, mute, and tests.
 - `atlas-commands/ATLAS-SAY.md` — `atlas-say`, spoken output through the current default audio output.
 - `atlas-commands/ATLAS-CONTEXT.md` — `atlas-context`, resettable WebScreen Realtime conversation memory and semantic compaction.
+- `atlas-commands/ATLAS-SPOTIFY.md` — `atlas-spotify`, Spotify authentication, playback control, discovery and the future dedicated music output.
 
 If sami asks something like "is the webscreen running?", do not guess and do not run a pile of raw `systemctl` commands first. Use `atlas-status` or `atlas-webscreen status`, then answer from that. These commands exist so you can move quickly and keep the system understandable.
 
@@ -207,13 +208,6 @@ When the user mentions the TDR, OpenAtlas, ATLAS A1, the physical assistant, the
 `NMAP.md` explains bounded network discovery, focused service scans and the private cached network report at `/home/atlas/.atlas/nmap/REPORT.md`. Read it before looking for a device or scanning the LAN. Prefer the cached report first, then the smallest focused scan that can answer the question.
 
 When an action depends on an IP address, port or service, do not ask sami for information ATLAS can discover: inspect the private report, use the smallest useful Nmap scan and follow `NMAP.md`.
-
-`atlas-commands/ATLAS-WAKE.md` explains the isolated local wake-word laboratory.
-Use `atlas-wake` to inspect the staged openWakeWord model or to collect a voice
-profile only when Sami explicitly asks. It is deliberately not the production
-listener until ATLAS has measured it against real speech, noise and false
-activations. Private recordings stay under `/home/atlas/.atlas/wakeword/`.
-
 
 ## ATLAS Desktop and Cast
 

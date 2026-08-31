@@ -108,21 +108,25 @@ reduce el historial conversacional para mantener los hechos y decisiones más
 útiles; una pestaña WebScreen activa puede realizar una compactación semántica
 con Realtime antes de reiniciar su sesión.
 
-## `atlas-wake`
+## `atlas-spotify`
 
-Inspecciona y valida el detector local de wake word en pruebas. `status` y
-`profiles` son de solo lectura; `enroll <nombre>` graba un perfil de voz local y
-`listen` realiza una prueba explícita del micrófono. El modelo actual es una
-validación temporal para `Hey Atlas`; el objetivo del modelo personalizado y
-la frase de producción continúan siendo `Atlas`. No sustituye el detector de
-Chrome hasta medirlo con el micrófono, ruido ambiente y voces reales de ATLAS A1.
+Controla una cuenta Spotify privada mediante OAuth PKCE. La contraseña nunca se
+guarda en ATLAS; los tokens renovables permanecen fuera del repositorio, dentro
+de `.atlas/spotify/` y con permisos restrictivos.
 
 ```bash
-atlas-wake status
-atlas-wake profiles
-atlas-wake enroll sami
-atlas-wake listen --seconds 30
+atlas-spotify login
+atlas-spotify status
+atlas-spotify search "Midnight City"
+atlas-spotify play spotify:track:...
+atlas-spotify pause
+atlas-spotify queue spotify:track:...
 ```
+
+El control de reproducción exige Spotify Premium. `device connect` se refiere a
+transferir la reproducción entre dispositivos Spotify Connect; no cambia todavía
+la salida física de voz de ATLAS. Esa ruta se añadirá cuando se instale el
+servicio local de Spotify Connect.
 
 ## Seguridad
 
