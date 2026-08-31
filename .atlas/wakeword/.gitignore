@@ -1,0 +1,6 @@
+models/*.tflite
+profiles/
+logs/
+tmp/
+.venv/
+__pycache__/

@@ -1,0 +1,3 @@
+#!/bin/sh
+set -eu
+exec /home/atlas/.atlas/wakeword/.venv/bin/python /home/atlas/.atlas/wakeword/atlas_wake.py "$@"

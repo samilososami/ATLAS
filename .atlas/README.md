@@ -23,6 +23,9 @@ live here; OpenClaw keeps your identity and memory in its own workspace.
 - `nmap/`: the private `REPORT.md` cache produced every ten minutes by a
   bounded LAN scan. Full-port reports are focused, manual artefacts rather than
   a permanent storm of probes around the house.
+- `wakeword/`: an isolated openWakeWord laboratory. Its runtime model and any
+  enrolled voice recordings remain local to ATLAS A1 until their performance has
+  been measured in the real room.
 - `wallpapers/`: optional shared wallpaper drop point outside the desktop's
   own curated wallpaper set.
 

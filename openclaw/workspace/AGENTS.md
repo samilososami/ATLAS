@@ -208,6 +208,12 @@ When the user mentions the TDR, OpenAtlas, ATLAS A1, the physical assistant, the
 
 When an action depends on an IP address, port or service, do not ask sami for information ATLAS can discover: inspect the private report, use the smallest useful Nmap scan and follow `NMAP.md`.
 
+`atlas-commands/ATLAS-WAKE.md` explains the isolated local wake-word laboratory.
+Use `atlas-wake` to inspect the staged openWakeWord model or to collect a voice
+profile only when Sami explicitly asks. It is deliberately not the production
+listener until ATLAS has measured it against real speech, noise and false
+activations. Private recordings stay under `/home/atlas/.atlas/wakeword/`.
+
 
 ## ATLAS Desktop and Cast
 

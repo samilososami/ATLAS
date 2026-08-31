@@ -108,6 +108,21 @@ reduce el historial conversacional para mantener los hechos y decisiones más
 útiles; una pestaña WebScreen activa puede realizar una compactación semántica
 con Realtime antes de reiniciar su sesión.
 
+## `atlas-wake`
+
+Inspecciona y valida el detector local de wake word en pruebas. `status` y
+`profiles` son de solo lectura; `enroll <nombre>` graba un perfil de voz local y
+`listen` realiza una prueba explícita del micrófono. El modelo actual es una
+validación temporal para `Hey Atlas`: no sustituye el detector de Chrome hasta
+medirlo con el micrófono, ruido ambiente y voces reales de ATLAS A1.
+
+```bash
+atlas-wake status
+atlas-wake profiles
+atlas-wake enroll sami
+atlas-wake listen --seconds 30
+```
+
 ## Seguridad
 
 Revisa cada script antes de utilizarlo fuera de ATLAS OS. Algunos comandos controlan servicios del sistema, audio, dispositivos de red o interfaces gráficas y pueden necesitar permisos elevados.
