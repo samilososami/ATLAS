@@ -270,7 +270,7 @@ def cmd_output(_: argparse.Namespace) -> int:
         text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False,
     ).stdout.strip() or "inactive"
     configured_device = "unknown"
-    config = Path("/home/atlas/.atlas/spotifyd/spotifyd.conf")
+    config = Path("/home/atlas/.atlas/spotify/spotifyd/spotifyd.conf")
     try:
         for line in config.read_text(encoding="utf-8").splitlines():
             if line.strip().startswith("device ="):

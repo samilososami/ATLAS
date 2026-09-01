@@ -31,3 +31,8 @@ logs/
 .atlas/context/REVISION
 .atlas/context/COMPACT_REQUEST
 .atlas/spotify/
+!/.atlas/spotify/
+/.atlas/spotify/*
+!/.atlas/spotify/spotifyd/
+!/.atlas/spotify/spotifyd/spotifyd.conf
+openclaw/workspace/CUSTOM_INFO.md

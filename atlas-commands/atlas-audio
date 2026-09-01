@@ -595,7 +595,7 @@ case "$cmd" in
     pactl list short sinks | awk '{print $1 "\t" $2 "\t" $4 "\t" $5}'
     ;;
   scan)
-    secs="8"
+    secs="5"
     show_all="0"
     for arg in "$@"; do
       case "$arg" in

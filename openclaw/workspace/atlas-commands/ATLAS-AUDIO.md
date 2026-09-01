@@ -53,7 +53,7 @@ atlas-audio scan
 atlas-audio scan 12
 ```
 
-Normal scan prioritizes useful names and hides anonymous BLE noise. It prints a table:
+The default scan lasts five seconds, prioritizes useful names and hides anonymous BLE noise. It prints a table:
 
 ```text
 NAME                             TYPE      MAC                RSSI PAIR CONN

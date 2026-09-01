@@ -5,7 +5,9 @@ uses Spotify OAuth with PKCE: the account password is never given to ATLAS and
 the renewable authorization is private state under `/home/atlas/.atlas/spotify/`.
 The separate `atlas-spotifyd.service` is the local Spotify Connect player named
 **ATLAS A1**. It includes librespot internally; do not launch a second standalone
-librespot daemon beside it.
+librespot daemon beside it. Its non-secret player configuration also lives under
+`/home/atlas/.atlas/spotify/spotifyd/`; the old standalone `spotifyd` directory
+is not used.
 
 ## Core controls
 

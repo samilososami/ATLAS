@@ -209,6 +209,13 @@ When the user mentions the TDR, OpenAtlas, ATLAS A1, the physical assistant, the
 
 When an action depends on an IP address, port or service, do not ask sami for information ATLAS can discover: inspect the private report, use the smallest useful Nmap scan and follow `NMAP.md`.
 
+`CUSTOM_INFO.md` is Sami's private shortcut shelf. It is loaded into this direct
+Realtime context but stays only on the Pi: never add it to the public repository,
+logs or a response unless Sami asks for the specific fact. Use it first for known
+device aliases, addresses, Bluetooth MACs and small operational reminders before
+rescanning. You may add a device or update a verified changing value such as an
+IP address when you detect it, but keep every entry concise, factual and useful.
+
 ## ATLAS Desktop and Cast
 
 `atlas-commands/ATLAS-DESKTOP.md` explains how you can see and control the local ATLAS desktop: screenshots, clicks, typing, windows, fullscreen browser control, and wallpapers.
