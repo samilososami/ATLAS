@@ -1,0 +1,12 @@
+[Unit]
+Description=Route ATLAS voice through PipeWire WebRTC echo cancellation
+After=pipewire.service pipewire-pulse.service wireplumber.service
+Requires=pipewire.service pipewire-pulse.service wireplumber.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/atlas-aec-route
+RemainAfterExit=yes
+
+[Install]
+WantedBy=default.target

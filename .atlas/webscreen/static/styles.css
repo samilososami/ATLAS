@@ -342,11 +342,25 @@ input { font: inherit; }
   align-items: center;
 }
 
+.session-pickers {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px 24px;
+  margin-top: 14px;
+}
+
+.reasoning-hint {
+  color: var(--muted);
+  font-size: 11px;
+  margin: 10px auto 0;
+  max-width: 540px;
+}
+
 .voice-picker {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  margin-top: 14px;
   color: var(--muted);
   font-size: 12px;
 }

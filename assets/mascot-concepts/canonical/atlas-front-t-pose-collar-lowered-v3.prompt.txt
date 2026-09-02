@@ -1,0 +1,6 @@
+Generation mode: built-in image_gen
+Source: atlas-front-t-pose-collar-lowered-v2.png
+Output: atlas-front-t-pose-collar-lowered-v3.png
+Note: generative placement is approximate, not an exact pixel translation.
+
+Edita la imagen adjunta con un único cambio mínimo: baja el collar azul en V ligeramente, unos pocos píxeles más. No lo bajes hasta los pies: debe seguir habiendo una zona blanca amplia entre la punta del collar y los pies. Aumenta solo un poco el espacio blanco entre la cara y el collar. Conserva absolutamente todo lo demás, incluida la misma altura de la cabeza, los brazos en T, la cara, el grosor del collar, su forma y todos los colores. Mantén el encuadre exacto. No cambies las proporciones ni rediseñes nada.

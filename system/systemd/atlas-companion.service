@@ -1,0 +1,21 @@
+[Unit]
+Description=ATLAS Android companion (encrypted pairing and remote administration)
+After=network.target
+
+[Service]
+Type=simple
+User=sami
+Group=sami
+Environment=ATLAS_HOME=/home/atlas
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:/home/atlas/.npm-global/bin
+WorkingDirectory=/home/atlas/.atlas/companion
+ExecStart=/usr/bin/python3 /home/atlas/.atlas/companion/server.py
+Restart=on-failure
+RestartSec=3
+UMask=0077
+KillMode=control-group
+# This is an owner-authorized administration service: sudo is intentional.
+# Do not expose the legacy WebScreen HTTP port through the relay.
+
+[Install]
+WantedBy=multi-user.target

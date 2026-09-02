@@ -36,3 +36,10 @@ logs/
 !/.atlas/spotify/spotifyd/
 !/.atlas/spotify/spotifyd/spotifyd.conf
 openclaw/workspace/CUSTOM_INFO.md
+/.atlas/companion/state/
+/android/.gradle/
+/android/.kotlin/
+/android/local.properties
+/android/**/build/
+*.jks
+*.keystore

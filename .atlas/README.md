@@ -7,6 +7,9 @@ live here; OpenClaw keeps your identity and memory in its own workspace.
   instructions and regression tests. Its README explains the voice pipeline.
   `starter/` keeps the dedicated starter workspace and `workspace/` holds
   projects requested through the voice interface.
+- `companion/`: authenticated Android service and independent, self-hostable
+  encrypted relay. `atlas-app` manages pairing and reports client/relay state.
+  Private pairing keys and certificates live only in its ignored `state/`.
 - `desktop/`: the separate virtual desktop, Openbox configuration and
   shared wallpapers. It is not the physical screen's desktop.
 - `screen/`: storage for the current physical display mode and optional
@@ -32,8 +35,9 @@ live here; OpenClaw keeps your identity and memory in its own workspace.
 No Google Chrome profile, runtime state, recordings, conversation logs, certificates,
 model weights or private generated projects belong in this public tree.
 The starter workspace now lives under `webscreen/starter/` for compatibility
-and diagnostics. The hot listener normally uses the existing OpenClaw `main`
-agent through its persistent gateway stream.
+and diagnostics. The legacy hot listener is disabled. WebScreen now uses direct
+Realtime with Markdown context, shell and Tavily; no conversation is delegated
+to the OpenClaw `main` agent.
 
 ## Files outside this directory
 

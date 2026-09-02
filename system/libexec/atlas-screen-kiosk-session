@@ -5,6 +5,8 @@ if [ "$EUID" -eq 0 ]; then
     DISPLAY=:0 XAUTHORITY=/run/atlas-screen-kiosk/Xauthority \
     XDG_RUNTIME_DIR=/run/user/1000 DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus \
     PULSE_SERVER=unix:/run/user/1000/pulse/native \
+    PULSE_SINK=alsa_output.platform-107c701400.hdmi.hdmi-stereo \
+    PULSE_SOURCE=alsa_input.usb-Jieli_Technology_UACDemoV1.0-00.mono-fallback \
     /usr/local/libexec/atlas-screen-kiosk-session
 fi
 

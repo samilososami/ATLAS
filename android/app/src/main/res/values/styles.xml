@@ -1,0 +1,9 @@
+<resources>
+    <style name="AtlasTheme" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item><item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">#080F20</item><item name="android:navigationBarColor">#080F20</item>
+        <item name="android:windowBackground">#080F20</item><item name="android:colorAccent">#388CFF</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+    <color name="icon_background">#080F20</color>
+</resources>

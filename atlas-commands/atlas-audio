@@ -32,7 +32,7 @@ Commands:
   unmute                         unmute default output
   toggle-mute                    toggle mute on default output
   test                           play a short test tone through default output
-  restart                        restart user PulseAudio
+  restart                        restart the user audio stack
   help                           show this help
 USAGE
 }
@@ -42,23 +42,25 @@ ensure_tmp() {
 }
 
 ensure_audio_server() {
-  if ! pactl info >/dev/null 2>&1; then
+  pactl info >/dev/null 2>&1 && return
+  if dpkg -s pipewire-pulse >/dev/null 2>&1; then
+    systemctl --user start pipewire.socket pipewire-pulse.socket wireplumber.service >/dev/null 2>&1 || true
+  else
     pulseaudio --start >/dev/null 2>&1 || pulseaudio --daemonize=yes >/dev/null 2>&1 || true
-    sleep 1
   fi
-  pactl info >/dev/null 2>&1 || {
-    pkill -KILL -u "$(id -un)" -x pulseaudio >/dev/null 2>&1 || true
-    rm -rf "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/pulse" >/dev/null 2>&1 || true
-    pulseaudio --daemonize=yes >/dev/null 2>&1 || true
-    sleep 1
-    pactl info >/dev/null 2>&1 || {
-      echo "PulseAudio is not available for this user session" >&2
-      exit 1
-    }
-  }
+  sleep 1
+  pactl info >/dev/null 2>&1 || { echo "The user audio server is not available" >&2; exit 1; }
 }
 
 restart_audio_stack() {
+  if dpkg -s pipewire-pulse >/dev/null 2>&1; then
+    systemctl --user reset-failed pipewire.service pipewire-pulse.service wireplumber.service >/dev/null 2>&1 || true
+    systemctl --user restart pipewire.service pipewire-pulse.service wireplumber.service
+    sleep 1
+    systemctl --user restart atlas-aec-route.service 2>/dev/null || true
+    ensure_audio_server
+    return
+  fi
   systemctl --user reset-failed pulseaudio.socket pulseaudio.service >/dev/null 2>&1 || true
   systemctl --user stop pulseaudio.socket pulseaudio.service >/dev/null 2>&1 || true
   pkill -KILL -u "$(id -un)" -x pulseaudio >/dev/null 2>&1 || true
@@ -70,6 +72,15 @@ restart_audio_stack() {
 
 ensure_bluetooth_audio_support() {
   ensure_audio_server
+  if dpkg -s pipewire-pulse >/dev/null 2>&1; then
+    if ! dpkg -s libspa-0.2-bluetooth >/dev/null 2>&1; then
+      echo "Installing PipeWire Bluetooth audio support..."
+      sudo -n apt-get update >/dev/null
+      sudo -n apt-get install -y libspa-0.2-bluetooth
+      restart_audio_stack
+    fi
+    return
+  fi
   if ! dpkg -s pulseaudio-module-bluetooth >/dev/null 2>&1; then
     echo "Installing PulseAudio Bluetooth audio module..."
     sudo -n apt-get update >/dev/null
@@ -404,7 +415,7 @@ explain_connect_failure() {
   if printf '%s' "$output" | grep -q 'br-connection-profile-unavailable'; then
     cat >&2 <<EOF
 Bluetooth connected, but no audio profile was available.
-I installed/loaded the PulseAudio Bluetooth module and retried. If it still fails, restart the headset/speaker pairing mode and try again:
+I restarted the audio stack and retried. If it still fails, restart the headset/speaker pairing mode and try again:
   atlas-audio connect $mac
 EOF
   elif printf '%s' "$output" | grep -q 'br-connection-page-timeout'; then
@@ -505,7 +516,9 @@ set_default_sink() {
 }
 
 hdmi_output_sink() {
-  pactl list short sinks | awk 'tolower($2) ~ /hdmi/ {print $2; exit}'
+  pactl list short sinks | awk '$2 == "atlas_aec_sink" {print $2; found=1; exit}
+    END {if (!found) exit 1}' 2>/dev/null \
+    || pactl list short sinks | awk 'tolower($2) ~ /hdmi/ {print $2; exit}'
 }
 
 connected_bluetooth_sinks() {
@@ -643,7 +656,7 @@ case "$cmd" in
       set_default_sink "$sink"
       printf 'Default output: %s\n' "$sink"
     else
-      echo "paired/connected, but no PulseAudio output appeared yet" >&2
+      echo "paired/connected, but no audio output appeared yet" >&2
       exit 1
     fi
     ;;
@@ -653,7 +666,7 @@ case "$cmd" in
     mac="$(resolve_bt_device "$*")"
     connect_bt_device "$mac"
     sink="$(wait_for_bt_sink "$mac" || true)"
-    [ -n "$sink" ] || { echo "connected, but no PulseAudio sink appeared for $mac" >&2; exit 1; }
+    [ -n "$sink" ] || { echo "connected, but no audio sink appeared for $mac" >&2; exit 1; }
     set_default_sink "$sink"
     atlas-audio status
     ;;
@@ -709,7 +722,7 @@ case "$cmd" in
     python3 - "$out" <<'PY'
 import math, struct, sys, wave
 path = sys.argv[1]
-rate = 44100
+rate = 48000
 duration = 0.65
 freq = 660
 amp = 0.25

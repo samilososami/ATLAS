@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,6 +8,85 @@ import server as app
 
 
 class RealtimeBackendTests(unittest.TestCase):
+    def test_reasoning_levels_survive_save_and_reservation_without_changing_voice(self):
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(app, "RUNTIME_DIR", Path(directory)), \
+             patch.object(app, "SETTINGS_FILE", Path(directory) / "settings.json"), \
+             patch.object(app, "get_tts_settings", return_value=("", "test-voice")), \
+             patch.object(app, "current_session", return_value=("test-session", False, 0)), \
+             patch.object(app, "build_realtime_context", return_value=("test context", {})), \
+             patch.object(app, "read_realtime_instructions", return_value="test instructions"):
+            app.save_webscreen_settings(realtime_voice="cedar")
+            app.save_webscreen_settings(realtime_voice="elevenlabs", elevenlabs_voice_id="custom-test-voice")
+            # Default after Xhigh must remove the override, not reuse it.
+            for effort in (*app.REALTIME_REASONING_CHOICES, "default"):
+                with self.subTest(effort=effort):
+                    handler = self.handler()
+                    handler.read_json_payload = Mock(return_value={"realtimeReasoningEffort": effort})
+                    handler.handle_settings()
+                    self.assertEqual(handler.send_json.call_args.args[0], 200)
+                    settings = app.get_webscreen_settings()
+                    self.assertEqual(settings["realtimeVoice"], "elevenlabs")
+                    self.assertEqual(settings["realtimeNativeVoice"], "cedar")
+                    self.assertEqual(settings["realtimeReasoningEffort"], effort)
+                    self.assertEqual(json.loads(app.SETTINGS_FILE.read_text())["elevenlabsVoiceId"], "custom-test-voice")
+                    handler = self.handler()
+                    handler.read_json_payload = Mock(return_value={})
+                    with patch.object(app.BRIDGE, "create_talk_session", return_value={
+                        "transport": "webrtc", "clientSecret": "test-only",
+                    }) as create:
+                        handler.handle_realtime_session()
+                    params = create.call_args.args[0]
+                    self.assertEqual(params["voice"], "cedar")
+                    if effort == "default":
+                        self.assertNotIn("reasoningEffort", params)
+                    else:
+                        self.assertEqual(params["reasoningEffort"], effort)
+                    result = handler.send_json.call_args.args[1]["session"]
+                    self.assertEqual(result["atlasReasoningEffort"], effort)
+                    self.assertEqual(result["atlasContext"], "test context")
+                    self.assertEqual(result["atlasOutput"], "elevenlabs")
+            self.assertEqual(app.SETTINGS_FILE.stat().st_mode & 0o777, 0o600)
+
+    def test_invalid_reasoning_is_rejected_without_saving_or_reserving(self):
+        for value in ("ultra", "none", "", None, {"effort": "low"}):
+            for method, key in (("handle_settings", "realtimeReasoningEffort"),
+                                ("handle_realtime_session", "reasoningEffort")):
+                with self.subTest(value=value, method=method), \
+                     patch.object(app, "current_session", return_value=("test", False, 0)), \
+                     patch.object(app, "get_webscreen_settings", return_value={"realtimeReasoningEffort": "default"}), \
+                     patch.object(app, "save_webscreen_settings") as save, \
+                     patch.object(app.BRIDGE, "create_talk_session") as create:
+                    handler = self.handler()
+                    handler.read_json_payload = Mock(return_value={key: value})
+                    getattr(handler, method)()
+                    self.assertEqual(handler.send_json.call_args.args[0], 400)
+                    save.assert_not_called()
+                    create.assert_not_called()
+
+    def test_playback_telemetry_keeps_monotonic_times_and_actual_voice(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(app, "LOG_DIR", Path(directory)):
+            path = app.append_realtime_event({
+                "interactionId": "latency-check", "stage": "tts.playback_started",
+                "voice": "browser", "effectiveVoice": "Google español",
+                "outputMode": "browser", "responseId": "response-test",
+                "requestId": "request-test", "clientBuild": "2026-09-02-latency-1",
+                "clientMonotonicMs": 10420.5, "sinceSpeechStoppedMs": 420.5,
+                "durationMs": 80, "chunkIndex": 1,
+                "reasoningEffort": "high", "effectiveReasoningEffort": "high",
+            }, {"client_kind": "atlas-a1"})
+            record = json.loads(path.read_text())
+        self.assertEqual(record["voice"], "browser")
+        self.assertEqual(record["effectiveVoice"], "Google español")
+        self.assertEqual(record["sinceSpeechStoppedMs"], 420.5)
+        self.assertEqual(record["clientMonotonicMs"], 10420.5)
+        self.assertEqual(record["duration_ms"], 80)
+        self.assertEqual(record["client_kind"], "atlas-a1")
+        self.assertEqual(record["responseId"], "response-test")
+        self.assertEqual(record["chunkIndex"], 1)
+        self.assertEqual(record["reasoningEffort"], "high")
+        self.assertEqual(record["effectiveReasoningEffort"], "high")
+
     def handler(self):
         handler = object.__new__(app.AtlasScreenHandler)
         handler.headers = {}
@@ -28,17 +108,30 @@ class RealtimeBackendTests(unittest.TestCase):
             handler.handle_realtime_session()
         params = create.call_args.args[0]
         self.assertEqual(params["model"], "gpt-realtime-2.1")
+        # This is the only value accepted by the OpenClaw reservation schema;
+        # the actual Realtime runtime tool remains atlas_shell.
         self.assertEqual(params["brain"], "agent-consult")
         self.assertEqual(params["transport"], "webrtc")
         self.assertNotIn("reasoningEffort", params)
         handler.send_json.assert_called_once_with(200, {
-            "session": session, "sessionKey": "agent:main:test", "legacyFallback": True,
+            "session": session, "sessionKey": "agent:main:test", "legacyFallback": False,
         })
         self.assertEqual(session["atlasOutput"], "native")
         self.assertEqual(session["atlasSelection"], "marin")
         self.assertIn("# ATLAS Realtime", session["atlasInstructions"])
         self.assertEqual(session["atlasContext"], "private atlas context")
         self.assertEqual(session["atlasContextStats"]["estimatedTokens"], 5)
+
+    def test_legacy_openclaw_conversation_endpoints_are_disabled(self):
+        for path in app.LEGACY_AGENT_API_PATHS:
+            with self.subTest(path=path):
+                handler = self.handler()
+                handler.path = path
+                handler.handle_controlled_post()
+                handler.send_json.assert_called_once_with(410, {
+                    "error": "El pipeline legacy de OpenClaw está desactivado; usa OpenAI Realtime",
+                    "realtimeOnly": True,
+                })
 
     def test_realtime_context_loads_identity_user_full_agents_and_commands(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -119,6 +212,26 @@ class RealtimeBackendTests(unittest.TestCase):
             self.assertTrue(auto_compact)
             self.assertGreaterEqual(stats["fillerEstimatedTokens"], stats["autoCompactAtTokens"])
 
+    def test_saving_turns_does_not_invalidate_the_active_session(self):
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(app, "CONTEXT_DIR", Path(directory)), \
+             patch.object(app, "PERSISTENT_CONTEXT_FILE", Path(directory) / "CONTEXT.md"), \
+             patch.object(app, "CONTEXT_REVISION_FILE", Path(directory) / "REVISION"), \
+             patch.object(app, "CONTEXT_COMPACT_REQUEST_FILE", Path(directory) / "COMPACT_REQUEST"):
+            revision = app.empty_persistent_context()
+            first, _ = app.append_persistent_turn("Qué temperatura hace", "Cuarenta grados")
+            app.request_persistent_context_compaction()
+            second, _ = app.append_persistent_turn("Gracias", "De nada")
+            self.assertEqual(first["revision"], revision)
+            self.assertEqual(second["revision"], revision)
+            self.assertGreater(second["fillerChars"], first["fillerChars"])
+            self.assertTrue(second["compactionRequested"])
+            self.assertIn("Cuarenta grados", app.persistent_context_snapshot()[0])
+            replaced = app.replace_persistent_context("Resumen de la conversación")
+            self.assertNotEqual(replaced, revision)
+            self.assertFalse(app.CONTEXT_COMPACT_REQUEST_FILE.exists())
+            self.assertNotEqual(app.empty_persistent_context(), replaced)
+
     def test_realtime_instructions_treat_clear_orders_as_authorization(self):
         instructions = app.read_realtime_instructions()
         self.assertIn("clear, direct order", instructions)
@@ -169,11 +282,30 @@ class RealtimeBackendTests(unittest.TestCase):
             path = app.append_realtime_event({
                 "interactionId": "voice-turn-1", "stage": "input.transcript",
                 "message": "Transcripción", "text": "Atlas hola", "role": "user",
+                "echoCancellation": True, "sampleRate": 48000,
+            }, {
+                "client_kind": "atlas-a1", "client_ip": "127.0.0.1",
+                "client_id": "0123456789ab",
             })
             self.assertTrue(path.exists())
             text = path.read_text(encoding="utf-8")
             self.assertIn('"stage":"realtime.input.transcript"', text)
             self.assertIn('"text":"Atlas hola"', text)
+            self.assertIn('"client_kind":"atlas-a1"', text)
+            self.assertIn('"client_ip":"127.0.0.1"', text)
+            self.assertIn('"echoCancellation":true', text)
+            self.assertIn('"sampleRate":48000', text)
+
+    def test_legacy_interaction_log_carries_verified_client_origin(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(app, "LOG_DIR", Path(directory)):
+            log = app.InteractionLog("legacy-turn-1", {
+                "client_kind": "browser", "client_ip": "192.168.1.141",
+                "client_id": "abcdef012345",
+            })
+            log.add("input.transcript", "Transcripción", text="Hola")
+            text = log.path.read_text(encoding="utf-8")
+            self.assertIn('"client_kind":"browser"', text)
+            self.assertIn('"client_ip":"192.168.1.141"', text)
 
     def test_realtime_shell_runs_as_a_bounded_tool(self):
         with patch.object(app, "REALTIME_SHELL_TIMEOUT_SECONDS", 3):
@@ -199,6 +331,47 @@ class RealtimeBackendTests(unittest.TestCase):
         for command in ("rm -r relative-directory", "rm -f one-file.txt", "printf safe"):
             with self.subTest(command=command):
                 app.validate_realtime_shell_command(command)
+
+    def test_tavily_search_reuses_private_openclaw_key_without_returning_it(self):
+        secret = "tvly-test-secret-that-must-never-leave-the-backend"
+
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self, _maximum):
+                return json.dumps({
+                    "results": [{
+                        "title": "ATLAS result",
+                        "url": "https://example.com/atlas",
+                        "content": "Current external evidence.",
+                        "score": 0.98,
+                    }],
+                }).encode()
+
+        config = {
+            "plugins": {"entries": {"tavily": {
+                "enabled": True,
+                "config": {"webSearch": {"apiKey": secret}},
+            }}},
+        }
+        with patch.object(app, "load_openclaw_config", return_value=config), \
+             patch.object(app.urllib.request, "urlopen", return_value=Response()) as request:
+            result = app.execute_tavily_search("latest ATLAS information")
+        sent = request.call_args.args[0]
+        self.assertEqual(sent.get_header("Authorization"), f"Bearer {secret}")
+        self.assertEqual(json.loads(sent.data)["search_depth"], "basic")
+        self.assertEqual(result["provider"], "tavily")
+        self.assertEqual(result["count"], 1)
+        self.assertNotIn(secret, json.dumps(result))
+
+    def test_tavily_search_requires_existing_openclaw_configuration(self):
+        with patch.object(app, "load_openclaw_config", return_value={}):
+            with self.assertRaisesRegex(RuntimeError, "Tavily no está configurado"):
+                app.execute_tavily_search("ATLAS")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,5 @@
+Mode: built-in image_gen
+Source: /tmp/codex-clipboard-8fcc487f-44d8-4eda-9301-b570066fed75.png
+Output: atlas-back-collar-shallower-v2.png
+
+Edición precisa de la imagen adjunta. Haz UN SOLO CAMBIO: suaviza un poco la inclinación del collar azul de la espalda. Mantén FIJOS sus dos extremos laterales exactamente a su altura actual, junto al arranque de los brazos. Baja únicamente la unión central de la V invertida un poquito, de modo que las dos diagonales sean ligeramente menos empinadas y el ángulo del pico sea algo más abierto. Una reducción moderada, alrededor de un 20% de la pendiente actual; debe seguir viéndose claramente como ^, no plano ni casi horizontal. Mantén el grosor uniforme y los mismos dos tonos azules. Rehaz limpiamente la pequeña zona afectada con el sombreado blanco original. Todo lo demás absolutamente igual: misma vista trasera, misma pose T, carcasa, silueta, manos, muñecas azules, pies, antena y bolita, iluminación, fondo azul marino y encuadre cuadrado. No añadas logo, triángulo gris, cara ni accesorios. No desplaces toda la banda hacia abajo: sus extremos no se mueven, solo baja algo el pico central.

@@ -12,6 +12,8 @@
   let revision = "";
   let lastStats = null;
   let requestedCompaction = false;
+  let requestSequence = 0;
+  let acknowledgedStats = 0;
 
   function render(stats) {
     if (!stats || typeof stats !== "object") return;
@@ -36,6 +38,8 @@
 
   async function refresh({ restartIfChanged = false } = {}) {
     window.clearTimeout(timer);
+    const request = ++requestSequence;
+    const acknowledgement = acknowledgedStats;
     if (!window.atlasAccess?.hasControl?.() || document.visibilityState === "hidden") return;
     try {
       const response = await window.atlasAccess.fetch("/api/realtime/context", {
@@ -43,6 +47,10 @@
       });
       const stats = await response.json();
       if (!response.ok) throw new Error(stats.error || "Contexto no disponible");
+      // A poll begun before session creation/reset/save must not overwrite its
+      // newer acknowledgement and manufacture an out-of-date context restart.
+      if (request !== requestSequence || acknowledgement !== acknowledgedStats
+          || !window.atlasAccess?.hasControl?.()) return;
       const previous = revision;
       render(stats);
       if (restartIfChanged && previous && stats.revision && previous !== stats.revision) {
@@ -51,7 +59,9 @@
     } catch {
       if (!lastStats) detail.textContent = "Contexto no disponible";
     } finally {
-      timer = window.setTimeout(() => void refresh({ restartIfChanged: true }), 5000);
+      if (request === requestSequence) {
+        timer = window.setTimeout(() => void refresh({ restartIfChanged: true }), 5000);
+      }
     }
   }
 
@@ -66,6 +76,7 @@
       });
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "No se pudo reiniciar el contexto");
+      acknowledgedStats += 1;
       render(payload.stats || {});
       window.dispatchEvent(new CustomEvent("atlas-context-restart", { detail: payload.stats || {} }));
     } catch (error) {
@@ -75,12 +86,19 @@
     }
   });
 
-  window.addEventListener("atlas-context-stats", (event) => render(event.detail || {}));
+  window.addEventListener("atlas-context-stats", (event) => {
+    acknowledgedStats += 1;
+    render(event.detail || {});
+  });
   window.addEventListener("atlas-access-acquired", () => void refresh());
-  window.addEventListener("atlas-access-lost", () => { reset.disabled = true; });
+  window.addEventListener("atlas-access-lost", () => {
+    requestSequence += 1;
+    window.clearTimeout(timer);
+    reset.disabled = true;
+  });
   window.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") void refresh({ restartIfChanged: true });
-    else window.clearTimeout(timer);
+    else { requestSequence += 1; window.clearTimeout(timer); }
   });
   window.addEventListener("beforeunload", () => window.clearTimeout(timer));
   void refresh();

@@ -1,0 +1,3 @@
+Mode: built-in imagegen. Skill: imagegen.
+Input: /tmp/codex-clipboard-8fcc487f-44d8-4eda-9301-b570066fed75.png
+Prompt: Recreate the supplied image with ONE adjustment: slightly soften the blue collar's inverted-V angle by lowering the top central tip by about 40 pixels, keeping the left and right ends exactly where they are. The diagonals should remain fairly steep, approximately 26 degrees to horizontal instead of the original 32 degrees. DO NOT flatten it to a nearly horizontal band. This should be a small but visible change: a slightly lower central point. Preserve the band width and colors. Leave the whole white robot, back view, T-pose, arms, feet, antenna, background, lighting, scale and framing untouched. No logo or other additions.

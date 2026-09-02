@@ -118,6 +118,9 @@ class AccessControl:
             if begin:
                 self.inflight += 1
                 client['idle'] = False
+            # Return only non-secret metadata.  The HTTP layer uses this to
+            # label diagnostics without ever writing the bearer token to disk.
+            return {'kind': client.get('kind', 'browser')}
 
     def finish(self):
         with self.lock:

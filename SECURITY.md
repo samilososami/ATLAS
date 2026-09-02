@@ -21,7 +21,7 @@ no deben sustituirse por las copias reales de una Raspberry Pi.
 ## Superficies de desarrollo
 
 WebScreen escucha en la red local y no incluye autenticación propia del
-navegador. Puede ejecutar acciones a través de OpenClaw: no lo expongas a
+navegador. Puede ejecutar acciones mediante una shell directa: no lo expongas a
 Internet y limita su acceso a una red de confianza. Las credenciales se leen
 en el backend y no deben enviarse al cliente.
 
@@ -35,6 +35,27 @@ física sin pedir una contraseña adicional. RAFAS también se activa con Ctrl y
 secuencia W, O, W en un teclado USB. Son funciones de desarrollo para un equipo
 bajo control de su propietario; el atajo no es autenticación. El servicio no
 registra pulsaciones ni escucha en la red. La autenticación de RAFAS queda pendiente.
+
+## Aplicación Android y Companion (preview)
+
+La app utiliza un servicio independiente en HTTPS/5010. Cada código de
+emparejamiento incluye una clave de administración y un certificado fijado:
+**trátalo como una contraseña root del dispositivo**, no lo publiques ni lo
+añadas a capturas. `atlas-app revoke` invalida todos los móviles emparejados.
+No hay roles de invitado ni revocación individual en esta preview.
+
+La clave se guarda cifrada con Android Keystore; la copia de seguridad de la
+app está desactivada. La huella/credencial se verifica en Android y no se envía
+a A1. Cada comando requiere una confirmación nativa con el texto completo;
+la terminal pide autorización al abrirse y después permite una shell completa.
+Esto no limita lo que puede hacer el propietario que posee la clave.
+
+El relay propio transporta sobres AES-256-GCM con protección de dirección,
+fecha y repetición, sin conocer su contenido. Ve identificadores, tiempos y
+tamaños; puede interrumpir el servicio. Necesita TLS público, límites de
+conexiones y mantenimiento del servidor. No expongas HTTP/5000 como alternativa.
+El protocolo aún no tiene una auditoría independiente. La APK inicial está
+firmada para desarrollo y no se presenta como producto endurecido para terceros.
 
 ## Reportar un problema
 

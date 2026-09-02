@@ -7,7 +7,7 @@ const source = fs.readFileSync(path.join(__dirname, 'static/app.js'), 'utf8');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
 function page({ hostname = 'localhost', search = '?kiosk=1', permission = 'granted',
-                secure = true, getUserMedia } = {}) {
+                secure = true, getUserMedia, realtime = false, settingsFetch } = {}) {
   let owner = false, adapter, requests = 0, starts = 0;
   const nodes = new Map(), timers = new Map(), recognizers = [];
   let timerId = 0;
@@ -15,6 +15,7 @@ function page({ hostname = 'localhost', search = '?kiosk=1', permission = 'grant
     textContent: '', value: '', events: {},
     classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
     setAttribute() {}, addEventListener(name, fn) { this.events[name] = fn; },
+    querySelector() { return this; },
     append(...items) { this.children.push(...items); },
   });
   const node = id => {
@@ -23,8 +24,8 @@ function page({ hostname = 'localhost', search = '?kiosk=1', permission = 'grant
   };
   const streams = [];
   const stream = () => {
-    const track = { stopped: false, stop() { this.stopped = true; } };
-    const result = { track, getTracks: () => [track] };
+    const track = { stopped: false, enabled: true, stop() { this.stopped = true; } };
+    const result = { track, getTracks: () => [track], getAudioTracks: () => [track] };
     streams.push(result);
     return result;
   };
@@ -37,6 +38,7 @@ function page({ hostname = 'localhost', search = '?kiosk=1', permission = 'grant
   const intervals = new Map();
   const window = {
     isSecureContext: secure, SpeechRecognition: Recognition,
+    location: { hostname, search },
     speechSynthesis: { cancel() {} },
     addEventListener() {}, cancelAnimationFrame() {}, requestAnimationFrame: () => 1,
     setInterval(fn) { intervals.set(++timerId, fn); return timerId; },
@@ -46,9 +48,31 @@ function page({ hostname = 'localhost', search = '?kiosk=1', permission = 'grant
     atlasAccess: {
       hasControl: () => owner,
       bind(value) { adapter = value; },
-      fetch: async url => ({ json: async () => url === '/api/health'
-        ? { ready: true, openclaw: { model: 'test' } } : {} }),
+      fetch: settingsFetch || (async url => ({ json: async () => url === '/api/health'
+        ? { ready: true, openclaw: { model: 'test' } } : {} })),
     },
+  };
+  let realtimeCallbacks;
+  const wakeCalls = [];
+  const wakeRequests = [];
+  const realtimeMock = {
+    acceptWake: true,
+    awaitingWakeRequest: false,
+    async start() { realtimeCallbacks.onInputStream(stream()); },
+    isIdle: () => true, isOutputActive: () => false,
+    setLocalWakeDetectorReady() {},
+    queueLocalWakeRequest(text, final) { wakeRequests.push({ text, final }); },
+    authorizeLocalWake(text) {
+      wakeCalls.push(text);
+      if (this.acceptWake) {
+        this.awaitingWakeRequest = true;
+        realtimeCallbacks.setScreen('ESCUCHANDO', 'Te escucho', '', 'listening');
+      }
+      return this.acceptWake;
+    },
+  };
+  if (realtime) window.AtlasRealtime = {
+    create({ callbacks }) { realtimeCallbacks = callbacks; return realtimeMock; },
   };
   const context = vm.createContext({ window, location: { hostname, search }, URLSearchParams,
     crypto: { randomUUID: () => 'test-interaction-id' },
@@ -66,7 +90,7 @@ function page({ hostname = 'localhost', search = '?kiosk=1', permission = 'grant
       createElement: element, addEventListener() {} },
   });
   vm.runInContext(source, context);
-  return { node, streams, recognizers, stream,
+  return { node, streams, recognizers, stream, realtimeMock, wakeCalls, wakeRequests,
     get requests() { return requests; }, get starts() { return starts; },
     acquire() { owner = true; adapter.acquired(); },
     suspend() { owner = false; adapter.suspend(); },
@@ -76,6 +100,19 @@ function page({ hostname = 'localhost', search = '?kiosk=1', permission = 'grant
     },
     initialize: () => context.initializeMicrophone(),
     restore: () => context.restoreMicrophone(),
+    mergeFragments(current, next) {
+      context.__current = current; context.__next = next;
+      return vm.runInContext('mergeRecognitionFragments(__current, __next)', context);
+    },
+    gateA1Microphone(suppressed, delayMs = 200) {
+      context.__gateSuppressed = suppressed;
+      context.__gateDelay = delayMs;
+      vm.runInContext(
+        'setA1PlaybackMicrophoneSuppressed(__gateSuppressed, { delayMs: __gateDelay })',
+        context,
+      );
+    },
+    mute: value => context.setMicrophoneMuted(value),
     setWakeGate({ ready = true, silenceMs = 500, startedAt = 50, contextIndex = 0 } = {}) {
       vm.runInContext(`voiceGateReady = ${JSON.stringify(ready)};
         wakeBurstSilenceBeforeMs = ${Number(silenceMs)};
@@ -89,11 +126,124 @@ function page({ hostname = 'localhost', search = '?kiosk=1', permission = 'grant
   };
 }
 
+test('reasoning selector saves every level and resets the session, not the context', async () => {
+  const calls = [];
+  const p = page({ realtime: true, settingsFetch: async (url, options = {}) => {
+    calls.push({ url, options });
+    const payload = JSON.parse(options.body || '{}');
+    return { ok: true, json: async () => ({ realtimeReasoningEffort: payload.realtimeReasoningEffort || 'default' }) };
+  } });
+  p.acquire(); await tick(); calls.length = 0;
+  let stops = 0, restarts = 0;
+  p.realtimeMock.stop = () => { stops++; };
+  p.realtimeMock.start = async () => { restarts++; };
+  const select = p.node('#reasoning-effort');
+  for (const effort of ['minimal', 'low', 'medium', 'high', 'xhigh', 'default']) {
+    select.value = effort;
+    await select.events.change();
+    assert.equal(select.dataset.activeEffort, effort);
+    assert.equal(select.value, effort);
+    assert.equal(select.disabled, false);
+  }
+  assert.equal(stops, 6);
+  assert.equal(restarts, 6);
+  assert.equal(calls.length, 6);
+  assert(calls.every(c => c.url === '/api/settings'));
+  assert.equal(JSON.parse(calls.at(-1).options.body).realtimeReasoningEffort, 'default');
+});
+
+test('reasoning selector cannot interrupt an active answer or tool', async () => {
+  const p = page({ realtime: true }); p.acquire(); await tick();
+  p.realtimeMock.isIdle = () => false;
+  p.realtimeMock.stop = () => { throw new Error('must not interrupt'); };
+  const select = p.node('#reasoning-effort');
+  select.dataset.activeEffort = 'low'; select.value = 'high';
+  await select.events.change();
+  assert.equal(select.value, 'low');
+  assert.equal(select.disabled, false);
+});
+
+test('reasoning selector restores its previous level when saving fails', async () => {
+  const p = page({ realtime: true, settingsFetch: async () => ({ ok: false,
+    json: async () => ({ error: 'test failure' }) }) });
+  p.acquire(); await tick();
+  p.realtimeMock.stop = () => { throw new Error('must not restart on error'); };
+  const select = p.node('#reasoning-effort');
+  select.dataset.activeEffort = 'default'; select.value = 'xhigh';
+  await select.events.change();
+  assert.equal(select.value, 'default');
+  assert.equal(select.disabled, false);
+  assert.equal(p.node('#voice-provider').disabled, false);
+});
+
+test('progressive Chrome fragments retain the complete request', () => {
+  const p = page();
+  let text = '';
+  for (const fragment of ['qué', 'qué es', 'es una', 'una Nintendo', 'Nintendo Switch', 'Switch']) {
+    text = p.mergeFragments(text, fragment);
+  }
+  assert.equal(text, 'qué es una Nintendo Switch');
+});
+
 test('physical kiosk opens microphone and starts recognition without a click', async () => {
   const p = page(); p.acquire(); await tick(); p.flushTimers();
   assert.equal(p.requests, 1);
   assert.equal(p.starts, 1);
   assert.equal(p.node('#main-status').textContent, 'Esperando a ATLAS');
+});
+
+test('physical A1 disables its microphone for playback plus a 200 ms tail', async () => {
+  const p = page(); p.acquire(); await tick(); p.flushTimers();
+  p.gateA1Microphone(true);
+  assert.equal(p.streams[0].track.enabled, false);
+  p.gateA1Microphone(false, 200);
+  assert.equal(p.streams[0].track.enabled, false, 'tail keeps the microphone closed');
+  p.flushTimers();
+  assert.equal(p.streams[0].track.enabled, true);
+});
+
+test('remote browsers are not affected by the A1 playback gate', async () => {
+  const p = page({ search: '' }); p.acquire(); await tick(); p.flushTimers();
+  p.gateA1Microphone(true);
+  assert.equal(p.streams[0].track.enabled, true);
+});
+
+test('playback completion never overrides the manual mute', async () => {
+  const p = page(); p.acquire(); await tick(); p.flushTimers();
+  p.gateA1Microphone(true);
+  p.mute(true);
+  p.gateA1Microphone(false);
+  p.flushTimers();
+  assert.equal(p.streams[0].track.enabled, false);
+});
+
+test('unmuting during playback cannot reopen the A1 microphone', async () => {
+  const p = page(); p.acquire(); await tick(); p.flushTimers();
+  p.gateA1Microphone(true);
+  p.mute(true); p.mute(false);
+  assert.equal(p.streams[0].track.enabled, false);
+  p.gateA1Microphone(false); p.flushTimers();
+  assert.equal(p.streams[0].track.enabled, true);
+});
+
+test('retired recognizer cannot submit delayed playback transcripts', async () => {
+  const p = page(); p.acquire(); await tick(); p.flushTimers();
+  const retired = p.recognizers[0];
+  p.gateA1Microphone(true);
+  assert.equal(retired.onresult, null);
+  assert.equal(retired.onend, null);
+  p.gateA1Microphone(false); p.flushTimers(); p.flushTimers();
+  assert.notEqual(p.recognizers.at(-1), retired);
+  assert.equal(p.starts, 2);
+});
+
+test('losing control during the tail does not revive microphone capture', async () => {
+  const p = page(); p.acquire(); await tick(); p.flushTimers();
+  const track = p.streams[0].track;
+  p.gateA1Microphone(true); p.gateA1Microphone(false); p.suspend();
+  p.flushTimers();
+  assert.equal(track.enabled, false);
+  assert.equal(track.stopped, true);
 });
 
 test('a fresh page after restart automatically starts again', async () => {
@@ -199,20 +349,21 @@ test('similar words do not trigger the wake flow', async () => {
   assert.equal(p.starts, 1);
 });
 
-test('ATLAS mentioned inside an existing sentence is ignored', async () => {
+test('bare Chrome detection accepts ATLAS anywhere in the phrase', async () => {
   const p = page(); p.acquire(); await tick(); p.flushTimers();
   p.setWakeGate();
   p.recognize('pues sigo trabajando en el proyecto de ATLAS que empecé hace tiempo', true);
   await tick();
-  assert.equal(p.node('#main-status').textContent, 'Esperando a ATLAS');
+  assert.equal(p.node('#main-status').textContent, 'Te escucho');
   assert.equal(p.starts, 1);
 });
 
-test('a direct wake word is ignored without four hundred milliseconds of prior silence', async () => {
+test('a direct wake word is accepted even without prior silence', async () => {
   const p = page(); p.acquire(); await tick(); p.flushTimers();
-  p.setWakeGate({ silenceMs: 399 });
+  p.setWakeGate({ silenceMs: 0 });
   p.recognize('ATLAS qué hora es', true); await tick();
-  assert.equal(p.node('#main-status').textContent, 'Esperando a ATLAS');
+  assert.equal(p.node('#transcript').textContent, 'qué hora es');
+  assert.equal(p.node('#main-status').textContent, 'Te escucho');
   assert.equal(p.starts, 1);
 });
 
@@ -222,4 +373,65 @@ test('a direct wake word is accepted after four hundred milliseconds of silence'
   p.recognize('ATLAS qué hora es', true); await tick();
   assert.equal(p.node('#transcript').textContent, 'qué hora es');
   assert.equal(p.node('#main-status').textContent, 'Te escucho');
+});
+
+test('Realtime Chrome detector ignores old finalized background before a new exact wake', async () => {
+  const p = page({ realtime: true, search: '' }); p.acquire(); await p.initialize(); await tick(); p.flushTimers();
+  p.recognize('estaba hablando de otro tema', true);
+  const old = { 0: { transcript: 'estaba hablando de otro tema' }, isFinal: true };
+  const wake = { 0: { transcript: 'Atlas' }, isFinal: false };
+  // No new acoustic VAD boundary: its context index is still zero.
+  p.recognizers[0].onresult({ resultIndex: 1, results: [old, wake] });
+  assert.deepEqual(p.wakeCalls, ['ATLAS']);
+  assert.equal(p.node('#main-status').textContent, 'Te escucho');
+});
+
+test('a temporarily refused Chrome wake is not marked accepted forever', async () => {
+  const p = page({ realtime: true, search: '' }); p.acquire(); await p.initialize(); await tick(); p.flushTimers();
+  p.realtimeMock.acceptWake = false;
+  p.recognize('Atlas');
+  p.realtimeMock.acceptWake = true;
+  p.recognize('Atlas', true);
+  assert.deepEqual(p.wakeCalls, ['ATLAS', 'ATLAS']);
+  assert.equal(p.node('#main-status').textContent, 'Te escucho');
+  p.recognize('Atlas', true);
+  assert.equal(p.wakeCalls.length, 2, 'accepted result is deduplicated');
+});
+
+test('Realtime failures never activate the legacy OpenClaw conversation path', () => {
+  assert.doesNotMatch(source, /realtimeFallbackActive\s*=\s*true/u);
+  assert.doesNotMatch(source, /initializeMicrophone\(true\)/u);
+  assert.match(source, /scheduleRealtimeReconnect\(error\)/u);
+});
+
+test('Realtime replaces RAM interim corrections instead of accumulating drafts', async () => {
+  const p = page({ realtime: true }); p.acquire(); await p.initialize(); await tick(); p.flushTimers();
+  for (const text of ['Atlas cua', 'Atlas cuánta me', 'Atlas cuánta memoria ra', 'Atlas cuánta memoria RAM queda libre']) {
+    p.recognize(text);
+  }
+  p.recognize('Atlas cuánta memoria RAM queda libre', true);
+  assert.deepEqual(p.wakeRequests.at(-1), { text: 'cuánta memoria RAM queda libre', final: true });
+  assert.equal(p.wakeCalls.length, 1);
+});
+
+test('Realtime retains different final indices and removes withdrawn interim indices', async () => {
+  const p = page({ realtime: true }); p.acquire(); await p.initialize(); await tick(); p.flushTimers();
+  const result = (text, isFinal) => ({ 0: { transcript: text }, isFinal });
+  const first = result('Atlas enciende la televisión', true);
+  p.recognizers[0].onresult({ resultIndex: 0, results: [first, result('y comparte la', false)] });
+  p.recognizers[0].onresult({ resultIndex: 1, results: [first, result('y comparte la pantalla', true)] });
+  assert.equal(p.wakeRequests.at(-1).text, 'enciende la televisión y comparte la pantalla');
+  p.recognizers[0].onresult({ resultIndex: 2, results: [first, result('y comparte la pantalla', true), result('un borrador', false)] });
+  p.recognizers[0].onresult({ resultIndex: 2, results: [first, result('y comparte la pantalla', true)] });
+  assert.equal(p.wakeRequests.at(-1).text, 'enciende la televisión y comparte la pantalla');
+  assert.equal(p.wakeRequests.at(-1).final, true);
+});
+
+test('recognizer restart preserves the request but starts a new index range', async () => {
+  const p = page({ realtime: true }); p.acquire(); await p.initialize(); await tick(); p.flushTimers();
+  p.recognize('Atlas enciende la televisión', true);
+  p.realtimeMock.localWakeRequestPending = true;
+  p.recognizers[0].onend(); p.flushTimers();
+  p.recognize('y abre Chrome', true);
+  assert.equal(p.wakeRequests.at(-1).text, 'enciende la televisión y abre Chrome');
 });

@@ -1,0 +1,65 @@
+#!/usr/bin/env python3
+"""ATLAS mobile service, pairing and connection diagnostics."""
+import argparse, base64, hashlib, json, os, pathlib, secrets, ssl, subprocess, sys, time
+from urllib.parse import urlparse
+ROOT=pathlib.Path(os.environ.get('ATLAS_HOME','/home/atlas'))
+STATE=ROOT/'.atlas/companion/state'
+def b64(v): return base64.urlsafe_b64encode(v).decode().rstrip('=')
+def config(): return json.loads((STATE/'config.json').read_text())
+def save(c):
+    STATE.mkdir(parents=True,exist_ok=True); STATE.chmod(0o700)
+    p=STATE/'config.tmp'; p.write_text(json.dumps(c)); p.chmod(0o600); os.replace(p,STATE/'config.json')
+    owner=ROOT.stat()
+    if os.geteuid()==0:
+        os.chown(STATE,owner.st_uid,owner.st_gid); os.chown(STATE/'config.json',owner.st_uid,owner.st_gid)
+def init():
+    if (STATE/'config.json').exists(): return
+    if os.geteuid()!=0: raise SystemExit('Usa sudo atlas-app init')
+    save({'version':1,'key':b64(secrets.token_bytes(32)),'room':secrets.token_hex(24),
+          'relayPassword':secrets.token_urlsafe(32),'relay':''})
+    subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-days','3650',
+       '-keyout',str(STATE/'private.key'),'-out',str(STATE/'certificate.pem'),
+       '-subj','/CN=atlas-a1','-addext','subjectAltName=DNS:atlas-a1.local,DNS:atlas-a1'],check=True,
+       stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+    owner=ROOT.stat()
+    for p in STATE.iterdir(): p.chmod(0o600); os.chown(p,owner.st_uid,owner.st_gid)
+def main():
+    ap=argparse.ArgumentParser(description=__doc__)
+    ap.add_argument('action',nargs='?',default='status',choices=['status','init','pair','revoke','relay','relay-credentials','start','stop','restart','logs'])
+    ap.add_argument('url',nargs='?'); ap.add_argument('--json',action='store_true'); a=ap.parse_args()
+    if a.action=='init': init(); print('Servicio preparado. Ejecuta atlas-app pair para emparejar.'); return
+    if a.action in ('start','stop','restart'):
+        sys.exit(subprocess.call(['sudo','-n','systemctl',a.action,'atlas-companion.service']))
+    if a.action=='logs': sys.exit(subprocess.call(['journalctl','-u','atlas-companion.service','-n','60','--no-pager']))
+    if a.action=='pair':
+        c=config(); ips=subprocess.check_output(['hostname','-I'],text=True).split()
+        cert=ssl.PEM_cert_to_DER_cert((STATE/'certificate.pem').read_text())
+        payload={'v':1,'name':os.uname().nodename,'url':'https://'+(ips[0] if ips else 'atlas-a1.local')+':5010',
+                 'pin':hashlib.sha256(cert).hexdigest(),'key':c['key'],'room':c['room'],'relay':c['relay']}
+        print('CÓDIGO PRIVADO: concede administración de A1. No lo publiques ni lo compartas.\n')
+        print('atlas1:'+b64(json.dumps(payload).encode()))
+        return
+    if a.action=='relay':
+        if not a.url or urlparse(a.url).scheme!='wss' or not urlparse(a.url).hostname:
+            raise SystemExit('Uso: atlas-app relay wss://tu-dominio/connect')
+        c=config(); c['relay']=a.url; save(c)
+        print('Relay guardado. Reinicia atlas-app y vuelve a emparejar el móvil.'); return
+    if a.action=='relay-credentials':
+        c=config(); print('Configuración privada para /etc/atlas-relay/devices.json:')
+        print(json.dumps({c['room']:hashlib.sha256(c['relayPassword'].encode()).hexdigest()},indent=2)); return
+    if a.action=='revoke':
+        if not sys.stdin.isatty() or input('Revocar TODOS los móviles emparejados [s/N]: ').lower()!='s': return
+        c=config(); c['key']=b64(secrets.token_bytes(32)); save(c)
+        subprocess.run(['sudo','-n','systemctl','restart','atlas-companion.service'],check=True)
+        print('Emparejamientos revocados. Genera un código nuevo.'); return
+    service=subprocess.run(['systemctl','is-active','atlas-companion.service'],capture_output=True,text=True).stdout.strip()
+    try: state=json.loads((STATE/'status.json').read_text())
+    except (OSError,ValueError): state={}
+    result={'service':service,'localUrl':'https://atlas-a1.local:5010','paired':(STATE/'config.json').exists(),
+            'fresh':time.time()-state.get('updatedAt',0)<20,**state}
+    if a.json: print(json.dumps(result)); return
+    print('ATLAS APP\nServicio:',service,'\nRelay:',state.get('relay','sin configurar'))
+    print('Móviles conectados:',len(state.get('clients',{})),'\nConversación activa:',state.get('voiceActive',False))
+    print('Terminales:',state.get('terminals',0),'\nEstado reciente:',result['fresh'])
+    print('Emparejar: atlas-app pair · Diagnóstico: atlas-rafas · Logs: atlas-app logs')
+if __name__=='__main__': main()

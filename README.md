@@ -15,7 +15,7 @@ El objetivo no es presentar ATLAS como una inteligencia consciente ni como un mo
 
 ATLAS busca superar el enfoque rígido de los asistentes basados únicamente en comandos predefinidos. Puede interpretar peticiones en lenguaje natural, utilizar tools, consultar memoria, interactuar con el sistema y coordinar acciones dentro de los límites definidos por el usuario.
 
-OpenClaw funciona como núcleo de software y conecta:
+OpenClaw mantiene la autenticación y sus canales de agente. WebScreen utiliza una ruta directa de Realtime con contexto y herramientas, sin consultar obligatoriamente a otro agente. El conjunto conecta:
 
 - Large Language Models (LLM), principalmente mediante servicios en la nube.
 - Memoria y contexto persistentes escritos en Markdown.
@@ -66,14 +66,21 @@ El código de [`ATLAS WebScreen`](.atlas/webscreen) incluye una interfaz de depu
 
 Una sola pestaña controla WebScreen a la vez. Las demás muestran **Tomar control**: al pulsarlo, el permiso pasa inmediatamente al nuevo dispositivo, sin solicitud ni confirmación. La pestaña anterior detiene micrófono, audio y trabajo activo y muestra la pantalla bloqueada. La conversación de OpenClaw se conserva; este control de uso no sustituye una futura autenticación.
 
-- La conversación principal usa `gpt-realtime-2.1` mediante OpenClaw y WebRTC. El modelo recibe audio, transcribe y genera la voz nativa `marin` dentro de una misma sesión; Chrome Speech Recognition, TTS del navegador y ElevenLabs quedan como herramientas de laboratorio o fallback, no como la cadena principal.
-- Una conversación nueva debe comenzar con `ATLAS` tras cuatrocientos milisegundos de silencio. Después hay diez segundos de continuación natural sin repetir la wake word. Mientras ATLAS habla, el barge-in solo se acepta cuando la nueva frase comienza llamándolo por su nombre; cualquier otro audio se descarta para que el altavoz del A1 no lo interrumpa.
-- OpenAI Realtime responde directamente a conversación, juegos, ideas y conocimiento estable. Para memoria, workspace, correo, estado real, información actual, herramientas o acciones llama a `openclaw_agent_consult`, que conserva como agente principal a OpenClaw con GPT-5.6 Luna.
+- `gpt-realtime-2.1` conversa, razona y utiliza `atlas_shell` y `atlas_web_search` (Tavily) directamente. Recibe identidad, Markdown, informes actuales y contexto conversacional; no usa el preámbulo ni `openclaw_agent_consult` del pipeline antiguo.
+- Chrome detecta la palabra exacta `Atlas`, también dentro de una frase, sin silencio previo ni veto semántico. En el A1, la petición inicial de Chrome se envía como texto a Realtime; el portátil también utiliza audio Realtime. `gpt-4o-mini-transcribe` aporta una transcripción auxiliar de los turnos de audio, no el razonamiento.
+- Solo en A1, el micrófono y el detector se bloquean durante la reproducción y 200 ms después. El resto de dispositivos conserva sus interrupciones naturales. La continuación cuando Atlas hace una pregunta es de cuatro segundos.
+- Se pueden elegir voces nativas de OpenAI, navegador o ElevenLabs, y esfuerzo Default, Minimal, Low, Medium, High y Xhigh, según admita el proveedor. Default omite el ajuste. Los resultados provisionales de Chrome se sustituyen al corregirse y el texto idéntico no reinicia la espera.
 - Las reservas WebRTC son efímeras. El OAuth persistente y las credenciales permanecen en la Raspberry Pi y no se entregan al navegador.
 - Cada interacción directa o delegada se registra en JSON Lines con tiempos, transcripción, modelo, voz, tool calls y resultado, sin incluir secretos.
-- Si Realtime o WebRTC fallan, WebScreen reactiva la arquitectura anterior. Su código y explicación están preservados en [`Backups/WebScreen/legacy-preamble-2026-08-29`](Backups/WebScreen/legacy-preamble-2026-08-29).
+- Si Realtime o WebRTC fallan, se intenta reconectar sin cambiar silenciosamente al agente antiguo. Su código histórico está preservado en [`Backups/WebScreen/legacy-preamble-2026-08-29`](Backups/WebScreen/legacy-preamble-2026-08-29).
 
-La voz Realtime y el agente de herramientas son dos capas del mismo ATLAS, no dos personalidades. La primera sostiene la conversación inmediata; Luna conserva el contexto, la memoria y la capacidad de actuar cuando la petición lo exige.
+OpenClaw sigue disponible en otros canales, pero el WebScreen actual recibe su contexto y actúa con herramientas directas de Realtime. Los ajustes experimentales de audio del A1 no se aplican al portátil.
+
+### App Android · preview 0.1
+
+La [APK ATLAS](android/README.md) incorpora voz por pulsación, wake word en primer plano y chat progresivo, botones de comandos editables, terminal PTY, estado y protección biométrica. Reutiliza Realtime sin la cadena del agente anterior. Es una primera preview, pendiente de validación completa en un teléfono y en A1.
+
+[ATLAS Companion](.atlas/companion/README.md) es un servicio separado para la app, con emparejamiento privado, HTTPS y mensajes cifrados. Se administra con `atlas-app`. El acceso fuera de casa utiliza un **relay propio**, sin Tailscale: requiere desplegarlo en un servidor público con dominio/TLS. No hay un relay hospedado incluido ni se expone WebScreen al exterior.
 
 ### Pantalla y terminal local
 
@@ -110,6 +117,7 @@ Las [herramientas misceláneas](misc/README.md) reúnen [ATLAS TOUCH TYPE](misc/
 ATLAS/
 ├── .atlas/                 Runtime público: WebScreen, desktop, pantalla y proyectos
 ├── assets/                 Recursos visuales y capturas
+├── android/                App ATLAS, fuentes y construcción de APK
 ├── atlas-commands/         Comandos de administración de ATLAS A1
 ├── docs/                   Notas de versiones y documentación técnica
 ├── misc/                   ATLAS TOUCH TYPE, RAFAS y herramientas misceláneas
@@ -136,6 +144,8 @@ Hasta entonces, la alternativa era conectarse por SSH a la terminal de ATLAS OS 
 Con la incorporación de la pantalla al ATLAS A1 surgió RAFAS. Con un teclado USB, mantén Ctrl y pulsa W, O, W. La pantalla se enciende y muestra el logo de ATLAS y el título R.A.F.A.S. en blanco, junto a una shell root en `/home/atlas`. También se abre con `atlas-screen --rafas`. Funciona desde los modos apagado, desktop, terminal o Atlas; no necesita Chrome ni Xorg.
 
 Un pequeño servicio espera eventos del teclado, sin sondeo periódico ni registro de pulsaciones. Se inicia con el sistema y se reinicia si falla. No es un sistema operativo alternativo: necesita que Linux, systemd, el teclado y la pantalla sigan funcionando.
+
+`atlas-rafas` añade un diagnóstico de Wi-Fi, rutas, DNS, HTTPS, reloj, almacenamiento, memoria, temperatura, alimentación, USB y servicios. `atlas-rafas doctor` recupera servicios habilitados y ofrece conexión Wi-Fi interactiva cuando falta red; `doctor --check` no modifica nada. No borra datos, resetea OAuth ni reinicia redes sanas. Consulta su [manual](openclaw/workspace/atlas-commands/ATLAS-RAFAS.md).
 
 **Esta versión de desarrollo ofrece acceso root local sin contraseña adicional.** Está pensada exclusivamente para dispositivos bajo control de su propietario. La autenticación y las herramientas visuales de recuperación se incorporarán más adelante. [Código, funcionamiento y límites](misc/rafas/README.md).
 

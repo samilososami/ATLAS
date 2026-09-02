@@ -1,13 +1,14 @@
 const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
-const CLIENT_BUILD = "2026-08-31-local-wake-realtime-1";
+const CLIENT_BUILD = "2026-09-02-reasoning-1";
 const REALTIME_PRIMARY = Boolean(window.AtlasRealtime);
+const PHYSICAL_ATLAS_A1 = /(?:^|[?&])kiosk=1(?:&|$)/u.test(String(window.location?.search || ""));
 const accessFetch = (url, options) => window.atlasAccess.fetch(url, options);
 const hasControl = () => window.atlasAccess.hasControl();
 const LANGUAGE = "es-ES";
 const SILENCE_MS = 700;
 const ADAPTIVE_FINAL_SILENCE_MS = 700;
 const NO_SPEECH_MS = 8000;
-const FOLLOW_UP_NO_SPEECH_MS = 10000;
+const FOLLOW_UP_NO_SPEECH_MS = 4000;
 const FOLLOW_UP_ECHO_SETTLE_MS = 900;
 const FOLLOW_UP_ECHO_REJECT_WINDOW_MS = 1800;
 const MAX_RECORDING_MS = 60000;
@@ -16,7 +17,7 @@ const SPECULATIVE_MIN_CHARS = 12;
 const SPECULATIVE_MIN_WORDS = 3;
 const WAKE_ECHO_MUTE_MS = 2000;
 const WAKE_ECHO_TAIL_MS = 1200;
-const WAKE_PRE_SILENCE_MS = 400;
+const A1_PLAYBACK_MIC_TAIL_MS = 200;
 const VOICE_SAMPLE_MS = 25;
 const VOICE_START_MS = 90;
 const VOICE_END_MS = 120;
@@ -26,6 +27,16 @@ const VOICE_END_MS = 120;
 const VOICE_MIN_RMS = 0.05;
 const VOICE_MIN_PEAK = 0.14;
 const VOICE_NOISE_MULTIPLIER = 3.4;
+
+function microphoneConstraints() {
+  return { video: false, audio: {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+    channelCount: 1,
+    sampleRate: { ideal: 48000 },
+  } };
+}
 
 const menuToggle = document.querySelector("#menu-toggle");
 const panelBackdrop = document.querySelector("#panel-backdrop");
@@ -44,6 +55,7 @@ const timer = document.querySelector("#timer");
 const recordButton = document.querySelector("#record-button");
 const cancelButton = document.querySelector("#cancel-button");
 const voiceProviderSelect = document.querySelector("#voice-provider");
+const reasoningEffortSelect = document.querySelector("#reasoning-effort");
 const transcriptElement = document.querySelector("#transcript");
 const responseElement = document.querySelector("#response");
 const activityLog = document.querySelector("#activity-log");
@@ -82,6 +94,10 @@ let wakeContextResultIndex = 0;
 let lastRecognitionResultCount = 0;
 let ignoredWakeResultIndex = -1;
 let acceptedWakeResultIndex = -1;
+let realtimeWakeCaptureUntil = 0;
+let realtimeWakeCapturedText = "";
+let realtimeWakeResultStart = -1;
+let realtimeWakePrefix = "";
 let voiceNoiseFloor = 0.008;
 let voiceLastRms = 0;
 let voiceLastPeak = 0;
@@ -90,6 +106,8 @@ let recognition = null;
 let recognitionRunning = false;
 let recognitionEnabled = false;
 let recognitionRestartTimer = 0;
+let a1PlaybackMicrophoneSuppressed = false;
+let a1PlaybackMicrophoneTimer = 0;
 let recordingStartedAt = 0;
 let recordingStartedIso = "";
 let wakeDetectedIso = "";
@@ -144,9 +162,11 @@ let ttsLabBusy = false;
 let realtimeController = null;
 let realtimeFallbackActive = false;
 let realtimeExternalSpeechRun = 0;
+let realtimeReconnectTimer = 0;
+let realtimeReconnectAttempts = 0;
 
 function selectedVoiceProvider() {
-  if (REALTIME_PRIMARY && !realtimeFallbackActive) return "realtime";
+  if (REALTIME_PRIMARY) return "realtime";
   return localStorage.getItem("atlas-webscreen-voice") === "elevenlabs"
     ? "elevenlabs" : "browser";
 }
@@ -193,6 +213,8 @@ function switchView(view) {
     if (REALTIME_PRIMARY && !realtimeFallbackActive) void activatePrimaryMicrophone();
     else scheduleRecognitionRestart(100);
   } else {
+    window.clearTimeout(realtimeReconnectTimer);
+    realtimeReconnectTimer = 0;
     realtimeController?.stop();
     stopRecognition();
   }
@@ -423,6 +445,8 @@ async function loadSettings() {
       voiceProviderSelect.value = settings.realtimeVoice;
       voiceProviderSelect.dataset.activeVoice = settings.realtimeVoice;
     }
+    reasoningEffortSelect.value = settings.realtimeReasoningEffort || "default";
+    reasoningEffortSelect.dataset.activeEffort = reasoningEffortSelect.value;
     voiceIdInput.value = settings.elevenlabsVoiceId || "";
     settingsResult.className = "tool-result";
     settingsResult.textContent = settings.voiceIdOverride
@@ -631,7 +655,7 @@ function attachRealtimeWakeInput(stream) {
   stopVoiceActivityGate();
   microphoneStream = stream || null;
   microphoneMuteButton.disabled = !stream;
-  if (stream && microphoneMuted) {
+  if (stream && (microphoneMuted || a1PlaybackMicrophoneSuppressed)) {
     stream.getAudioTracks().forEach((track) => { track.enabled = false; });
     recognitionEnabled = false;
     realtimeController?.setLocalWakeDetectorReady(false);
@@ -650,15 +674,64 @@ function attachRealtimeWakeInput(stream) {
   addLog("Detector local de wake word conectado a Realtime");
 }
 
+function setA1PlaybackMicrophoneSuppressed(suppressed, options = {}) {
+  if (!PHYSICAL_ATLAS_A1) return;
+  window.clearTimeout(a1PlaybackMicrophoneTimer);
+  a1PlaybackMicrophoneTimer = 0;
+  if (suppressed) {
+    if (a1PlaybackMicrophoneSuppressed) return;
+    a1PlaybackMicrophoneSuppressed = true;
+    realtimeWakeCaptureUntil = 0;
+    realtimeWakeCapturedText = "";
+    microphoneStream?.getAudioTracks().forEach((track) => { track.enabled = false; });
+    recognitionEnabled = false;
+    stopRecognition();
+    if (recognition) {
+      // Retire this recognizer completely. Its network result/end callbacks
+      // may arrive after the 200 ms tail and must not revive captured echo.
+      const retired = recognition;
+      retired.onstart = retired.onend = retired.onerror = retired.onresult = null;
+      retired.onspeechstart = retired.onspeechend = null;
+      try { retired.abort(); } catch {}
+      recognition = null;
+      recognitionRunning = false;
+    }
+    stopVoiceActivityGate();
+    realtimeController?.setLocalWakeDetectorReady(false);
+    addLog("Micrófono del A1 cerrado durante la voz de ATLAS");
+    return;
+  }
+  const delayMs = Math.max(0, Number(options.delayMs ?? A1_PLAYBACK_MIC_TAIL_MS));
+  const restore = () => {
+    a1PlaybackMicrophoneTimer = 0;
+    a1PlaybackMicrophoneSuppressed = false;
+    if (microphoneMuted || !hasControl() || !microphoneStream || activeView !== "atlas") return;
+    microphoneStream.getAudioTracks().forEach((track) => { track.enabled = true; });
+    if (!SpeechRecognitionAPI) return;
+    startVoiceActivityGate(microphoneStream);
+    recognitionEnabled = true;
+    configureRecognition();
+    realtimeController?.setLocalWakeDetectorReady(true);
+    scheduleRecognitionRestart(0);
+    addLog("Micrófono del A1 reabierto después de la voz y su margen de seguridad");
+  };
+  if (delayMs === 0) restore();
+  else a1PlaybackMicrophoneTimer = window.setTimeout(restore, delayMs);
+}
+
 function setMicrophoneMuted(muted) {
   microphoneMuted = Boolean(muted);
-  microphoneStream?.getAudioTracks().forEach((track) => { track.enabled = !microphoneMuted; });
+  microphoneStream?.getAudioTracks().forEach((track) => {
+    track.enabled = !microphoneMuted && !a1PlaybackMicrophoneSuppressed;
+  });
   microphoneMuteButton.setAttribute("aria-pressed", String(microphoneMuted));
   microphoneMuteButton.setAttribute("aria-label", microphoneMuted ? "Activar micrófono" : "Silenciar micrófono");
   microphoneMuteButton.querySelector("span").textContent = microphoneMuted ? "Activar micro" : "Silenciar";
   microphoneMuteButton.disabled = !microphoneStream;
 
   if (microphoneMuted) {
+    realtimeWakeCaptureUntil = 0;
+    realtimeWakeCapturedText = "";
     recognitionEnabled = false;
     stopRecognition();
     stopVoiceActivityGate();
@@ -667,7 +740,8 @@ function setMicrophoneMuted(muted) {
     return;
   }
 
-  if (microphoneStream && SpeechRecognitionAPI && !realtimeFallbackActive) {
+  if (microphoneStream && SpeechRecognitionAPI && !realtimeFallbackActive
+      && !a1PlaybackMicrophoneSuppressed) {
     startVoiceActivityGate(microphoneStream);
     recognitionEnabled = true;
     configureRecognition();
@@ -700,10 +774,25 @@ function extractWakeRequest(text) {
   return parseWakeUtterance(text)?.request ?? null;
 }
 
-function wakeVoiceGateAllows(prefix) {
-  if (String(prefix || "").trim()) return false;
-  if (!voiceGateReady) return true;
-  return wakeBurstStartedAt > 0 && wakeBurstSilenceBeforeMs >= WAKE_PRE_SILENCE_MS;
+function mergeRecognitionFragments(existing, incoming) {
+  const current = String(existing || "").trim();
+  const next = String(incoming || "").trim();
+  if (!current) return next;
+  if (!next) return current;
+  const currentLower = current.toLocaleLowerCase("es");
+  const nextLower = next.toLocaleLowerCase("es");
+  if (currentLower.includes(nextLower)) return current;
+  if (nextLower.includes(currentLower)) return next;
+  const currentWords = current.split(/\s+/u);
+  const nextWords = next.split(/\s+/u);
+  const currentComparable = currentWords.map(word => word.toLocaleLowerCase("es"));
+  const nextComparable = nextWords.map(word => word.toLocaleLowerCase("es"));
+  for (let overlap = Math.min(currentWords.length, nextWords.length); overlap > 0; overlap -= 1) {
+    const suffix = currentComparable.slice(-overlap).join(" ");
+    const prefix = nextComparable.slice(0, overlap).join(" ");
+    if (suffix === prefix) return [...currentWords, ...nextWords.slice(overlap)].join(" ");
+  }
+  return `${current} ${next}`;
 }
 
 function includesInterruptCommand(text) {
@@ -750,6 +839,7 @@ function containsAtlasFragment(text) {
 }
 
 function beginPlaybackEchoGuard(text) {
+  if (PHYSICAL_ATLAS_A1 && REALTIME_PRIMARY && !realtimeFallbackActive) return;
   const firstWords = normalizeSpeechText(text).split(" ").slice(0, 3);
   if (firstWords.some((word) => word.includes("atlas"))) {
     muteRecognitionFor(WAKE_ECHO_MUTE_MS);
@@ -887,7 +977,7 @@ function scheduleRecognitionRestart(delay = 400) {
   if (activeView !== "atlas" || !recognition || !recognitionEnabled || !shouldListen || !microphoneStream) return;
   const restartDelay = Math.max(delay, Math.ceil(recognitionMutedUntil - performance.now()));
   recognitionRestartTimer = window.setTimeout(() => {
-    if (!hasControl()) return;
+    if (!hasControl() || !recognitionEnabled || a1PlaybackMicrophoneSuppressed) return;
     const stillShouldListen = nativeTranscribing || !interactionActive || interruptMonitoring;
     if (activeView !== "atlas" || recognitionRunning || !stillShouldListen) return;
     if (performance.now() < recognitionMutedUntil) {
@@ -911,7 +1001,7 @@ function configureRecognition() {
   recognition.lang = LANGUAGE;
   recognition.maxAlternatives = 1;
   recognition.onstart = () => {
-    if (!hasControl()) { recognition.abort(); return; }
+    if (!hasControl() || microphoneMuted || a1PlaybackMicrophoneSuppressed) { recognition.abort(); return; }
     recognitionRunning = true;
     if (REALTIME_PRIMARY && !realtimeFallbackActive) {
       realtimeController?.setLocalWakeDetectorReady(true);
@@ -920,13 +1010,18 @@ function configureRecognition() {
     wakeContextResultIndex = 0;
     ignoredWakeResultIndex = -1;
     acceptedWakeResultIndex = -1;
+    // Result indices restart at zero with each recognition session. Preserve
+    // only the latest snapshot of an unfinished request across that restart.
+    realtimeWakePrefix = realtimeController?.localWakeRequestPending ? realtimeWakeCapturedText : "";
+    realtimeWakeResultStart = realtimeController?.localWakeRequestPending ? 0 : -1;
     if (voiceGateReady && voiceActive) {
       // A recognition restart in the middle of speech must not manufacture a
       // fresh, apparently silent wake-word window.
       wakeBurstStartedAt = performance.now();
       wakeBurstSilenceBeforeMs = 0;
     }
-    if (!interactionActive) setWaiting();
+    if (!interactionActive && (!REALTIME_PRIMARY || realtimeFallbackActive
+        || realtimeController?.isIdle())) setWaiting();
   };
   recognition.onspeechstart = () => {
     // SpeechRecognition solo sustituye al medidor acústico cuando Web Audio
@@ -964,6 +1059,7 @@ function configureRecognition() {
   };
   recognition.onresult = (event) => {
     if (!hasControl()) return;
+    if (PHYSICAL_ATLAS_A1 && a1PlaybackMicrophoneSuppressed) return;
     if (performance.now() < recognitionMutedUntil) return;
     lastRecognitionResultCount = event.results.length;
     if (nativeTranscribing) {
@@ -1016,17 +1112,15 @@ function configureRecognition() {
       const text = String(result[0]?.transcript || "").trim();
       if (text) changedResults.push({ index, text, isFinal: Boolean(result.isFinal) });
     }
-    let evaluationResults = changedResults;
-    if (!interactionActive) {
-      evaluationResults = [];
-      const contextStart = Math.min(wakeContextResultIndex, event.results.length);
-      for (let index = contextStart; index < event.results.length; index += 1) {
-        const result = event.results[index];
-        const text = String(result[0]?.transcript || "").trim();
-        if (text) evaluationResults.push({ index, text, isFinal: Boolean(result.isFinal) });
-      }
-    }
+    const evaluationResults = changedResults;
     const recognizedText = evaluationResults.map(result => result.text).join(" ");
+    const realtimeWakeMode = REALTIME_PRIMARY && !realtimeFallbackActive;
+    if (PHYSICAL_ATLAS_A1 && realtimeWakeMode && !interactionActive
+        && realtimeController?.awaitingWakeRequest && realtimeWakeResultStart >= 0
+        && (realtimeController?.localWakeRequestPending || performance.now() <= realtimeWakeCaptureUntil)) {
+      captureChromeWakeSnapshot(event.results);
+      return;
+    }
     if (!recognizedText) return;
     if (isLocalSilenceCommand(recognizedText)) {
       addLog("Orden local de silencio detectada");
@@ -1043,26 +1137,7 @@ function configureRecognition() {
     if (wakeResultPosition >= 0 && !interactionActive) {
       const wakeResult = evaluationResults[wakeResultPosition];
       const parsedWake = parseWakeUtterance(wakeResult.text);
-      const prefix = [
-        ...evaluationResults.slice(0, wakeResultPosition).map(result => result.text),
-        parsedWake.prefix,
-      ].filter(Boolean).join(" ");
-      const realtimeWakeMode = REALTIME_PRIMARY && !realtimeFallbackActive;
       const localBargeIn = realtimeWakeMode && Boolean(realtimeController?.isOutputActive());
-      const gateAllowsWake = localBargeIn
-        ? !String(prefix || "").trim()
-        : wakeVoiceGateAllows(prefix);
-      if (!gateAllowsWake) {
-        if (ignoredWakeResultIndex !== wakeResult.index) {
-          ignoredWakeResultIndex = wakeResult.index;
-          addLog(prefix
-            ? "Mención de ATLAS ignorada: formaba parte de una frase ya empezada"
-            : `Mención de ATLAS ignorada: no hubo 0,4 segundos de silencio de voz `
-              + `(RMS ${voiceLastRms.toFixed(3)}, pico ${voiceLastPeak.toFixed(3)}, `
-              + `umbral ${voiceLastThreshold.toFixed(3)})`);
-        }
-        return;
-      }
       const initialRequest = [
         parsedWake.request,
         ...evaluationResults.slice(wakeResultPosition + 1).map(result => result.text),
@@ -1074,17 +1149,23 @@ function configureRecognition() {
         .every(result => result.isFinal);
       wakeDetectedIso = new Date().toISOString();
       if (realtimeWakeMode) {
-        // Chrome's exact wake recognizer and the local acoustic gate decide
-        // whether somebody called ATLAS. Realtime still receives the original
-        // audio and owns the conversation, but its rough transcript no longer
-        // has authority to wake or interrupt the assistant.
+        // Chrome alone owns activation: the exact word ATLAS anywhere in a
+        // changed result is sufficient, including interim results. No prefix,
+        // silence window, acoustic score or Realtime confirmation is required.
         const wakeEvidence = ["ATLAS", initialRequest].filter(Boolean).join(", ");
         if (acceptedWakeResultIndex !== wakeResult.index) {
+          if (!realtimeController?.authorizeLocalWake(wakeEvidence)) return;
           acceptedWakeResultIndex = wakeResult.index;
-          realtimeController?.authorizeLocalWake(wakeEvidence);
           addLog(localBargeIn
             ? "Interrupción “ATLAS” validada por el detector local"
             : "Wake word “ATLAS” validada por el detector local");
+        }
+        if (PHYSICAL_ATLAS_A1) {
+          realtimeWakeCapturedText = "";
+          realtimeWakePrefix = "";
+          realtimeWakeResultStart = wakeResult.index;
+          realtimeWakeCaptureUntil = performance.now() + FOLLOW_UP_NO_SPEECH_MS;
+          captureChromeWakeSnapshot(event.results);
         }
         return;
       }
@@ -1097,6 +1178,21 @@ function configureRecognition() {
       });
     }
   };
+}
+
+function captureChromeWakeSnapshot(results) {
+  // SpeechRecognitionEvent.results is a snapshot, not a stream of appended
+  // words. Interim results at the same index can change or disappear entirely.
+  const parts = [realtimeWakePrefix];
+  let final = true;
+  for (let index = realtimeWakeResultStart; index < results.length; index += 1) {
+    const result = results[index];
+    const text = String(result[0]?.transcript || "").trim();
+    parts.push(index === realtimeWakeResultStart ? (parseWakeUtterance(text)?.request ?? text) : text);
+    final = final && Boolean(result.isFinal);
+  }
+  realtimeWakeCapturedText = parts.filter(Boolean).join(" ").replace(/\s+/gu, " ").trim();
+  realtimeController?.queueLocalWakeRequest(realtimeWakeCapturedText, final);
 }
 
 async function beginWakeRecording(initialRequest = "", options = {}) {
@@ -1151,7 +1247,7 @@ async function startRecording(mode = "wake", parentId = "", options = {}) {
     followUp ? "CONTINUACIÓN" : "GRABANDO",
     "Te escucho",
     followUp
-      ? "Puedes empezar a hablar durante los próximos 10 segundos."
+      ? "Puedes empezar a hablar durante los próximos 4 segundos."
       : "La transcripción finalizará cuando Chrome confirme el final de la frase.",
     "listening",
   );
@@ -1418,13 +1514,16 @@ function browserSpeechSegments(text) {
   return segments.filter((segment) => segment.text);
 }
 
-async function speakBrowserSegment(text, voice) {
+async function speakBrowserSegment(text, voice, onStart) {
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.lang = LANGUAGE;
   utterance.rate = 1.02;
   utterance.pitch = 1;
   if (voice) utterance.voice = voice;
   await new Promise((resolve, reject) => {
+    utterance.addEventListener("start", () => onStart?.({
+      source: "speechSynthesis.start", voice: voice?.name || "browser-default",
+    }), { once: true });
     utterance.addEventListener("end", resolve, { once: true });
     utterance.addEventListener("error", (event) => {
       if (["interrupted", "canceled"].includes(event.error)) {
@@ -1437,7 +1536,7 @@ async function speakBrowserSegment(text, voice) {
   });
 }
 
-async function playBrowserSpeech(text) {
+async function playBrowserSpeech(text, onStart) {
   if (!window.speechSynthesis || !window.SpeechSynthesisUtterance) {
     throw new Error("Chrome no ofrece síntesis de voz en este equipo");
   }
@@ -1446,8 +1545,8 @@ async function playBrowserSpeech(text) {
   const voice = browserVoice();
   for (const segment of browserSpeechSegments(text)) {
     if (run !== browserSpeechRun) return;
-    if (segment.protected) muteRecognitionFor(WAKE_ECHO_MUTE_MS);
-    await speakBrowserSegment(segment.text, voice);
+    if (segment.protected && !PHYSICAL_ATLAS_A1) muteRecognitionFor(WAKE_ECHO_MUTE_MS);
+    await speakBrowserSegment(segment.text, voice, onStart);
     if (run !== browserSpeechRun) return;
   }
 }
@@ -1487,7 +1586,7 @@ function queueStreamedSpeech(text, token = interactionToken) {
     const voice = browserVoice();
     for (const segment of browserSpeechSegments(chunk)) {
       if (token !== interactionToken || expectedRun !== browserSpeechRun) return;
-      if (segment.protected) muteRecognitionFor(WAKE_ECHO_MUTE_MS);
+      if (segment.protected && !PHYSICAL_ATLAS_A1) muteRecognitionFor(WAKE_ECHO_MUTE_MS);
       await speakBrowserSegment(segment.text, voice);
     }
   }).catch((error) => {
@@ -1539,7 +1638,8 @@ async function playElevenLabsSpeech(encodedAudio, text = "") {
   }
   audio.addEventListener("timeupdate", () => {
     if (!Number.isFinite(audio.duration) || audio.duration <= 0) return;
-    if (wakePositions.some((position) => Math.abs(audio.currentTime - position * audio.duration) < 0.7)) {
+    if (!PHYSICAL_ATLAS_A1
+        && wakePositions.some((position) => Math.abs(audio.currentTime - position * audio.duration) < 0.7)) {
       muteRecognitionFor(WAKE_ECHO_MUTE_MS);
     }
   });
@@ -1560,10 +1660,11 @@ async function playElevenLabsSpeech(encodedAudio, text = "") {
   }
 }
 
-async function playElevenLabsStream(streamUrl, text = "") {
+async function playElevenLabsStream(streamUrl, text = "", onStart) {
   if (!streamUrl) throw new Error("ElevenLabs no devolvió un flujo de audio");
   const audio = new Audio(streamUrl);
   currentAudio = audio;
+  audio.addEventListener("playing", () => onStart?.({ source: "audio.playing", voice: "elevenlabs" }), { once: true });
   const wakePositions = [];
   const normalizedText = normalizeSpeechText(text);
   for (const match of normalizedText.matchAll(/\S*atlas\S*/g)) {
@@ -1571,7 +1672,8 @@ async function playElevenLabsStream(streamUrl, text = "") {
   }
   audio.addEventListener("timeupdate", () => {
     if (!Number.isFinite(audio.duration) || audio.duration <= 0) return;
-    if (wakePositions.some((position) => Math.abs(audio.currentTime - position * audio.duration) < 0.7)) {
+    if (!PHYSICAL_ATLAS_A1
+        && wakePositions.some((position) => Math.abs(audio.currentTime - position * audio.duration) < 0.7)) {
       muteRecognitionFor(WAKE_ECHO_MUTE_MS);
     }
   });
@@ -1612,7 +1714,7 @@ async function playSpeech(text, encodedAudio, provider = "browser", role = "fina
     await reportBrowserEventFor(playbackRequestId, `${role}.playback.error`, `La reproducción con ${label} falló`, performance.now() - started, error.message);
     throw error;
   } finally {
-    if (containsAtlasFragment(text)) muteRecognitionFor(WAKE_ECHO_TAIL_MS);
+    if (containsAtlasFragment(text) && !PHYSICAL_ATLAS_A1) muteRecognitionFor(WAKE_ECHO_TAIL_MS);
   }
 }
 
@@ -1631,7 +1733,7 @@ function stopRealtimeExternalSpeech() {
   stopCurrentPlayback();
 }
 
-async function playRealtimeExternalText(text, provider) {
+async function playRealtimeExternalText(text, provider, { onStart } = {}) {
   const run = ++realtimeExternalSpeechRun;
   const cleanText = String(text || "").trim();
   if (!cleanText) return false;
@@ -1651,15 +1753,24 @@ async function playRealtimeExternalText(text, provider) {
     const started = performance.now();
     beginPlaybackEchoGuard(cleanText);
     try {
-      await playElevenLabsStream(payload.streamUrl, cleanText);
+      await playElevenLabsStream(payload.streamUrl, cleanText, onStart);
       if (run !== realtimeExternalSpeechRun) return false;
       addLog("Streaming de ElevenLabs completado", performance.now() - started);
       return true;
     } finally {
-      if (containsAtlasFragment(cleanText)) muteRecognitionFor(WAKE_ECHO_TAIL_MS);
+      if (containsAtlasFragment(cleanText) && !PHYSICAL_ATLAS_A1) {
+        muteRecognitionFor(WAKE_ECHO_TAIL_MS);
+      }
     }
   }
-  return playSpeech(cleanText, "", "browser", "realtime", interactionToken);
+  try {
+    // Realtime owns the queue and its A1 microphone gate. No blocking logging
+    // request or per-chunk reopening belongs in the playback critical path.
+    await playBrowserSpeech(cleanText, onStart);
+    return run === realtimeExternalSpeechRun;
+  } finally {
+    if (containsAtlasFragment(cleanText) && !PHYSICAL_ATLAS_A1) muteRecognitionFor(WAKE_ECHO_TAIL_MS);
+  }
 }
 
 function resetInteractionState() {
@@ -1750,7 +1861,7 @@ async function endSilentFollowUp() {
   stopTimer();
   nativeTranscribing = false;
   stopRecognition();
-  addLog("Nadie ha hablado durante 10 segundos; vuelvo a esperar la wake word");
+  addLog("Nadie ha hablado durante 4 segundos; vuelvo a esperar la wake word");
   await reportBrowserEventFor(
     followUpParentId,
     "conversation.followup.listen.timeout",
@@ -1846,10 +1957,7 @@ async function initializeMicrophone(forceLegacy = false) {
   microphoneInitializing = true;
   setScreen("MICRÓFONO", "Activando micrófono", "Preparando la escucha de ATLAS…", "listening");
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: false,
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-    });
+    const stream = await navigator.mediaDevices.getUserMedia(microphoneConstraints());
     if (!hasControl() || generation !== microphoneGeneration) {
       stream.getTracks().forEach(track => track.stop());
       return;
@@ -1903,7 +2011,7 @@ async function checkHealth() {
     healthLabel.textContent = health.ready
       ? (health.realtime?.ready
         ? `${health.realtime.model} · WebRTC · ${health.realtime.voice}`
-        : `${health.openclaw.model} · ruta legacy`)
+        : "OpenAI Realtime no disponible")
       : "Backend incompleto";
     addLog(health.ready ? "Backend preparado" : "Backend degradado", null, health.ready ? "normal" : "error");
   } catch {
@@ -1919,10 +2027,25 @@ async function activatePrimaryMicrophone() {
     await realtimeController?.start();
   } catch (error) {
     if (!hasControl() || activeView !== "atlas") return;
-    realtimeFallbackActive = true;
-    addLog(`OpenAI Realtime no pudo iniciar; activo el pipeline legacy: ${error.message}`, null, "error");
-    await initializeMicrophone(true);
+    addLog(`OpenAI Realtime no pudo iniciar: ${error.message}`, null, "error");
+    scheduleRealtimeReconnect(error);
   }
+}
+
+function scheduleRealtimeReconnect(error) {
+  window.clearTimeout(realtimeReconnectTimer);
+  realtimeFallbackActive = false;
+  if (!REALTIME_PRIMARY || !hasControl() || activeView !== "atlas") return;
+  const delay = Math.min(8000, 1000 * (2 ** Math.min(realtimeReconnectAttempts, 3)));
+  realtimeReconnectAttempts += 1;
+  setScreen("GPT LIVE", "Reconectando con ATLAS",
+    "La sesión Realtime se recuperará sin cambiar al agente legacy.", "listening");
+  addLog(`Reintento Realtime en ${(delay / 1000).toFixed(1)} s${error?.message ? `: ${error.message}` : ""}`,
+    null, "error");
+  realtimeReconnectTimer = window.setTimeout(() => {
+    realtimeReconnectTimer = 0;
+    if (hasControl() && activeView === "atlas") void activatePrimaryMicrophone();
+  }, delay);
 }
 
 realtimeController = window.AtlasRealtime?.create({
@@ -1938,14 +2061,19 @@ realtimeController = window.AtlasRealtime?.create({
       responseElement.textContent = text || "ATLAS está preparando la respuesta.";
       responseElement.classList.toggle("placeholder", !text);
     },
-    onReady({ model, voice, output }) {
+    onReady({ model, voice, output, reasoningEffort = "default" }) {
       realtimeFallbackActive = false;
+      realtimeReconnectAttempts = 0;
+      window.clearTimeout(realtimeReconnectTimer);
+      realtimeReconnectTimer = 0;
       recordButton.hidden = true;
       cancelButton.hidden = false;
       if ([...voiceProviderSelect.options].some((option) => option.value === voice)) {
         voiceProviderSelect.value = voice;
       }
       voiceProviderSelect.dataset.activeVoice = voice;
+      reasoningEffortSelect.value = reasoningEffort;
+      reasoningEffortSelect.dataset.activeEffort = reasoningEffort;
       healthDot.className = "ready";
       healthLabel.textContent = `${model} · WebRTC · ${output === "native" ? voice : voiceProviderLabel(output)}`;
     },
@@ -1953,20 +2081,28 @@ realtimeController = window.AtlasRealtime?.create({
       window.dispatchEvent(new CustomEvent("atlas-context-stats", { detail: stats || {} }));
     },
     onWaiting() {
+      realtimeWakeCaptureUntil = 0;
+      realtimeWakeCapturedText = "";
       timer.textContent = "00:00.0";
       cancelButton.hidden = false;
       recordButton.hidden = true;
     },
-    onFallback() {
-      realtimeFallbackActive = true;
-      if (hasControl() && activeView === "atlas") void initializeMicrophone(true);
+    onFallback(error) {
+      scheduleRealtimeReconnect(error);
     },
     onStopped() {
       recordButton.hidden = true;
     },
     onInputStream: attachRealtimeWakeInput,
+    getVoiceActivity: () => ({
+      active: voiceActive,
+      rms: voiceLastRms,
+      peak: voiceLastPeak,
+      threshold: voiceLastThreshold,
+    }),
     playExternalText: playRealtimeExternalText,
     stopExternalSpeech: stopRealtimeExternalSpeech,
+    setA1MicrophoneSuppressed: setA1PlaybackMicrophoneSuppressed,
   },
 });
 
@@ -1977,7 +2113,7 @@ window.addEventListener("atlas-context-restart", () => {
 });
 window.addEventListener("atlas-context-revision", () => {
   if (REALTIME_PRIMARY && !realtimeFallbackActive && hasControl() && activeView === "atlas") {
-    void realtimeController?.restartForContext("Contexto actualizado desde otro dispositivo");
+    void realtimeController?.restartForContext("Contexto actualizado desde otro dispositivo", { whenIdle: true });
   }
 });
 window.addEventListener("atlas-context-compact", () => {
@@ -2021,6 +2157,7 @@ voiceProviderSelect.addEventListener("change", async () => {
   const previousVoice = voiceProviderSelect.dataset.activeVoice || "marin";
   const requestedVoice = voiceProviderSelect.value;
   voiceProviderSelect.disabled = true;
+  reasoningEffortSelect.disabled = true;
   addLog(`Cambiando la voz Realtime a ${requestedVoice}`);
   try {
     const response = await accessFetch("/api/settings", {
@@ -2039,12 +2176,55 @@ voiceProviderSelect.addEventListener("change", async () => {
     addLog(`No se pudo cambiar la voz Realtime: ${error.message}`, null, "error");
   } finally {
     voiceProviderSelect.disabled = false;
+    reasoningEffortSelect.disabled = false;
+  }
+});
+reasoningEffortSelect.addEventListener("change", async () => {
+  const previous = reasoningEffortSelect.dataset.activeEffort || "default";
+  if (!REALTIME_PRIMARY || !hasControl()) {
+    reasoningEffortSelect.value = previous;
+    return;
+  }
+  // Do not cut a spoken answer, discard an in-flight command or race its
+  // persistence just to change a test setting. Pick it between interactions.
+  if (realtimeController && !realtimeController.isIdle()) {
+    reasoningEffortSelect.value = previous;
+    addLog("Cambia el razonamiento cuando ATLAS termine y vuelva a estar en espera.");
+    return;
+  }
+  const requested = reasoningEffortSelect.value;
+  reasoningEffortSelect.disabled = true;
+  voiceProviderSelect.disabled = true;
+  let saved = false;
+  try {
+    const response = await accessFetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ realtimeReasoningEffort: requested }),
+    });
+    const settings = await response.json();
+    if (!response.ok) throw new Error(settings.error || "No se pudo guardar el razonamiento");
+    reasoningEffortSelect.value = settings.realtimeReasoningEffort;
+    reasoningEffortSelect.dataset.activeEffort = settings.realtimeReasoningEffort;
+    saved = true;
+    addLog(`Razonamiento: ${settings.realtimeReasoningEffort}. Reiniciando la sesión sin vaciar el contexto.`);
+    window.clearTimeout(realtimeReconnectTimer);
+    realtimeReconnectTimer = 0;
+    realtimeController?.stop(false);
+    await activatePrimaryMicrophone();
+  } catch (error) {
+    if (!saved) reasoningEffortSelect.value = previous;
+    addLog(`No se pudo cambiar el razonamiento: ${error.message}`, null, "error");
+  } finally {
+    reasoningEffortSelect.disabled = false;
+    voiceProviderSelect.disabled = false;
   }
 });
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") scheduleRecognitionRestart(100);
 });
 window.addEventListener("beforeunload", () => {
+  window.clearTimeout(realtimeReconnectTimer);
   realtimeController?.stop(false);
   microphoneGeneration += 1;
   microphoneInitializing = false;
@@ -2069,6 +2249,8 @@ window.atlasAccess.bind({
     && !currentAudio && !streamedSpeechActive && !dictationRunning
     && !dictationShouldRestart && !ttsLabBusy && !settingsSubmit.disabled),
   suspend() {
+    window.clearTimeout(realtimeReconnectTimer);
+    realtimeReconnectTimer = 0;
     realtimeController?.stop(false);
     microphoneGeneration += 1;
     microphoneInitializing = false;

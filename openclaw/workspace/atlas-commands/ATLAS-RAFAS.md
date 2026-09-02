@@ -1,6 +1,29 @@
 # RAFAS
 
 Recovery Access For ATLAS Systems is your local escape hatch, not another agent.
+
+## Diagnose and repair
+
+Run `atlas-rafas` for network routes, active Wi-Fi, DNS, HTTPS, clock sync,
+disk/inodes (including `/tmp`), RAM, temperature/power flags, USB and services.
+`atlas-rafas --json` is the machine-readable version. Reports are read-only;
+an unavailable measurement is not proof that hardware is broken.
+
+`atlas-rafas doctor --check` performs diagnostics without changes.
+`sudo atlas-rafas doctor` starts failed/inactive **enabled** core services,
+then checks again. With no default route, it scans Wi-Fi, offers numbered
+networks and lets NetworkManager prompt privately for credentials. Run this
+from a real terminal; noninteractive sessions cannot choose a network.
+
+Doctor never restarts a healthy NetworkManager, enables disabled services,
+turns on an intentionally disabled screen, deletes files, resets OAuth or
+reboots the Pi. Disk pressure, failed hardware, power and account problems need
+an explicit next step. It cannot guarantee repair of arbitrary failures.
+Use `atlas-app` for the Android service, pairing and relay state; see
+`ATLAS-APP.md`. `atlas-status` remains the general overview.
+
+## Recovery console
+
 Use `atlas-screen --rafas` to open a plain root Bash console on Linux `tty8`
 in `/home/atlas`. The physical screen wakes even if it was off. Chrome, the
 desktop and the graphical terminal are stopped; your Gateway, backend and

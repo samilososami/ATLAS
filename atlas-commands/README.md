@@ -45,6 +45,35 @@ Muestra ATLAS A1 STATUS y un resumen de temperatura, CPU, memoria, almacenamient
 atlas-status
 ```
 
+## `atlas-rafas`
+
+Diagnóstico de red, Wi-Fi, DNS, HTTPS, reloj, almacenamiento, RAM, alimentación,
+temperatura, USB y servicios. `doctor` intenta recuperar servicios habilitados
+y, sin ruta de red, permite elegir un Wi-Fi y conectarse con un prompt privado.
+No borra archivos ni reinicia una conexión sana ni una pantalla apagada.
+
+```bash
+atlas-rafas
+atlas-rafas --json
+atlas-rafas doctor --check
+sudo atlas-rafas doctor
+```
+
+## `atlas-app`
+
+Estado del servicio Android, clientes, conversación, terminales y relay propio.
+El código de emparejamiento es privado y concede administración del dispositivo.
+
+```bash
+atlas-app
+atlas-app pair
+atlas-app logs
+atlas-app restart
+atlas-app revoke
+```
+
+Instalación y conexión por Internet: [ATLAS Companion](../.atlas/companion/README.md).
+
 ## `atlas-say`
 
 Convierte texto en audio mediante ElevenLabs y lo reproduce por la salida predeterminada.

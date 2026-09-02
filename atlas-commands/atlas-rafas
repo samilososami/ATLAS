@@ -1,0 +1,214 @@
+#!/usr/bin/env python3
+"""RAFAS health checks and conservative, interactive recovery. Stdlib only."""
+import argparse
+from concurrent.futures import ThreadPoolExecutor
+import json
+import os
+from pathlib import Path
+import pwd
+import re
+import shutil
+import subprocess
+import sys
+import time
+
+ATLAS_HOME = Path(os.environ.get('ATLAS_HOME', '/home/atlas'))
+SERVICES = ('NetworkManager.service', 'atlas-webscreen.service',
+            'atlas-screen-kiosk.service', 'atlas-rafas-hotkey.service',
+            'atlas-rafas-logger.service', 'atlas-companion.service')
+
+def run(args, timeout=5):
+    try:
+        p = subprocess.run(args, text=True, capture_output=True, timeout=timeout,
+                           env={**os.environ, 'LC_ALL':'C'})
+        return p.returncode, p.stdout.strip(), p.stderr.strip()
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return 127, '', str(e)
+
+def user_systemctl(*args):
+    try: account = pwd.getpwuid(ATLAS_HOME.stat().st_uid)
+    except (OSError, KeyError): account = pwd.getpwuid(os.getuid())
+    env = ['env', f'XDG_RUNTIME_DIR=/run/user/{account.pw_uid}',
+           f'DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{account.pw_uid}/bus']
+    if os.geteuid() == 0 and account.pw_uid != 0:
+        env = ['runuser', '-u', account.pw_name, '--'] + env
+    return env + ['systemctl', '--user', *args]
+
+def service(name, user=False):
+    command = user_systemctl if user else lambda *a: ['systemctl', *a]
+    code, out, _ = run(command('show', name, '--property=LoadState,ActiveState,UnitFileState,SubState'))
+    props = dict(line.split('=', 1) for line in out.splitlines() if '=' in line)
+    return dict(name=name, scope='user' if user else 'system',
+                load=props.get('LoadState', 'unknown'), active=props.get('ActiveState','unknown'),
+                enabled=props.get('UnitFileState','unknown'), sub=props.get('SubState','unknown'))
+
+def split_nm(line):
+    """nmcli terse output escapes colons and backslashes (SSID/BSSID included)."""
+    fields, buf, escape = [], '', False
+    for ch in line:
+        if escape: buf += ch; escape = False
+        elif ch == '\\': escape = True
+        elif ch == ':': fields.append(buf); buf = ''
+        else: buf += ch
+    fields.append(buf)
+    return fields
+
+def network():
+    _, out, _ = run(['nmcli','-t','-f','DEVICE,TYPE,STATE,CONNECTION','device','status'])
+    devices = [dict(zip(('interface','type','state','connection'), split_nm(line)))
+               for line in out.splitlines() if line]
+    _, out, _ = run(['nmcli','-t','-f','IN-USE,SSID,SIGNAL','device','wifi','list','--rescan','no'])
+    wifi = next((dict(ssid=f[1], signal=f[2]) for f in map(split_nm,out.splitlines())
+                 if len(f)==3 and f[0]=='*'), None)
+    _, routes, _ = run(['ip','-j','route','show','default'])
+    try: routes = json.loads(routes)
+    except ValueError: routes = []
+    _, addresses, _ = run(['ip','-j','address'])
+    try:
+        addresses = {d['ifname']:[a['local'] for a in d.get('addr_info',[]) if a.get('scope')=='global']
+                     for d in json.loads(addresses)}
+    except (ValueError, KeyError): addresses = {}
+    dns = run(['getent','ahostsv4','api.openai.com'], timeout=4)[0] == 0
+    # HTTPS distinguishes working DNS from a usable route. No credentials sent.
+    https = run(['curl','-I','-sS','--max-time','4','https://www.cloudflare.com/cdn-cgi/trace'], timeout=5)[0] == 0
+    return dict(devices=devices, wifi=wifi, addresses=addresses, defaultRoutes=routes, dns=dns, https=https)
+
+def health():
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        net_future = pool.submit(network)
+        services = list(pool.map(service, SERVICES))
+        services.append(service('openclaw-gateway.service', True))
+        net = net_future.result()
+    disks = []
+    for path in ('/', '/tmp', str(ATLAS_HOME)):
+        try:
+            d, st = shutil.disk_usage(path), os.statvfs(path)
+            disks.append(dict(path=path, freeBytes=d.free, totalBytes=d.total,
+                              usedPercent=round((1-d.free/d.total)*100,1),
+                              freeInodes=st.f_favail))
+        except OSError: pass
+    mem = {}
+    try:
+        mem = {line.split(':')[0]:int(line.split()[1])*1024
+               for line in Path('/proc/meminfo').read_text().splitlines()}
+    except (OSError, ValueError): pass
+    temperature = None
+    try: temperature = int(Path('/sys/class/thermal/thermal_zone0/temp').read_text())/1000
+    except (OSError, ValueError): pass
+    _, throttled, _ = run(['vcgencmd','get_throttled'])
+    _, ntp, _ = run(['timedatectl','show','--property=NTPSynchronized','--value'])
+    _, failed, _ = run(['systemctl','--failed','--no-legend','--plain'])
+    _, audio, _ = run(['lsusb'])
+    _, web, _ = run(['curl','-sS','--max-time','3','http://127.0.0.1:5000/api/health'])
+    try:
+        raw = json.loads(web)
+        web = {k:raw.get(k) for k in ('ready','realtime','webSearch')}
+    except ValueError: web = {'ready':False}
+    issues = []
+    if not net['defaultRoutes']: issues.append('Sin ruta de salida: revisar Ethernet o Wi-Fi.')
+    if not net['dns']: issues.append('DNS no resuelve api.openai.com.')
+    if not net['https']: issues.append('HTTPS no disponible: revisar conexión, portal cautivo, DNS o reloj.')
+    if ntp != 'yes': issues.append('Reloj sin sincronización NTP confirmada.')
+    for s in services:
+        if s['load']=='loaded' and (s['active']=='failed' or
+                (s['enabled']=='enabled' and s['active']=='inactive' and s['name']!='atlas-screen-kiosk.service')):
+            issues.append(f"Servicio {s['name']}: {s['active']}.")
+    for d in disks:
+        if d['usedPercent']>=90 or d['freeInodes']<100:
+            issues.append(f"Almacenamiento crítico en {d['path']} (espacio o inodos).")
+    if temperature is not None and temperature>=80: issues.append('Temperatura alta: revisar ventilación y carga.')
+    try:
+        flags = int(throttled.split('=')[1],16)
+        if flags & 0xf: issues.append('Firmware indica alimentación insuficiente o limitación térmica ACTUAL.')
+        elif flags: issues.append('Firmware conserva avisos históricos de alimentación/temperatura desde el arranque.')
+    except (ValueError, IndexError): pass
+    return dict(version=1, timestamp=int(time.time()), hostname=os.uname().nodename,
+                network=net, disks=disks, memory={k:mem.get(k) for k in ('MemTotal','MemAvailable')},
+                temperatureC=temperature, throttled=throttled or None, ntpSynchronized=ntp=='yes',
+                services=services, failedUnits=failed, usb=audio, webscreen=web,
+                issues=issues, ok=not issues)
+
+def display(h):
+    print(f"\nATLAS · RAFAS — {h['hostname']}\n" + '─'*52)
+    n = h['network']
+    print('Wi-Fi:', n['wifi']['ssid'] if n['wifi'] else 'no conectado')
+    for d in n['devices']:
+        print(f"  {d['interface']}: {d['state']} · {d['connection']}")
+    for interface, addresses in n['addresses'].items():
+        if addresses: print(f"  {interface}: {', '.join(addresses)}")
+    print(f"DNS: {'OK' if n['dns'] else 'FALLO'} · HTTPS: {'OK' if n['https'] else 'FALLO'} · NTP: {'OK' if h['ntpSynchronized'] else 'sin confirmar'}")
+    print(f"Temperatura: {h['temperatureC']} °C · alimentación: {h['throttled'] or 'no disponible'}")
+    for d in h['disks']: print(f"Disco {d['path']}: {d['usedPercent']}% usado · {d['freeBytes']//(1024**2)} MiB libres")
+    print('RAM disponible:', (h['memory']['MemAvailable'] or 0)//(1024**2), 'MiB')
+    for s in h['services']: print(f"  {s['name']}: {s['active']} / {s['enabled']}")
+    print('USB:\n' + (h['usb'] or 'no disponible'))
+    print('\n' + ('\n'.join('! '+i for i in h['issues']) or 'Sin incidencias en las comprobaciones realizadas.'))
+    print('Una comprobación HTTP no prueba una conversación ni el audio físico.\n')
+
+def wifi_recover():
+    if not sys.stdin.isatty():
+        print('Wi-Fi necesita una terminal interactiva: atlas-rafas doctor'); return False
+    subprocess.run(['rfkill','unblock','wifi'], check=False)
+    subprocess.run(['nmcli','radio','wifi','on'], check=False)
+    _, out, _ = run(['nmcli','-t','-f','DEVICE,TYPE','device'])
+    interfaces = [f[0] for f in map(split_nm,out.splitlines()) if len(f)>1 and f[1]=='wifi']
+    if not interfaces:
+        print('No aparece un adaptador Wi-Fi. Revisa USB, rfkill físico o drivers.'); return False
+    interface = interfaces[0]
+    if len(interfaces)>1:
+        for i, v in enumerate(interfaces,1): print(i,v)
+        try: interface=interfaces[int(input('Adaptador: '))-1]
+        except (ValueError,IndexError): return False
+    code, out, err = run(['nmcli','-t','-f','BSSID,SSID,SIGNAL,SECURITY','device','wifi','list','ifname',interface,'--rescan','yes'],20)
+    if code: print(err); return False
+    rows = [f for f in map(split_nm,out.splitlines()) if len(f)==4]
+    for i, f in enumerate(rows,1): print(f"{i:2}. {f[1] or '(oculta)'} · {f[2]}% · {f[3] or 'abierta'}")
+    try:
+        choice = int(input('Red (0 para cancelar): '))
+        if choice<1 or choice>len(rows): return False
+        selected = rows[choice-1]
+    except (ValueError,EOFError): return False
+    # nmcli owns its secret prompt; no password in argv, shell history or our logs.
+    args = ['nmcli','--ask','--wait','30','device','wifi','connect',selected[0],'ifname',interface]
+    if not selected[1]:
+        print('Red oculta: conecta usando nmcli --ask device wifi connect SSID hidden yes.'); return False
+    return subprocess.run(args, check=False).returncode==0
+
+def doctor(check_only=False):
+    h=health(); display(h)
+    if check_only: return 0 if h['ok'] else 1
+    if os.geteuid()!=0:
+        if not sys.stdin.isatty(): print('Ejecuta sudo atlas-rafas doctor desde una terminal.'); return 2
+        return subprocess.call(['sudo','--',os.path.realpath(__file__),'doctor'])
+    repairs=[]
+    # Only crashed/enabled core services. Screen-off is an intentional state.
+    for s in h['services']:
+        if s['name']=='atlas-screen-kiosk.service' or s['load']!='loaded': continue
+        if s['active'] in ('failed','inactive') and s['enabled']=='enabled':
+            command = user_systemctl if s['scope']=='user' else lambda *a:['systemctl',*a]
+            result=run(command('start',s['name']),20)
+            repairs.append(f"Iniciar {s['name']}: {'OK' if result[0]==0 else result[2]}")
+    if not h['network']['defaultRoutes']:
+        print('Sin ruta de salida. Buscando redes Wi-Fi…')
+        repairs.append('Conexión Wi-Fi: '+('OK' if wifi_recover() else 'pendiente'))
+    if not h['ntpSynchronized'] and h['network']['https'] and sys.stdin.isatty():
+        if input('¿Activar sincronización automática del reloj? [s/N] ').strip().lower()=='s':
+            repairs.append('NTP: '+str(run(['timedatectl','set-ntp','true'])[0]))
+    print('\n'.join(repairs) or 'No hay reparaciones automáticas seguras que aplicar.')
+    print('No borro archivos, no reseteo OAuth, no reinicio la red activa y no reinicio/apago la Pi.')
+    final=health(); display(final)
+    return 0 if final['ok'] else 1
+
+def main():
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('action',nargs='?',choices=('status','doctor'),default='status')
+    parser.add_argument('--json',action='store_true',help='Estado estructurado sin secretos')
+    parser.add_argument('--check',action='store_true',help='Doctor de solo lectura')
+    args=parser.parse_args()
+    if args.action=='doctor' and not args.json: return doctor(args.check)
+    h=health()
+    if args.json: print(json.dumps(h,ensure_ascii=False))
+    else: display(h)
+    return 0 if h['ok'] else 1
+
+if __name__=='__main__': sys.exit(main())

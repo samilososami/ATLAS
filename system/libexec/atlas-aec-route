@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ATLAS_SINK="atlas_aec_sink"
+ATLAS_SOURCE="atlas_aec_source"
+RUNTIME_DIR="/run/user/1000"
+
+if [ "${EUID}" -eq 0 ]; then
+  exec runuser -u sami -- env HOME=/home/atlas XDG_RUNTIME_DIR="$RUNTIME_DIR" \
+    DBUS_SESSION_BUS_ADDRESS="unix:path=$RUNTIME_DIR/bus" \
+    PULSE_SERVER="unix:$RUNTIME_DIR/pulse/native" \
+    /usr/local/libexec/atlas-aec-route "$@"
+fi
+
+for _ in $(seq 1 80); do
+  sink_id="$(pactl list short sinks 2>/dev/null | awk -v name="$ATLAS_SINK" '$2 == name {print $1; exit}')"
+  source_id="$(pactl list short sources 2>/dev/null | awk -v name="$ATLAS_SOURCE" '$2 == name {print $1; exit}')"
+  if [ -n "$sink_id" ] && [ -n "$source_id" ]; then
+    pactl set-default-sink "$ATLAS_SINK"
+    pactl set-default-source "$ATLAS_SOURCE"
+    wpctl set-default "$sink_id" 2>/dev/null || true
+    wpctl set-default "$source_id" 2>/dev/null || true
+    printf 'ATLAS AEC ready: sink=%s source=%s rate=48000\n' "$ATLAS_SINK" "$ATLAS_SOURCE"
+    exit 0
+  fi
+  sleep 0.1
+done
+
+echo "ATLAS AEC nodes did not become available." >&2
+exit 1

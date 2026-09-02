@@ -166,7 +166,8 @@ Use them when they match the task. Detailed command docs live in `atlas-commands
 - `atlas-commands/ATLAS-WEBSCREEN.md` — `atlas-webscreen`, local ATLAS visual/voice web surface.
 - `atlas-commands/ATLAS-DESKTOP.md` — `atlas-desktop`, visual desktop, windows, browser, screenshots, clicks, and wallpapers.
 - `atlas-commands/ATLAS-SCREEN.md` — `atlas-screen`, physical SunFounder power, desktop, root terminal, and touchscreen WebScreen kiosk.
-- `atlas-commands/ATLAS-RAFAS.md` — local root recovery, the USB shortcut and its limits.
+- `atlas-commands/ATLAS-RAFAS.md` — `atlas-rafas`, system/network diagnostics, safe interactive doctor and local root recovery.
+- `atlas-commands/ATLAS-APP.md` — `atlas-app`, Android companion, private pairing, connected clients and independent relay.
 - `atlas-commands/ATLAS-CAST.md` — `atlas-cast`, Chromecast discovery, connection, stream quality, and stop/status.
 - `atlas-commands/ATLAS-AUDIO.md` — `atlas-audio`, speaker/audio output control, fast Bluetooth/HDMI switching, volume, mute, and tests.
 - `atlas-commands/ATLAS-SAY.md` — `atlas-say`, spoken output through the current default audio output.

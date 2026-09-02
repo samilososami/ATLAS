@@ -26,7 +26,7 @@ class AccessTests(unittest.TestCase):
         self.assertEqual(result.exception.status, status)
 
     def test_owner_only_and_no_tokens_in_status(self):
-        self.control.authorize(self.a)
+        self.assertEqual(self.control.authorize(self.a), {'kind': 'browser'})
         self.error(423, self.control.authorize, self.b)
         self.error(401, self.control.authorize, '')
         snapshot = json.dumps(self.control.heartbeat(self.b))
@@ -50,7 +50,7 @@ class AccessTests(unittest.TestCase):
         self.assertTrue(result['activated'])
         self.assertFalse(result['owner'])
         self.assertTrue(result['atlasA1Available'])
-        self.control.authorize(kiosk)
+        self.assertEqual(self.control.authorize(kiosk), {'kind': 'atlas-a1'})
         self.error(423, self.control.authorize, self.b)
 
     def test_remote_activation_requires_a_live_atlas_a1(self):
@@ -127,7 +127,7 @@ class HTTPAccessTests(unittest.TestCase):
     def test_all_control_routes_reject_other_client_before_work(self):
         for path in ('text', 'voice', 'starter', 'cancel', 'settings', 'tts', 'client-event', 'wake/sample',
                      'tts/stream-ticket', 'realtime/session', 'realtime/consult',
-                     'realtime/shell', 'realtime/event'):
+                     'realtime/shell', 'realtime/web-search', 'realtime/event'):
             for token, status in ((self.b, 423), ('', 401)):
                 with self.subTest(path=path, token=bool(token)):
                     self.assertEqual(self.request('/api/' + path, token)[0], status)
@@ -162,7 +162,6 @@ class HTTPAccessTests(unittest.TestCase):
         self.assertEqual(self.request('/api/access/connect', extra={'X-Atlas-Access': ''})[0], 403)
         self.assertEqual(self.request('/api/resident/wait?phase=next', method='GET',
                                      extra={'Sec-Fetch-Site': 'same-origin'})[0], 403)
-
 
 class WakeProfileTests(unittest.TestCase):
     def test_profile_names_are_bounded_and_safe(self):
