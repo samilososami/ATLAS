@@ -1,4 +1,4 @@
-# ATLAS Android · 0.1.0 preview
+# ATLAS Android · 0.1.1 preview
 
 Android 11+ companion for an owner-controlled ATLAS A1. Install the APK from
 [GitHub Releases](https://github.com/samilososami/ATLAS/releases). This is a
@@ -50,6 +50,11 @@ Or run `./build.sh` using the shared SDK/Gradle when installed. Output:
 `app/build/outputs/apk/debug/app-debug.apk`. Private signing keys and local SDK
 settings must remain outside Git. This preview uses development signing;
 production distribution needs a stable release key managed by the owner.
+
+The shared emulator can be launched with `atlas-emulator` on the development
+machine, as kali or root. Do not run both against the same virtual device at once.
+Run `node --test android/test_terminal_input.cjs` from the repository root for
+ordered terminal-input regression tests.
 
 ## Validation boundaries
 

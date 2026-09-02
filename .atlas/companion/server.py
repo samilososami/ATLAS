@@ -118,7 +118,10 @@ class Companion:
         if method=='session.open':
             async with self.lock:
                 await self.acquire(client)
-                return await self.request('/api/realtime/session',p)
+                try: return await self.request('/api/realtime/session',p)
+                except Exception:
+                    await self.release()
+                    raise
         if method=='session.close':
             if self.owner==client: await self.release()
             return {'ok':True}

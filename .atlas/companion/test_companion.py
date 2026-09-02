@@ -47,6 +47,11 @@ class CompanionTests(unittest.IsolatedAsyncioTestCase):
     async def test_owner_conflict(self):
         self.c.owner='first-client'
         with self.assertRaises(ValueError):await self.c.acquire('another-client')
+    async def test_failed_session_releases_voice_immediately(self):
+        with patch.object(self.c,'acquire',new=AsyncMock()),patch.object(self.c,'request',new=AsyncMock(side_effect=ValueError('Provider unavailable'))),patch.object(self.c,'release',new=AsyncMock()) as release:
+            with self.assertRaises(ValueError):
+                await self.c.rpc({'client':'test-client','method':'session.open','params':{}},'test')
+            release.assert_awaited_once()
     async def test_context_uses_existing_webscreen_endpoint(self):
         self.c.owner='test-client'
         with patch.object(self.c,'request',new=AsyncMock(return_value={'ok':True})) as call:

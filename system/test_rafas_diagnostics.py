@@ -13,6 +13,12 @@ class RafasTests(unittest.TestCase):
         self.assertEqual(r.split_nm(r'AA\:BB\:CC:casa\:red\\wifi:80:WPA2'),['AA:BB:CC','casa:red\\wifi','80','WPA2'])
     def test_missing_command_is_diagnostic(self):
         self.assertEqual(r.run(['/does-not-exist'])[0],127)
+    def test_wifi_adapter_zero_cancels_without_connection(self):
+        with patch.object(r.sys.stdin,'isatty',return_value=True),patch.object(r,'run',side_effect=[(0,'',''),(0,'',''),(0,'wlan0:wifi\nwlan1:wifi','')]),patch('builtins.input',return_value='0'),patch.object(r.subprocess,'run') as connect:
+            self.assertFalse(r.wifi_recover());connect.assert_not_called()
+    def test_wifi_missing_nmcli_is_friendly_failure(self):
+        with patch.object(r.sys.stdin,'isatty',return_value=True),patch.object(r,'run',side_effect=[(127,'','missing rfkill'),(127,'','missing nmcli')]):
+            self.assertFalse(r.wifi_recover())
     def test_check_never_mutates(self):
         with patch.object(r,'health',return_value={'ok':True}), patch.object(r,'display'), patch.object(r,'run') as call:
             self.assertEqual(r.doctor(True),0); call.assert_not_called()

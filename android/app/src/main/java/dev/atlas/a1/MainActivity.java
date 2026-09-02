@@ -50,8 +50,16 @@ public final class MainActivity extends Activity {
         locked=prefs.getBoolean("lock",false);
         try { String saved=prefs.getString("pair",null); if(saved!=null)pairing=new JSONObject(vaultOpen(saved)); } catch(Exception e){pairing=null;}
         getWindow().setStatusBarColor(0xff080f20); getWindow().setNavigationBarColor(0xff080f20);
-        web=new WebView(this); web.setBackgroundColor(0xff080f20); setContentView(web);
-        web.setOnApplyWindowInsetsListener((v,insets)->{android.graphics.Insets bars=insets.getInsets(WindowInsets.Type.systemBars());v.setPadding(bars.left,bars.top,bars.right,bars.bottom);return insets;});
+        web=new WebView(this); web.setBackgroundColor(0xff080f20);
+        FrameLayout frame=new FrameLayout(this); frame.setBackgroundColor(0xff080f20);
+        frame.addView(web,new FrameLayout.LayoutParams(-1,-1)); setContentView(frame);
+        // WebView ignores padding for its document viewport. Inset the parent so
+        // fixed HTML navigation also clears Android's bars and the keyboard.
+        frame.setOnApplyWindowInsetsListener((v,insets)->{
+            android.graphics.Insets bars=insets.getInsets(WindowInsets.Type.systemBars()|WindowInsets.Type.displayCutout()|WindowInsets.Type.ime());
+            v.setPadding(bars.left,bars.top,bars.right,bars.bottom);return WindowInsets.CONSUMED;
+        });
+        frame.requestApplyInsets();
         WebSettings s=web.getSettings(); s.setJavaScriptEnabled(true); s.setDomStorageEnabled(true);
         s.setAllowFileAccess(false); s.setAllowContentAccess(false); s.setMediaPlaybackRequiresUserGesture(false);
         s.setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);

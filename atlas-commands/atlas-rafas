@@ -148,8 +148,10 @@ def display(h):
 def wifi_recover():
     if not sys.stdin.isatty():
         print('Wi-Fi necesita una terminal interactiva: atlas-rafas doctor'); return False
-    subprocess.run(['rfkill','unblock','wifi'], check=False)
-    subprocess.run(['nmcli','radio','wifi','on'], check=False)
+    run(['rfkill','unblock','wifi'])
+    code, _, err = run(['nmcli','radio','wifi','on'])
+    if code:
+        print('No se pudo activar Wi-Fi:',err); return False
     _, out, _ = run(['nmcli','-t','-f','DEVICE,TYPE','device'])
     interfaces = [f[0] for f in map(split_nm,out.splitlines()) if len(f)>1 and f[1]=='wifi']
     if not interfaces:
@@ -157,12 +159,20 @@ def wifi_recover():
     interface = interfaces[0]
     if len(interfaces)>1:
         for i, v in enumerate(interfaces,1): print(i,v)
-        try: interface=interfaces[int(input('Adaptador: '))-1]
-        except (ValueError,IndexError): return False
+        try:
+            choice=int(input('Adaptador (0 para cancelar): '))
+            if not 1<=choice<=len(interfaces): return False
+            interface=interfaces[choice-1]
+        except (ValueError,EOFError): return False
     code, out, err = run(['nmcli','-t','-f','BSSID,SSID,SIGNAL,SECURITY','device','wifi','list','ifname',interface,'--rescan','yes'],20)
     if code: print(err); return False
     rows = [f for f in map(split_nm,out.splitlines()) if len(f)==4]
-    for i, f in enumerate(rows,1): print(f"{i:2}. {f[1] or '(oculta)'} · {f[2]}% · {f[3] or 'abierta'}")
+    if not rows:
+        print('No se han encontrado redes. Acerca A1 al router y vuelve a intentarlo.'); return False
+    for i, f in enumerate(rows,1):
+        # Nearby SSIDs are untrusted: do not print terminal escape sequences.
+        label=''.join(c if c.isprintable() else '?' for c in (f[1] or '(oculta)'))
+        print(f"{i:2}. {label} · {f[2]}% · {f[3] or 'abierta'}")
     try:
         choice = int(input('Red (0 para cancelar): '))
         if choice<1 or choice>len(rows): return False
