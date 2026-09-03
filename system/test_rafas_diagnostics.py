@@ -22,6 +22,11 @@ class RafasTests(unittest.TestCase):
     def test_check_never_mutates(self):
         with patch.object(r,'health',return_value={'ok':True}), patch.object(r,'display'), patch.object(r,'run') as call:
             self.assertEqual(r.doctor(True),0); call.assert_not_called()
+    def test_reports_failed_boot_units_without_duplicate_core_alerts(self):
+        rows='atlas-screen-boot-on.service loaded failed failed Boot screen\natlas-webscreen.service loaded failed failed WebScreen'
+        alerts=r.other_failed_units(rows,[{'name':'atlas-webscreen.service'}])
+        self.assertEqual(len(alerts),1)
+        self.assertIn('atlas-screen-boot-on.service',alerts[0])
     def test_doctor_does_not_start_screen_or_disabled_services(self):
         h={'ok':True,'network':{'defaultRoutes':[{}],'https':True},'ntpSynchronized':True,'services':[
             {'name':'atlas-screen-kiosk.service','load':'loaded','active':'failed','enabled':'enabled','scope':'system'},

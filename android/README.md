@@ -1,4 +1,4 @@
-# ATLAS Android · 0.1.1 preview
+# ATLAS Android · 0.1.2 preview
 
 Android 11+ companion for an owner-controlled ATLAS A1. Install the APK from
 [GitHub Releases](https://github.com/samilososami/ATLAS/releases). This is a
@@ -23,17 +23,25 @@ See the companion instructions. A pairing code is an administration secret.
 - **Atlas:** hold-to-talk PCM → Realtime, Android wake recognition while visible,
   or streaming chat with optional native OpenAI audio. The backend supplies
   ATLAS context and Tavily. Shell tool calls ask for native confirmation.
+  Conversation history and the text composer appear only in **Chat**. The
+  chat's text-only preference never disables audio in Pulsar or wake mode.
 - **Acciones:** named command tiles, 23 icons and seven accent colors. Long-press
   a tile to edit/delete. Every command shows its exact text before execution.
 - **Terminal:** real PTY, resize, Ctrl-C, arrows, keyboard and xterm scrollback.
 - **Estado:** actual A1 diagnostics, services and 5-hour/weekly quota when Gateway
   reports them. Unavailable data is never presented as zero.
 - **Ajustes:** encrypted pairing, LAN/relay/auto transport, app lock, action/pairing
-  biometrics, native voices and reasoning levels.
+  biometrics, native voices and reasoning levels. **Claro** is the default;
+  **Oscuro** restores the original navy palette. The choice persists without
+  recreating the activity or dropping an active session; blue accents stay fixed.
 
 The visual shell is bundled HTML/CSS/JS inside Android WebView, with native Java
 for networking, pinned TLS, Keystore, biometrics, permissions and recognition.
 No remote website is loaded as the app UI. Icons use the supplied ATLAS artwork.
+The filled ATLAS silhouette and rounded gear are vector UI glyphs. The decorative
+white ATLAS wordmark sits on navy for contrast in both themes. The full-color
+header and central logos are unchanged; only the launcher inset grew from 22%
+to 25%. The interactive terminal intentionally retains its dark console surface.
 
 ## Build
 
@@ -53,8 +61,8 @@ production distribution needs a stable release key managed by the owner.
 
 The shared emulator can be launched with `atlas-emulator` on the development
 machine, as kali or root. Do not run both against the same virtual device at once.
-Run `node --test android/test_terminal_input.cjs` from the repository root for
-ordered terminal-input regression tests.
+Run `node --test android/test_*.cjs` from the repository root for appearance,
+voice/chat output-mode and ordered terminal-input regression tests.
 
 ## Validation boundaries
 

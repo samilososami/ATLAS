@@ -73,6 +73,14 @@ def network():
     https = run(['curl','-I','-sS','--max-time','4','https://www.cloudflare.com/cdn-cgi/trace'], timeout=5)[0] == 0
     return dict(devices=devices, wifi=wifi, addresses=addresses, defaultRoutes=routes, dns=dns, https=https)
 
+def other_failed_units(output, services):
+    known = {s['name'] for s in services}
+    # Include one-shot boot units and failures outside the core allowlist.
+    # Reporting a unit never authorizes doctor to restart it.
+    return [f"Unidad fallida: {line.split()[0]} (revisar journalctl)."
+            for line in output.splitlines() if line.split() and
+            line.split()[0] not in known and '.' in line.split()[0]]
+
 def health():
     with ThreadPoolExecutor(max_workers=8) as pool:
         net_future = pool.submit(network)
@@ -113,6 +121,7 @@ def health():
         if s['load']=='loaded' and (s['active']=='failed' or
                 (s['enabled']=='enabled' and s['active']=='inactive' and s['name']!='atlas-screen-kiosk.service')):
             issues.append(f"Servicio {s['name']}: {s['active']}.")
+    issues.extend(other_failed_units(failed, services))
     for d in disks:
         if d['usedPercent']>=90 or d['freeInodes']<100:
             issues.append(f"Almacenamiento crítico en {d['path']} (espacio o inodos).")

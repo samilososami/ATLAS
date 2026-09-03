@@ -78,7 +78,7 @@ OpenClaw sigue disponible en otros canales, pero el WebScreen actual recibe su c
 
 ### App Android · preview 0.1
 
-La [APK ATLAS](android/README.md) incorpora voz por pulsación, wake word en primer plano y chat progresivo, botones de comandos editables, terminal PTY, estado y protección biométrica. Reutiliza Realtime sin la cadena del agente anterior. Es una primera preview, pendiente de validación completa en un teléfono y en A1.
+La [APK ATLAS](android/README.md) incorpora voz por pulsación, wake word en primer plano y chat progresivo, botones de comandos editables, terminal PTY, estado y protección biométrica. Incluye tema claro por defecto y oscuro seleccionable; la conversación escrita aparece solo en Chat. Reutiliza Realtime sin la cadena del agente anterior. Es una preview: Companion y los comandos ya se han instalado y probado en A1; sigue pendiente validar la conversación completa en un teléfono físico y el acceso fuera de la LAN.
 
 [ATLAS Companion](.atlas/companion/README.md) es un servicio separado para la app, con emparejamiento privado, HTTPS y mensajes cifrados. Se administra con `atlas-app`. El acceso fuera de casa utiliza un **relay propio**, sin Tailscale: requiere desplegarlo en un servidor público con dominio/TLS. No hay un relay hospedado incluido ni se expone WebScreen al exterior.
 

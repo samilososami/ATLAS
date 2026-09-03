@@ -37,10 +37,13 @@ const paths={
  code:'m8 6-6 6 6 6m8-12 6 6-6 6m-3-14-2 16',
  clock:'M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0ZM12 7v5l3 2'
 };
-function icon(name){const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');const path=document.createElementNS(svg.namespaceURI,'path');path.setAttribute('d',paths[name]||paths.bolt);svg.append(path);return svg;}
+function icon(name){
+ if(name==='spark'||name==='settings'){const glyph=document.createElement('span');glyph.className='glyph '+(name==='spark'?'glyph-atlas':'glyph-gear');glyph.setAttribute('aria-hidden','true');return glyph;}
+ const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 24 24');svg.setAttribute('aria-hidden','true');const path=document.createElementNS(svg.namespaceURI,'path');path.setAttribute('d',paths[name]||paths.bolt);svg.append(path);return svg;
+}
 $$('[data-icon]').forEach(el=>el.append(icon(el.dataset.icon)));
 function renderConfig(c){config=c;$('#device-name').textContent=c.name||'ATLAS A1';$('#pair-state').textContent=c.paired?'Emparejado · clave protegida por Android':'Sin emparejar';
-for(const k of ['lock','danger','pairAuth'])$('#'+k).checked=Boolean(c[k]);$('#transport').value=c.transport||'auto';$('#connection-text').textContent=c.paired?'A1 emparejado':'Sin conectar';}
+for(const k of ['lock','danger','pairAuth'])$('#'+k).checked=Boolean(c[k]);$('#transport').value=c.transport||'auto';$('#theme').value=applyAtlasTheme(c.theme);$('#connection-text').textContent=c.paired?'A1 emparejado':'Sin conectar';}
 window.nativeEvent=(kind,data)=>{
  if(kind==='ready')renderConfig(data);
  if(kind==='speech')window.voice?.speech(data);
@@ -52,7 +55,7 @@ function showTab(name){currentTab=name;$$('.page').forEach(p=>p.classList.toggle
 $$('#tabs button').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));$('#connection').onclick=()=>showTab('settings');
 $('#pair').onclick=safe(async()=>{const b=$('#pair');b.disabled=true;try{renderConfig(await native('pair',{code:$('#pair-code').value}));$('#pair-code').value='';toast('A1 conectado. Bienvenido a ATLAS.');showTab('atlas');}finally{b.disabled=false;}});
 $('#forget').onclick=safe(async()=>{if(!confirm('¿Olvidar este A1? Tendrás que volver a emparejarlo.'))return;await window.voice?.close();await closeTerminal();renderConfig(await native('forget'));});
-for(const k of ['lock','danger','pairAuth','transport'])$('#'+k).onchange=safe(async()=>{try{renderConfig(await native('settings',{[k]:k==='transport'?$('#'+k).value:$('#'+k).checked}));}catch(e){renderConfig(config);throw e;}});
+for(const k of ['lock','danger','pairAuth','transport','theme'])$('#'+k).onchange=safe(async()=>{try{renderConfig(await native('settings',{[k]:['transport','theme'].includes(k)?$('#'+k).value:$('#'+k).checked}));}catch(e){renderConfig(config);throw e;}});
 for(const k of ['voice','reasoning']){const v=localStorage.getItem(k);if(v&&[...$('#'+k).options].some(o=>o.value===v))$('#'+k).value=v;$('#'+k).onchange=()=>{localStorage.setItem(k,$('#'+k).value);toast('Se aplicará al preparar una nueva sesión.');};}
 
 function bubble(text,role='assistant'){const area=$('#messages');$('.welcome')?.remove();const el=document.createElement('div');el.className='message '+role;el.textContent=text;area.append(el);area.scrollTop=area.scrollHeight;return el;}

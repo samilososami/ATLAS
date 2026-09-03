@@ -28,6 +28,7 @@ import org.json.*;
 
 public final class MainActivity extends Activity {
     private WebView web;
+    private FrameLayout frame;
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final ExecutorService io = Executors.newFixedThreadPool(6);
     private final OkHttpClient normal = new OkHttpClient.Builder().callTimeout(40, TimeUnit.SECONDS).build();
@@ -45,14 +46,15 @@ public final class MainActivity extends Activity {
     private android.content.SharedPreferences prefs;
 
     @Override public void onCreate(Bundle state) {
-        super.onCreate(state);
         prefs=getSharedPreferences("atlas",MODE_PRIVATE);
+        setTheme(isLight()?R.style.AtlasThemeLight:R.style.AtlasTheme);
+        super.onCreate(state);
         locked=prefs.getBoolean("lock",false);
         try { String saved=prefs.getString("pair",null); if(saved!=null)pairing=new JSONObject(vaultOpen(saved)); } catch(Exception e){pairing=null;}
-        getWindow().setStatusBarColor(0xff080f20); getWindow().setNavigationBarColor(0xff080f20);
-        web=new WebView(this); web.setBackgroundColor(0xff080f20);
-        FrameLayout frame=new FrameLayout(this); frame.setBackgroundColor(0xff080f20);
+        web=new WebView(this);
+        frame=new FrameLayout(this);
         frame.addView(web,new FrameLayout.LayoutParams(-1,-1)); setContentView(frame);
+        applyAppearance();
         // WebView ignores padding for its document viewport. Inset the parent so
         // fixed HTML navigation also clears Android's bars and the keyboard.
         frame.setOnApplyWindowInsetsListener((v,insets)->{
@@ -71,7 +73,7 @@ public final class MainActivity extends Activity {
                 String path=u.getPath(); if(path==null||path.equals("/"))path="/index.html";
                 if(path.contains(".."))return new WebResourceResponse("text/plain","UTF-8",new ByteArrayInputStream(new byte[0]));
                 try {
-                    String mime=path.endsWith(".js")?"application/javascript":path.endsWith(".css")?"text/css":path.endsWith(".png")?"image/png":"text/html";
+                    String mime=path.endsWith(".js")?"application/javascript":path.endsWith(".css")?"text/css":path.endsWith(".png")?"image/png":path.endsWith(".svg")?"image/svg+xml":"text/html";
                     return new WebResourceResponse(mime,"UTF-8",getAssets().open("web"+path));
                 } catch(IOException e){return new WebResourceResponse("text/plain","UTF-8",new ByteArrayInputStream(new byte[0]));}
             }
@@ -86,10 +88,19 @@ public final class MainActivity extends Activity {
         });
         web.loadUrl("https://atlas.local/index.html");
     }
+    private boolean isLight(){return !"dark".equals(prefs.getString("theme","light"));}
+    private void applyAppearance(){
+        boolean light=isLight();int background=light?0xfff2f4f8:0xff080f20;
+        setTheme(light?R.style.AtlasThemeLight:R.style.AtlasTheme);
+        getWindow().setStatusBarColor(background);getWindow().setNavigationBarColor(background);
+        int mask=WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS|WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
+        getWindow().getInsetsController().setSystemBarsAppearance(light?mask:0,mask);
+        frame.setBackgroundColor(background);web.setBackgroundColor(background);
+    }
     private JSONObject object(Object... kv){JSONObject o=new JSONObject();try{for(int i=0;i<kv.length;i+=2)o.put((String)kv[i],kv[i+1]);}catch(Exception ignored){}return o;}
     private JSONObject config(){return object("paired",pairing!=null,"name",pairing==null?"ATLAS A1":pairing.optString("name"),
         "relayConfigured",pairing!=null&&!pairing.optString("relay").isEmpty(),"lock",prefs.getBoolean("lock",false),
-        "danger",prefs.getBoolean("danger",true),"pairAuth",prefs.getBoolean("pairAuth",true),"transport",prefs.getString("transport","auto"));}
+        "danger",prefs.getBoolean("danger",true),"pairAuth",prefs.getBoolean("pairAuth",true),"transport",prefs.getString("transport","auto"),"theme",isLight()?"light":"dark");}
     private String json(Object value){String array=new JSONArray().put(value).toString();return array.substring(1,array.length()-1);}
     private void event(String name,Object value){ui.post(()->{if(pageReady)web.evaluateJavascript("window.nativeEvent&&nativeEvent("+JSONObject.quote(name)+","+json(value)+")",null);});}
     private void answer(String id,Object result,String error){ui.post(()->web.evaluateJavascript("window.nativeReply&&nativeReply("+JSONObject.quote(id)+","+json(result)+","+(error==null?"null":JSONObject.quote(error))+")",null));}
@@ -251,7 +262,9 @@ public final class MainActivity extends Activity {
                     case "forget": pairing=null;prefs.edit().remove("pair").apply();if(relay!=null)relay.close(1000,"Unpaired");relay=null;answer(id,config(),null);break;
                     case "settings": {
                         Runnable change=()->{for(String k:new String[]{"lock","danger","pairAuth"})if(p.has(k))prefs.edit().putBoolean(k,p.optBoolean(k)).apply();
-                            if(p.has("transport")&&Arrays.asList("auto","lan","relay").contains(p.optString("transport")))prefs.edit().putString("transport",p.optString("transport")).apply();answer(id,config(),null);};
+                            if(p.has("transport")&&Arrays.asList("auto","lan","relay").contains(p.optString("transport")))prefs.edit().putString("transport",p.optString("transport")).apply();
+                            if(p.has("theme")&&Arrays.asList("light","dark").contains(p.optString("theme"))){prefs.edit().putString("theme",p.optString("theme")).apply();applyAppearance();}
+                            answer(id,config(),null);};
                         if(p.has("lock")||p.has("danger")||p.has("pairAuth"))authenticate("Cambiar protección de ATLAS",change,()->answer(id,null,"Sin cambios"));else change.run();break;
                     }
                     case "microphone":
