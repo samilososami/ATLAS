@@ -48,7 +48,7 @@ public final class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         prefs=getSharedPreferences("atlas",MODE_PRIVATE);
-        setTheme(R.style.AtlasThemeLight);
+        setTheme(R.style.AtlasTheme);
         super.onCreate(state);
         locked=prefs.getBoolean("lock",false);
         connection=AtlasRuntime.connection(this);updater=new AppUpdater(this);
@@ -96,13 +96,13 @@ public final class MainActivity extends Activity {
         });
         web.loadUrl("https://atlas.local/index.html");
     }
-    private boolean isLight(){return true;}
+    private boolean isLight(){return false;}
     private void applyAppearance(){
-        int background=0xfff2f4f8;
-        setTheme(R.style.AtlasThemeLight);
+        int background=0xff080f20;
+        setTheme(R.style.AtlasTheme);
         getWindow().setStatusBarColor(background);getWindow().setNavigationBarColor(background);
         int mask=WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS|WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
-        getWindow().getInsetsController().setSystemBarsAppearance(mask,mask);
+        getWindow().getInsetsController().setSystemBarsAppearance(0,mask);
         frame.setBackgroundColor(background);web.setBackgroundColor(background);
     }
     private void immersive(){
@@ -114,7 +114,7 @@ public final class MainActivity extends Activity {
     private JSONObject object(Object... kv){JSONObject o=new JSONObject();try{for(int i=0;i<kv.length;i+=2)o.put((String)kv[i],kv[i+1]);}catch(Exception ignored){}return o;}
     private JSONObject config(){return object("paired",connection.pairing!=null,"name",connection.pairing==null?"ATLAS A1":connection.pairing.optString("name"),
         "relayConfigured",connection.pairing!=null&&!connection.pairing.optString("relay").isEmpty(),"lock",prefs.getBoolean("lock",false),
-        "danger",prefs.getBoolean("danger",true),"onboarding",prefs.getBoolean("onboarding",false),"theme","light","version",appVersion());}
+        "danger",prefs.getBoolean("danger",true),"onboarding",prefs.getBoolean("onboarding",false),"theme","dark","version",appVersion());}
     private String appVersion(){try{return getPackageManager().getPackageInfo(getPackageName(),0).versionName;}catch(Exception e){return "ATLAS";}}
     private void readWidgetIntent(Intent intent){String type=intent.getStringExtra("widgetType");if(Arrays.asList("action","status","quota","chat","voice").contains(type))widgetLaunch=object("type",type,"actionId",intent.getStringExtra("actionId"));}
     private void deliverWidget(){if(pageReady&&!locked&&!background&&widgetLaunch!=null){JSONObject next=widgetLaunch;widgetLaunch=null;event("widget",next);}}
