@@ -36,7 +36,8 @@ def main():
         if not helper.exists(): raise SystemExit('Falta el servicio de emparejamiento Bluetooth. Reinstala ATLAS Companion.')
         command=['/usr/bin/python3',str(helper)]
         if os.geteuid()!=0: command=['sudo','-n',*command]
-        sys.exit(subprocess.call(command))
+        try: sys.exit(subprocess.call(command))
+        except KeyboardInterrupt: print('\nEmparejamiento cancelado.'); return
     if a.action=='relay':
         if not a.url or urlparse(a.url).scheme!='wss' or not urlparse(a.url).hostname:
             raise SystemExit('Uso: atlas-app relay wss://tu-dominio/connect')
