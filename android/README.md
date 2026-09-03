@@ -1,4 +1,4 @@
-# ATLAS Android · 0.1.2 preview
+# ATLAS Android · 0.1.3 preview
 
 Android 11+ companion for an owner-controlled ATLAS A1. Install the APK from
 [GitHub Releases](https://github.com/samilososami/ATLAS/releases). This is a
@@ -31,9 +31,25 @@ See the companion instructions. A pairing code is an administration secret.
 - **Estado:** actual A1 diagnostics, services and 5-hour/weekly quota when Gateway
   reports them. Unavailable data is never presented as zero.
 - **Ajustes:** encrypted pairing, LAN/relay/auto transport, app lock, action/pairing
-  biometrics, native voices and reasoning levels. **Claro** is the default;
-  **Oscuro** restores the original navy palette. The choice persists without
+  biometrics, native voices, reasoning levels and a verified GitHub release
+  updater. **Oscuro** is the default; **Claro** uses the off-white palette. The choice persists without
   recreating the activity or dropping an active session; blue accents stay fixed.
+
+## Home-screen widgets and updates
+
+In Settings, **Añadir widget** requests placement of the configurable ATLAS
+widget. It starts at 2×2 and can be resized horizontally and vertically. Choose
+a saved action, A1 status, Codex limits, Chat, or Push-to-talk. Larger diagnostic
+widgets reveal extra service details. Android widgets cannot host continuous
+press-and-hold recording or a reliable editable chat field, so those variants
+open the correct app mode directly. Command widgets also open the app and retain
+its exact-command confirmation and biometric policy.
+
+**Buscar actualizaciones** lists Android-specific GitHub releases, displays the
+release notes, and offers download/install. ATLAS verifies the fixed repository
+path, size, GitHub SHA-256 digest, package name, higher version code, and identical
+APK signer before handing the file to Android. Android may ask once for permission
+to install apps from ATLAS and always presents the system installation confirmation.
 
 The visual shell is bundled HTML/CSS/JS inside Android WebView, with native Java
 for networking, pinned TLS, Keystore, biometrics, permissions and recognition.
@@ -62,7 +78,7 @@ production distribution needs a stable release key managed by the owner.
 The shared emulator can be launched with `atlas-emulator` on the development
 machine, as kali or root. Do not run both against the same virtual device at once.
 Run `node --test android/test_*.cjs` from the repository root for appearance,
-voice/chat output-mode and ordered terminal-input regression tests.
+widgets, update safeguards, voice/chat output-mode and ordered terminal-input tests.
 
 ## Validation boundaries
 

@@ -8,16 +8,16 @@ function themeContext(stored){
  const c={document:{documentElement:{dataset:{}}},localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)}};
  c.window=c;vm.runInNewContext(fs.readFileSync(dir+'appearance.js','utf8'),c);return c;
 }
-test('first install defaults to light, including invalid old values',()=>{
- for(const value of [undefined,'invalid','light'])assert.equal(themeContext(value).document.documentElement.dataset.theme,'light');
+test('first install defaults to dark, including invalid old values',()=>{
+ for(const value of [undefined,'invalid','dark'])assert.equal(themeContext(value).document.documentElement.dataset.theme,'dark');
 });
-test('dark persists on first paint, native choice can override cache',()=>{
- const c=themeContext('dark');assert.equal(c.document.documentElement.dataset.theme,'dark');
- c.applyAtlasTheme('light');assert.equal(c.localStorage.getItem('atlas.theme'),'light');
+test('light persists on first paint, native choice can override cache',()=>{
+ const c=themeContext('light');assert.equal(c.document.documentElement.dataset.theme,'light');
+ c.applyAtlasTheme('dark');assert.equal(c.localStorage.getItem('atlas.theme'),'dark');
 });
-test('blocked storage still yields a functional light theme',()=>{
+test('blocked storage still yields the default dark theme',()=>{
  const c={document:{documentElement:{dataset:{}}},localStorage:{getItem(){throw Error()},setItem(){throw Error()}}};c.window=c;
- vm.runInNewContext(fs.readFileSync(dir+'appearance.js','utf8'),c);assert.equal(c.document.documentElement.dataset.theme,'light');
+ vm.runInNewContext(fs.readFileSync(dir+'appearance.js','utf8'),c);assert.equal(c.document.documentElement.dataset.theme,'dark');
 });
 test('light overrides never replace shared blue accent tokens',()=>{
  const css=fs.readFileSync(dir+'appearance.css','utf8');assert.doesNotMatch(css,/--(?:blue|cyan)\s*:/);

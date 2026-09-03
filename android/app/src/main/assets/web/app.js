@@ -43,12 +43,14 @@ function icon(name){
 }
 $$('[data-icon]').forEach(el=>el.append(icon(el.dataset.icon)));
 function renderConfig(c){config=c;$('#device-name').textContent=c.name||'ATLAS A1';$('#pair-state').textContent=c.paired?'Emparejado · clave protegida por Android':'Sin emparejar';
-for(const k of ['lock','danger','pairAuth'])$('#'+k).checked=Boolean(c[k]);$('#transport').value=c.transport||'auto';$('#theme').value=applyAtlasTheme(c.theme);$('#connection-text').textContent=c.paired?'A1 emparejado':'Sin conectar';}
+for(const k of ['lock','danger','pairAuth'])$('#'+k).checked=Boolean(c[k]);$('#transport').value=c.transport||'auto';$('#theme').value=applyAtlasTheme(c.theme);$('#connection-text').textContent=c.paired?'A1 emparejado':'Sin conectar';if(c.version){$('#installed-version').textContent='Versión instalada · '+c.version;$('.about .version').textContent=c.version;}}
 window.nativeEvent=(kind,data)=>{
  if(kind==='ready')renderConfig(data);
  if(kind==='speech')window.voice?.speech(data);
  if(kind==='speechError')window.voice?.speechError(data);
  if(kind==='suspend'){window.voice?.close();closeTerminal();}
+ if(kind==='updateProgress'){const p=$('.update-progress');p.hidden=false;p.querySelector('i').style.width=Math.max(0,Math.min(100,data.percent))+'%';$('#update-status').textContent='Descargando y verificando… '+data.percent+'%';}
+ if(kind==='widget'){showTab(data.type==='status'||data.type==='quota'?'status':data.type==='action'?'actions':'atlas');if(data.type==='chat'||data.type==='voice')window.voice?.setMode(data.type==='chat'?'chat':'ptt');if(data.type==='action'&&data.actionId){const index=actions.findIndex(a=>a.id===data.actionId);if(index>=0)runAction(index);else toast('Ese botón ya no existe. Configura el widget de nuevo.');}}
 };
 function showTab(name){currentTab=name;$$('.page').forEach(p=>p.classList.toggle('active',p.id==='tab-'+name));$$('#tabs button').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));
  if(name==='status')safe(refreshStatus)();if(name==='terminal')setTimeout(()=>fit?.fit(),50);window.scrollTo(0,0);}
@@ -65,19 +67,28 @@ let actions;try{actions=JSON.parse(localStorage.getItem('actions'))}catch{}if(!A
  {name:'Abrir Atlas',icon:'spark',color:'#6389ff',command:'atlas-screen --atlas'},
  {name:'Pantalla apagada',icon:'moon',color:'#b49cef',command:'atlas-screen off'},
  {name:'Audio al 50%',icon:'volume',color:'#64c7b0',command:'atlas-audio volume 50'}];
+for(const a of actions)if(!/^[a-zA-Z0-9-]{1,80}$/.test(a.id||''))a.id=crypto.randomUUID();
 let editIndex=-1,editIcon='bolt',editColor='#53adff';
+async function syncWidgets(){await native('widgets.sync',{actions:actions.map(a=>({id:a.id,name:a.name,command:a.command,icon:a.icon,color:a.color}))});}
+async function runAction(i){const a=actions[i];if(!a)return;output(await native('execute',{command:a.command}));}
 function renderActions(){const parent=$('#actions');parent.replaceChildren();actions.forEach((a,i)=>{
  const b=document.createElement('button');b.className='action-card';b.style.setProperty('--accent',/^#[0-9a-f]{6}$/i.test(a.color)?a.color:'#53adff');
  const glyph=document.createElement('span');glyph.className='tile-icon';glyph.append(icon(a.icon));const title=document.createElement('strong');title.textContent=a.name;b.append(glyph,title);
  let hold,long=false;b.onpointerdown=()=>{long=false;hold=setTimeout(()=>{long=true;editAction(i);},550);};b.onpointerup=b.onpointerleave=b.onpointercancel=()=>clearTimeout(hold);
- b.onclick=safe(async()=>{if(long)return;b.disabled=true;try{output(await native('execute',{command:a.command}));}finally{b.disabled=false;}});b.oncontextmenu=e=>{e.preventDefault();editAction(i)};parent.append(b);
+ b.onclick=safe(async()=>{if(long)return;b.disabled=true;try{await runAction(i);}finally{b.disabled=false;}});b.oncontextmenu=e=>{e.preventDefault();editAction(i)};parent.append(b);
 });}
-function persistActions(){localStorage.setItem('actions',JSON.stringify(actions));renderActions();}
+function persistActions(){localStorage.setItem('actions',JSON.stringify(actions));renderActions();syncWidgets().catch(e=>toast('Los widgets no se actualizaron: '+e.message));}
 function editAction(index){editIndex=index;const a=actions[index]||{};$('#action-name').value=a.name||'';$('#action-command').value=a.command||'';editIcon=a.icon||'bolt';editColor=a.color||'#53adff';$('#delete-action').hidden=index<0;renderPickers();$('#action-editor').showModal();}
 function renderPickers(){const ip=$('#icon-picker');ip.replaceChildren();for(const k of Object.keys(paths).filter(k=>!['stop','arrow','plus'].includes(k))){const b=document.createElement('button');b.type='button';b.title=k;b.classList.toggle('chosen',k===editIcon);b.append(icon(k));b.onclick=()=>{editIcon=k;renderPickers()};ip.append(b);}
  const cp=$('#color-picker');cp.replaceChildren();for(const c of ['#53adff','#6389ff','#b49cef','#64c7b0','#ef7488','#e6b36b','#c2cad8']){const b=document.createElement('button');b.type='button';b.style.background=c;b.classList.toggle('chosen',c===editColor);b.title=c;b.onclick=()=>{editColor=c;renderPickers()};cp.append(b);}}
-$('#add-action').onclick=()=>editAction(-1);$('#action-form').onsubmit=e=>{if(e.submitter?.value!=='save')return;if(!$('#action-name').value.trim()||!$('#action-command').value.trim()){e.preventDefault();toast('Añade un nombre y un comando');return;}const a={name:$('#action-name').value.trim(),command:$('#action-command').value.trim(),icon:editIcon,color:editColor};if(editIndex>=0)actions[editIndex]=a;else actions.push(a);persistActions();};
+$('#add-action').onclick=()=>editAction(-1);$('#action-form').onsubmit=e=>{if(e.submitter?.value!=='save')return;if(!$('#action-name').value.trim()||!$('#action-command').value.trim()){e.preventDefault();toast('Añade un nombre y un comando');return;}const a={id:editIndex>=0?actions[editIndex].id:crypto.randomUUID(),name:$('#action-name').value.trim(),command:$('#action-command').value.trim(),icon:editIcon,color:editColor};if(editIndex>=0)actions[editIndex]=a;else actions.push(a);persistActions();};
 $('#delete-action').onclick=()=>{if(editIndex>=0){actions.splice(editIndex,1);persistActions();$('#action-editor').close();}};renderActions();
+syncWidgets().catch(()=>{});
+$('#add-widget').onclick=safe(async()=>{const r=await native('widgets.add');toast(r.requested?'Elige ATLAS en la pantalla de inicio':'Abre Widgets en tu pantalla de inicio y elige ATLAS');});
+let updateRelease;
+function showUpdate(r){updateRelease=r.release;$('#installed-version').textContent='Versión instalada · '+r.current;if(!r.available){$('#update-result').hidden=true;$('#update-status').textContent='Ya tienes la versión más reciente.';return;}$('#update-result').hidden=false;$('#update-version').textContent='ATLAS '+r.release.version;$('#update-size').textContent=(r.release.size/1048576).toFixed(1)+' MB'+(r.release.preview?' · Preview':'');$('#update-notes').textContent=r.release.notes||'Sin notas de versión.';$('#update-status').textContent='Actualización disponible. Se comprobarán identidad, firma y SHA-256 antes de abrir el instalador.';}
+$('#check-update').onclick=safe(async()=>{const b=$('#check-update');b.disabled=true;$('#update-status').textContent='Consultando GitHub…';try{showUpdate(await native('updates.check'));}finally{b.disabled=false;}});
+$('#install-update').onclick=safe(async()=>{if(!updateRelease)return;const b=$('#install-update');b.disabled=true;try{const r=await native('updates.install',{id:updateRelease.id});if(r.needsPermission){$('#update-status').textContent='Permite instalar apps desde ATLAS y vuelve a pulsar el botón.';toast('Android necesita permiso para instalar esta actualización');}else $('#update-status').textContent='Confirma la actualización en Android.';}finally{b.disabled=false;}});
 let terminal,fit,terminalId,terminalTimer,polling=false;
 const terminalInput=new AtlasTerminalInput(async data=>{if(terminalId)await native('terminal.write',{terminal:terminalId,data});},e=>{toast('Se detuvo el envío a la terminal: '+e.message);closeTerminal();});
 function initTerminal(){if(terminal)return;terminal=new Terminal({fontFamily:'monospace',fontSize:13,cursorBlink:true,scrollback:3000,theme:{background:'#050c19',foreground:'#cedcf2',cursor:'#53adff',selectionBackground:'#234776'}});fit=new FitAddon.FitAddon();terminal.loadAddon(fit);terminal.open($('#terminal'));fit.fit();terminal.onData(data=>{if(terminalId)terminalInput.push(data);});}

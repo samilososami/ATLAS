@@ -1,0 +1,15 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:background="@drawable/widget_background" android:padding="12dp">
+    <LinearLayout android:id="@+id/widget_content" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:orientation="vertical" android:clickable="true">
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical">
+            <ImageView android:id="@+id/widget_icon" android:layout_width="22dp" android:layout_height="22dp" android:src="@drawable/widget_icon_bolt" android:importantForAccessibility="no" />
+            <TextView android:id="@+id/widget_title" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:layout_marginStart="7dp" android:textSize="10sp" android:textColor="#8FA7CB" android:fontFamily="sans-serif-medium" android:maxLines="1" android:ellipsize="end" />
+        </LinearLayout>
+        <TextView android:id="@+id/widget_value" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="9dp" android:textSize="17sp" android:fontFamily="sans-serif-medium" android:textColor="#F0F4FC" android:maxLines="2" android:ellipsize="end" />
+        <TextView android:id="@+id/widget_hint" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="5dp" android:textSize="10sp" android:textColor="#A2B5D1" android:maxLines="2" android:ellipsize="end" />
+        <TextView android:id="@+id/widget_details" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" android:layout_marginTop="12dp" android:textSize="12sp" android:textColor="#C5D5ED" android:ellipsize="end" />
+    </LinearLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="36dp" android:gravity="end|center_vertical">
+        <TextView android:id="@+id/widget_refresh" android:layout_width="0dp" android:layout_weight="1" android:layout_height="match_parent" android:gravity="center_vertical" android:text="↻ Actualizar" android:contentDescription="Actualizar estado de A1" android:textSize="11sp" android:textColor="#53ADFF" />
+        <TextView android:id="@+id/widget_configure" android:layout_width="36dp" android:layout_height="match_parent" android:gravity="center" android:text="⋯" android:textSize="22sp" android:textColor="#9AB3D8" android:contentDescription="Configurar widget" />
+    </LinearLayout>
+</LinearLayout>
