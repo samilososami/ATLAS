@@ -45,8 +45,9 @@ def main():
         c=config(); c['relay']=a.url; save(c)
         print('Relay guardado. Reinicia atlas-app y vuelve a emparejar el móvil.'); return
     if a.action=='relay-credentials':
-        c=config(); print('Configuración privada para /etc/atlas-relay/devices.json:')
-        print(json.dumps({c['room']:hashlib.sha256(c['relayPassword'].encode()).hexdigest()},indent=2)); return
+        c=config(); credentials={c['room']:hashlib.sha256(c['relayPassword'].encode()).hexdigest()}
+        if not a.json: print('Configuración privada para el relay de ATLAS:')
+        print(json.dumps(credentials,indent=None if a.json else 2)); return
     if a.action=='revoke':
         if not sys.stdin.isatty() or input('Revocar TODOS los móviles emparejados [s/N]: ').lower()!='s': return
         c=config(); c['key']=b64(secrets.token_bytes(32)); save(c)

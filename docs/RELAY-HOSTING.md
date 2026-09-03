@@ -9,46 +9,45 @@ activas de una Pi y sus móviles. Hace falta **una instancia compartida**, no
 funciones independientes que reciban cada extremo en procesos distintos.
 La Pi abre la conexión hacia fuera: no es necesario abrir puertos en casa.
 
-## Opción gratuita para pruebas: Render
+## Opción recomendada: Cloudflare Workers Free
 
 Revisión de documentación oficial: 3 de septiembre de 2026.
 
-[Render Free](https://render.com/docs/free) admite dominio propio y certificados
-TLS gestionados. Ofrece 750 horas de instancia al mes por workspace. El servicio
-duerme tras 15 minutos sin tráfico entrante y despertarlo puede tardar alrededor
-de un minuto; también puede reiniciarse. Hay límites de transferencia y builds.
-Sin método de pago, agotar ciertas cuotas suspende el servicio o nuevos builds.
-No es una garantía de disponibilidad permanente ni de gratuidad fuera de cuota.
+[Durable Objects](https://developers.cloudflare.com/durable-objects/platform/pricing/)
+está disponible en el plan Free con almacenamiento SQLite. Su API de
+[hibernación WebSocket](https://developers.cloudflare.com/durable-objects/best-practices/websockets/)
+mantiene conectados el móvil y la Pi mientras el proceso duerme, evitando pagar
+duración durante la inactividad. El límite gratuito actual es 100.000 peticiones
+al día y 13.000 GB-s diarios; es holgado para un A1 personal, no una garantía de
+servicio ni de que el plan permanezca igual.
 
-[Sus WebSockets](https://render.com/docs/websocket) no tienen un tiempo máximo
-fijo mientras siga viva la instancia. Los reinicios cortan las conexiones;
-ATLAS debe reconectar, sin repetir comandos cuyo resultado sea incierto.
+El repositorio ya incluye el Worker en `.atlas/relay-cloudflare`. Usa un único
+Durable Object para conservar la compatibilidad con el protocolo existente: la
+Pi y la app siguen enviando el `room` en su primer mensaje. Cloudflare solo ve
+identificadores de ruta, tamaños, tiempos y cajas cifradas; no posee la clave
+AES extremo a extremo.
 
-Preparación, **todavía no desplegada**:
+El dominio `samilososami.com` ya usa DNS de Cloudflare. Al desplegar,
+[Custom Domains](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/)
+creará `relay.samilososami.com` y su certificado TLS automáticamente. Seguir la
+[guía de despliegue](../.atlas/relay-cloudflare/README.md). No publicar el secreto
+`ATLAS_RELAY_DEVICES`, el código `atlas1:` ni WebScreen.
 
-1. Crear una cuenta y un Web Service **Free**, de una sola instancia, para el relay.
-2. Adaptar su arranque a `0.0.0.0` y al `PORT` suministrado por Render. El relay
-   del repositorio aún usa `127.0.0.1:8444`, apropiado para un VPS con proxy local;
-   no basta con desplegarlo sin este ajuste.
-3. Instalar aiohttp y suministrar `devices.json` como archivo secreto, fuera de
-   Git. Se obtiene con `atlas-app relay-credentials`; no subir la clave AES ni
-   el código `atlas1:`. Conservar las credenciales fuera del disco efímero.
-4. Primero probar la URL `onrender.com`; después asociar el subdominio elegido
-   y crear solo el registro DNS que indique Render. Esperar al TLS válido.
-5. En la Pi, `atlas-app relay wss://SUBDOMINIO/connect`, `atlas-app restart` y
-   volver a emparejar desde `atlas-app pair` para actualizar la URL del móvil.
-6. Probar con el móvil en datos: estado, shell, cortes/reconexión y devolución
-   del control a A1. No dar por verificado Internet por una prueba en Wi-Fi.
+## Alternativa gratuita para pruebas: Render
+
+[Render Free](https://render.com/docs/free) admite dominio propio, TLS gestionado
+y una sola instancia compatible con el relay Python. Desde febrero de 2026, los
+mensajes WebSocket entrantes evitan que duerma; sin tráfico durante 15 minutos
+se apaga y el arranque puede rondar un minuto. También puede reiniciarse y su
+disco es efímero. Sigue siendo una alternativa, pero Cloudflare encaja mejor con
+el DNS actual y la hibernación de conexiones.
 
 ## Vercel
 
-[Vercel Functions ya admite WebSockets](https://vercel.com/docs/functions/websockets)
-en beta. Sin embargo, las conexiones terminan al llegar a la duración máxima de
-la función y no hay garantía de que dos conexiones aterricen en la misma
-instancia. Su documentación pide almacenamiento/pub-sub externo para coordinar
-presencia y salas. Por ello **el relay actual no se puede subir sin adaptación**:
-necesitaría coordinación externa y recuperación de conexiones. No se afirma que
-Vercel carezca de soporte WebSocket.
+Vercel admite WebSockets, pero las Functions conservan una duración máxima y
+sus instancias no deben usar memoria local como estado compartido. Haría falta
+añadir Redis u otro coordinador externo para emparejar ambos sockets. Para este
+relay es más complejo y menos natural que un Durable Object con hibernación.
 
 ## VPS propio
 

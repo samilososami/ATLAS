@@ -1,0 +1,15 @@
+{
+  "name": "atlas-relay-cloudflare",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --local",
+    "deploy": "wrangler deploy",
+    "test": "node test/integration.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4.36.0",
+    "ws": "^8.18.3"
+  }
+}

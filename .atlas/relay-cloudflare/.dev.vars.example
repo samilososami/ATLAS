@@ -1,0 +1,3 @@
+# Never commit the real value. Generate it on A1 with:
+# atlas-app relay-credentials
+ATLAS_RELAY_DEVICES='{"replace-with-room":"replace-with-sha256"}'

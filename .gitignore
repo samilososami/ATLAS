@@ -1,4 +1,6 @@
 .staging/
+.atlas/relay-cloudflare/.dev.vars
+.atlas/relay-cloudflare/.wrangler/
 *.img
 *.img.xz
 *.iso
