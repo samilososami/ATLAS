@@ -1,6 +1,7 @@
 [Unit]
 Description=ATLAS Android companion (encrypted pairing and remote administration)
-After=network.target
+After=network-online.target bluetooth.service
+Wants=network-online.target
 
 [Service]
 Type=simple

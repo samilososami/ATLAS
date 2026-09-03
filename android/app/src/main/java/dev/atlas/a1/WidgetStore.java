@@ -17,7 +17,7 @@ final class WidgetStore {
         }
         prefs(c).edit().putString("actions",clean.toString()).apply();AtlasWidgetProvider.updateAll(c);
     }
-    static String type(Context c,int id){return prefs(c).getString("type."+id,"status");}
+    static String type(Context c,int id){return prefs(c).getString("type."+id,"");}
     static void save(Context c,int id,String type,String action){prefs(c).edit().putString("type."+id,type).putString("action."+id,action).apply();}
     static void remove(Context c,int id){prefs(c).edit().remove("type."+id).remove("action."+id).apply();}
 }

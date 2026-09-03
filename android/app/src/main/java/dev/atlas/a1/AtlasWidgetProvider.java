@@ -12,11 +12,13 @@ import org.json.*;
 import java.text.DateFormat;
 import java.util.Date;
 
-public final class AtlasWidgetProvider extends AppWidgetProvider {
+public class AtlasWidgetProvider extends AppWidgetProvider {
     static final String REFRESH="dev.atlas.a1.WIDGET_REFRESH";
-    static int[] ids(Context c){return AppWidgetManager.getInstance(c).getAppWidgetIds(new ComponentName(c,AtlasWidgetProvider.class));}
+    private static final Class<?>[] PROVIDERS={AtlasWidgetProvider.class,ActionWidgetProvider.class,QuotaWidgetProvider.class,CpuWidgetProvider.class,RamWidgetProvider.class,ChatWidgetProvider.class,VoiceWidgetProvider.class};
+    protected String defaultType(){return "status";}
+    static int[] ids(Context c){java.util.ArrayList<Integer> all=new java.util.ArrayList<>();AppWidgetManager m=AppWidgetManager.getInstance(c);for(Class<?> provider:PROVIDERS)for(int id:m.getAppWidgetIds(new ComponentName(c,provider)))all.add(id);int[] result=new int[all.size()];for(int i=0;i<all.size();i++)result[i]=all.get(i);return result;}
     static void updateAll(Context c){AppWidgetManager m=AppWidgetManager.getInstance(c);for(int id:ids(c))render(c,m,id,m.getAppWidgetOptions(id));}
-    @Override public void onUpdate(Context c,AppWidgetManager m,int[] ids){for(int id:ids)render(c,m,id,m.getAppWidgetOptions(id));WidgetRefreshJob.schedule(c);}
+    @Override public void onUpdate(Context c,AppWidgetManager m,int[] ids){for(int id:ids){if(WidgetStore.type(c,id).isEmpty())WidgetStore.save(c,id,defaultType(),"");render(c,m,id,m.getAppWidgetOptions(id));}WidgetRefreshJob.schedule(c);}
     @Override public void onAppWidgetOptionsChanged(Context c,AppWidgetManager m,int id,Bundle options){render(c,m,id,options);}
     @Override public void onDeleted(Context c,int[] ids){for(int id:ids)WidgetStore.remove(c,id);}
     @Override public void onDisabled(Context c){c.getSystemService(android.app.job.JobScheduler.class).cancel(WidgetRefreshJob.JOB_ID);}
@@ -26,7 +28,7 @@ public final class AtlasWidgetProvider extends AppWidgetProvider {
         return PendingIntent.getActivity(c,id,i,PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
     }
     static void render(Context c,AppWidgetManager manager,int id,Bundle options){
-        String type=WidgetStore.type(c,id),actionId=WidgetStore.prefs(c).getString("action."+id,"");
+        String type=WidgetStore.type(c,id),actionId=WidgetStore.prefs(c).getString("action."+id,"");if(type.isEmpty())type="status";
         boolean wide=options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH,110)>=220;
         boolean tall=options.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT,110)>=210;
         boolean details=wide&&tall;
@@ -39,14 +41,18 @@ public final class AtlasWidgetProvider extends AppWidgetProvider {
         boolean stale=stamp>0&&System.currentTimeMillis()-stamp>45*60*1000;
         if(type.equals("action")){
             JSONObject a=WidgetStore.action(c,actionId);title="ACCIÓN · A1";
-            value=a==null?"Botón eliminado":a.optString("name");hint=a==null?"Configura otro botón":"Toca para confirmar";
-            if(a!=null){icon=a.optString("icon","bolt");color=a.optString("color",color);body="Tu comando guardado. Se confirma en ATLAS antes de ejecutarse.";}
+            value=a==null?"Configura tu botón":a.optString("name");hint=a==null?"Toca ···":"Ejecutar ahora";
+            if(a!=null){icon=a.optString("icon","bolt");color=a.optString("color",color);body="Acción directa en ATLAS A1.";}
         }else if(type.equals("chat")){title="ATLAS · CHAT";value="¿Qué tienes\nen mente?";hint="Abrir conversación";body="Escribe a Atlas y recibe su respuesta en directo.";
         }else if(type.equals("voice")){title="ATLAS · VOZ";value="Habla\ncon Atlas";hint="Abrir Pulsar";icon="mic";body="Abre Pulsar, prepara la voz y mantén el botón para hablar. El micrófono no se activa desde el escritorio.";
         }else if(type.equals("quota")){
             title="CODEX · CUOTAS";icon="activity";JSONObject usage=s.optJSONObject("usage");
             value="5 h   "+remaining(usage,"fiveHour")+"\nSemana   "+remaining(usage,"weekly");
             hint="Disponible · "+age;body=reset(usage,"fiveHour","5 horas")+"\n"+reset(usage,"weekly","Semana");
+        }else if(type.equals("cpu")){
+            title="A1 · CPU";icon="activity";value=s.isNull("temperatureC")?"—":String.format(java.util.Locale.ROOT,"%.1f °C",s.optDouble("temperatureC"));hint=age;body="Temperatura actual del procesador";
+        }else if(type.equals("ram")){
+            title="A1 · RAM";icon="monitor";JSONObject memory=s.optJSONObject("memory");double total=memory==null?0:memory.optDouble("MemTotal"),available=memory==null?0:memory.optDouble("MemAvailable");value=total<=0?"—":Math.round((1-available/total)*100)+"%";hint=age;body="Memoria utilizada";
         }else{
             title="ATLAS · ESTADO";icon="device";
             JSONArray services=s.optJSONArray("services");int active=0,total=services==null?0:services.length();StringBuilder list=new StringBuilder();

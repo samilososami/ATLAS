@@ -16,6 +16,14 @@ class Companion:
         self.http=None; self.access=None; self.owner=None; self.touched=0
         self.terminals={}; self.pending={}; self.clients={}; self.relay='disabled'
         self.lock=asyncio.Lock(); self.health_cache=(0,{})
+        self.paired_device=config.get('pairedDevice')
+    def remember_device(self,name):
+        if not isinstance(name,str): return
+        name=''.join(ch for ch in name.strip()[:40] if ch.isalnum() or ch in ' ._+-')
+        if not name or name==self.paired_device: return
+        self.paired_device=name; self.config['pairedDevice']=name; self.config['pairedAt']=int(time.time())
+        tmp=CONFIG.with_suffix('.tmp'); tmp.write_text(json.dumps(self.config,separators=(',',':')))
+        tmp.chmod(0o600); os.replace(tmp,CONFIG)
     async def request(self,path,data=None):
         headers={'X-Atlas-Access':'1'}
         if self.access: headers['X-Atlas-Client']=self.access
@@ -73,6 +81,7 @@ class Companion:
         try: h=json.loads(result['output'])
         except ValueError: h={'ok':False,'issues':['No se pudo ejecutar atlas-rafas']}
         h['companion']={'version':'0.1.0','relay':self.relay,'clients':len(self.clients),
+                        'pairedDevice':self.paired_device,
                         'voiceActive':bool(self.owner),'terminalCount':len(self.terminals)}
         h['usage']=await self.quota()
         self.health_cache=(time.monotonic(),h); return h
@@ -108,7 +117,8 @@ class Companion:
         if not isinstance(msg,dict): raise ValueError('Petición inválida')
         client=msg.get('client','')
         if not isinstance(client,str) or not 8<=len(client)<=80: raise ValueError('Cliente inválido')
-        self.clients[client]={'lastSeen':time.time(),'transport':peer}
+        self.remember_device(msg.get('device'))
+        self.clients[client]={'lastSeen':time.time(),'transport':peer,'device':self.paired_device}
         method=msg.get('method'); p=msg.get('params') or {}
         if not isinstance(method,str) or not isinstance(p,dict): raise ValueError('Petición inválida')
         if method=='ping':

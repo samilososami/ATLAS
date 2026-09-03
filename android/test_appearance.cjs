@@ -1,51 +1,5 @@
-const {test}=require('node:test');
-const assert=require('node:assert/strict');
-const fs=require('node:fs');
-const vm=require('node:vm');
-const dir=__dirname+'/app/src/main/assets/web/';
-function themeContext(stored){
- const storage=new Map(stored?[['atlas.theme',stored]]:[]);
- const c={document:{documentElement:{dataset:{}}},localStorage:{getItem:k=>storage.get(k),setItem:(k,v)=>storage.set(k,v)}};
- c.window=c;vm.runInNewContext(fs.readFileSync(dir+'appearance.js','utf8'),c);return c;
-}
-test('first install defaults to dark, including invalid old values',()=>{
- for(const value of [undefined,'invalid','dark'])assert.equal(themeContext(value).document.documentElement.dataset.theme,'dark');
-});
-test('light persists on first paint, native choice can override cache',()=>{
- const c=themeContext('light');assert.equal(c.document.documentElement.dataset.theme,'light');
- c.applyAtlasTheme('dark');assert.equal(c.localStorage.getItem('atlas.theme'),'dark');
-});
-test('blocked storage still yields the default dark theme',()=>{
- const c={document:{documentElement:{dataset:{}}},localStorage:{getItem(){throw Error()},setItem(){throw Error()}}};c.window=c;
- vm.runInNewContext(fs.readFileSync(dir+'appearance.js','utf8'),c);assert.equal(c.document.documentElement.dataset.theme,'dark');
-});
-test('light overrides never replace shared blue accent tokens',()=>{
- const css=fs.readFileSync(dir+'appearance.css','utf8');assert.doesNotMatch(css,/--(?:blue|cyan)\s*:/);
- assert.match(css,/#chat-panel\{display:none\}/);assert.match(css,/\.chat-mode #chat-panel\{display:block\}/);
-});
-test('dedicated SVG glyphs coexist with the two original full-color logos',()=>{
- const html=fs.readFileSync(dir+'index.html','utf8');
- assert.equal((html.match(/src="logo.png"/g)||[]).length,2);
- assert.equal((html.match(/src="atlas-wordmark.svg"/g)||[]).length,2);
- assert.match(html,/<div id="chat-panel">[\s\S]*id="messages"[\s\S]*id="chat-form"[\s\S]*<\/form><\/div>/);
- const icon=fs.readFileSync(dir+'atlas-filled.svg','utf8');assert.match(icon,/M731 45 L20 1435 L732 1133 L1414 1436 Z M730 522 L1066 1156 L729 937 L390 1161 Z/);
-});
-function voiceContext(){
- const elements=new Map();const $=s=>{if(!elements.has(s))elements.set(s,{checked:true,classList:{add(){},remove(){},toggle(){}},textContent:''});return elements.get(s);};
- const c={$,$$:()=>[],Audio:class{},safe:fn=>fn,native:async()=>({}),document:{addEventListener(){}},setTimeout,clearTimeout};c.window=c;
- vm.runInNewContext(fs.readFileSync(dir+'realtime.js','utf8'),c);return c;
-}
-test('text-only chat cannot silently mute Pulsar or wake mode',()=>{
- const c=voiceContext();c.$('#speak').checked=false;
- c.voice.mode='chat';assert.equal(c.voice.outputMode(),'text');
- c.voice.mode='ptt';assert.equal(c.voice.outputMode(),'audio');
- c.voice.mode='wake';assert.equal(c.voice.outputMode(),'audio');
-});
-test('switching a prepared session from text chat to Pulsar updates output once',async()=>{
- const c=voiceContext();c.$('#speak').checked=false;c.voice.mode='chat';c.voice.ready=true;
- const sent=[];c.voice.send=v=>sent.push(v);await c.voice.setMode('ptt');
- assert.equal(sent.filter(e=>e.type==='session.update').length,1);
- assert.equal(sent.find(e=>e.type==='session.update').session.output_modalities[0],'audio');
- assert.equal(c.$('#speak').checked,false,'keep user chat preference');
- await c.voice.setMode('chat');assert.equal(sent.filter(e=>e.type==='session.update').at(-1).session.output_modalities[0],'text');
-});
+'use strict';
+const {test}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const root=__dirname+'/app/src/main/';const read=p=>fs.readFileSync(root+p,'utf8');
+test('appearance is fixed to the light ATLAS palette',()=>{const boot=read('assets/web/appearance.js'),css=read('assets/web/style.css'),main=read('java/dev/atlas/a1/MainActivity.java');assert.match(boot,/dataset\.theme='light'/);assert.match(css,/color-scheme:light/);assert.match(main,/return true/);assert.doesNotMatch(read('assets/web/index.html'),/id="theme"/);});
+test('push to talk resamples device audio and uses measured levels',()=>{const voice=read('assets/web/realtime.js');assert.match(voice,/await this\.connect\(\)/);assert.match(voice,/resample\(chunks,from,to=24000\)/);assert.match(voice,/Math\.sqrt\(sum\/chunk\.length\)/);assert.match(voice,/getByteTimeDomainData/);assert.doesNotMatch(voice,/sampleRate!==24000/);});
+test('onboarding is permission-by-permission and includes revised copy',()=>{const app=read('assets/web/app.js');assert.match(app,/desbloquear todo su potencial/);assert.match(app,/ATLAS puede controlar tu teléfono directamente/);for(const p of ['microphone','notifications','bluetooth','overlay','location','camera','contacts','calendar','phone','calllog','sms','wifi','media','storage','activity'])assert.match(app,new RegExp("'"+p+"'"));assert.match(app,/permissions\.request/);});

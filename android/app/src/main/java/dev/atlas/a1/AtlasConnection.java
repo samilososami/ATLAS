@@ -7,6 +7,7 @@ import android.content.pm.PackageManager;
 import android.hardware.biometrics.*;
 import android.net.Uri;
 import android.os.*;
+import android.provider.Settings;
 import android.security.keystore.*;
 import android.speech.*;
 import android.util.Base64;
@@ -32,13 +33,27 @@ final class AtlasConnection implements AutoCloseable {
     final OkHttpClient normal=new OkHttpClient.Builder().callTimeout(40,TimeUnit.SECONDS).build();
     final Map<String,CompletableFuture<JSONObject>> pending=new ConcurrentHashMap<>();
     final Set<String> received=ConcurrentHashMap.newKeySet();
-    final String clientId=UUID.randomUUID().toString();
+    final String clientId;
+    final String deviceName;
     volatile JSONObject pairing;
     WebSocket relay;
     CompletableFuture<Boolean> relayReady;
     AtlasConnection(Context context) {
         prefs=context.getSharedPreferences("atlas",Context.MODE_PRIVATE);
+        String savedClient=prefs.getString("clientId",null);
+        clientId=savedClient==null?UUID.randomUUID().toString():savedClient;
+        if(savedClient==null)prefs.edit().putString("clientId",clientId).apply();
+        deviceName=friendlyDeviceName(context);
         try{String saved=prefs.getString("pair",null);if(saved!=null)pairing=new JSONObject(vaultOpen(saved));}catch(Exception ignored){}
+    }
+    static String friendlyDeviceName(Context context){
+        String model=Build.MODEL==null?"Android":Build.MODEL.trim();
+        String upper=model.toUpperCase(Locale.ROOT);
+        if(upper.startsWith("SM-S918"))return "s23u";
+        if(upper.startsWith("SM-S916"))return "s23+";
+        if(upper.startsWith("SM-S911"))return "s23";
+        try{String configured=Settings.Global.getString(context.getContentResolver(),Settings.Global.DEVICE_NAME);if(configured!=null&&!configured.isBlank())return configured.substring(0,Math.min(40,configured.length()));}catch(Exception ignored){}
+        return model.substring(0,Math.min(40,model.length()));
     }
     JSONObject object(Object...kv){JSONObject o=new JSONObject();try{for(int i=0;i<kv.length;i+=2)o.put((String)kv[i],kv[i+1]);}catch(Exception ignored){}return o;}
     public synchronized void close(){if(relay!=null)relay.close(1000,"Closed");failRelay("Conexión cerrada");}
@@ -111,33 +126,14 @@ final class AtlasConnection implements AutoCloseable {
     }
     JSONObject rpc(String method,JSONObject params)throws Exception{
         if(pairing==null)throw new IOException("Empareja primero tu ATLAS A1");
-        String id=UUID.randomUUID().toString();String box=seal(object("id",id,"client",clientId,"method",method,"params",params));
-        String mode=prefs.getString("transport","auto");JSONObject reply=null;
-        if(!mode.equals("relay")){
-            AtomicBoolean sent=new AtomicBoolean(false);
-            Request req=new Request.Builder().url(pairing.getString("url")+"/rpc").post(RequestBody.create(object("box",box).toString(),MediaType.get("application/json"))).build();
-            OkHttpClient lan=pinned().newBuilder().eventListener(new okhttp3.EventListener(){
-                @Override public void requestHeadersStart(Call call){sent.set(true);}
-            }).build();
-            try(Response r=lan.newCall(req).execute()){
-                if(!r.isSuccessful())throw new IOException("A1 rechazó el emparejamiento. Revisa fecha y código.");
-                reply=unseal(new JSONObject(r.body().string()).getString("box"));
-            }catch(IOException e){
-                // A connect timeout is safe to route through the relay; an
-                // uncertain write is not. Certificate failures never fall back.
-                if(sent.get())throw new IOException("A1 no respondió. No se repite la acción automáticamente.",e);
-                if(mode.equals("lan")||e instanceof SSLException||pairing.optString("relay").isEmpty())throw e;
-            }
-        }
-        if(reply==null){
-            openRelay(); if(!relayReady.get(10,TimeUnit.SECONDS))throw new IOException("Relay rechazado");
-            CompletableFuture<JSONObject> future=new CompletableFuture<>();pending.put(id,future);
-            try {if(!relay.send(object("box",box).toString()))throw new IOException("Relay sin conexión");reply=future.get(40,TimeUnit.SECONDS);}
-            finally{pending.remove(id);}
-        }
+        String id=UUID.randomUUID().toString();String box=seal(object("id",id,"client",clientId,"device",deviceName,"method",method,"params",params));
+        JSONObject reply;
+        openRelay(); if(!relayReady.get(10,TimeUnit.SECONDS))throw new IOException("Relay rechazado");
+        CompletableFuture<JSONObject> future=new CompletableFuture<>();pending.put(id,future);
+        try {if(!relay.send(object("box",box).toString()))throw new IOException("Relay sin conexión");reply=future.get(40,TimeUnit.SECONDS);}
+        finally{pending.remove(id);}
         if(!id.equals(reply.optString("id")))throw new SecurityException("Respuesta no correspondiente");
         if(reply.has("error"))throw new IOException(reply.getString("error"));return reply.getJSONObject("result");
     }
 
 }
-

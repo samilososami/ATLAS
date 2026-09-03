@@ -1042,6 +1042,10 @@ def build_realtime_context(
             if content:
                 sources.append((f"runtime/adb/devices/{path.name}", content))
 
+    try:
+        physical_screen_mode = Path("/home/atlas/.atlas/screen/mode").read_text(encoding="utf-8").strip()
+    except OSError:
+        physical_screen_mode = "unknown"
     preface = (
         "# ATLAS REALTIME PRIVATE CONTEXT\n\n"
         "This is trusted local context containing every Markdown document in the workspace except episodic "
@@ -1058,7 +1062,8 @@ def build_realtime_context(
         "Do not claim that you lack workspace context before checking that map. NOTES.md is your compact, "
         "agent-maintained operational notebook. The runtime/adb/devices sources are refreshed inventories; "
         "their NOTES sections remain persistent lessons about each device.\n\n"
-        "The USER.md details are private and belong only to this direct WebScreen conversation with sami."
+        "The USER.md details are private and belong only to this direct WebScreen conversation with sami.\n\n"
+        f"Current physical screen mode: {physical_screen_mode}. In atlas-hide, voice remains active while HDMI is hidden."
     )
     parts = [preface]
     included: list[dict[str, Any]] = []

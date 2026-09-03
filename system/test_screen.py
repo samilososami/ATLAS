@@ -29,7 +29,7 @@ main "$@"
         return subprocess.run(['bash', '-c', script, 'test', str(ROOT / 'atlas-commands/atlas-screen'), *args], capture_output=True, text=True)
 
     def test_all_modes_and_both_orders(self):
-        for mode in ('atlas', 'terminal', 'desktop', 'rafas'):
+        for mode in ('atlas', 'atlas-hide', 'terminal', 'desktop', 'rafas'):
             for args in ((f'--{mode}', 'on'), ('on', f'--{mode}')):
                 with self.subTest(args=args):
                     result = self.call(*args)
@@ -38,7 +38,7 @@ main "$@"
                     self.assertTrue(result.stdout.endswith('ON\n'))
 
     def test_mode_alone_switches_immediately(self):
-        for mode in ('atlas', 'rafas', 'desktop', 'terminal'):
+        for mode in ('atlas', 'atlas-hide', 'rafas', 'desktop', 'terminal'):
             self.assertEqual(self.call('--' + mode).stdout, 'SAVE:' + mode + '\nON\n')
         self.assertEqual(self.call('--RAFAS').stdout, 'SAVE:rafas\nON\n')
 
@@ -47,7 +47,7 @@ main "$@"
             self.assertEqual(self.call(*args).stdout, expected)
 
     def test_enable_fixed_mode_does_not_switch_current_surface(self):
-        for mode in ('atlas', 'rafas', 'desktop', 'terminal', 'last'):
+        for mode in ('atlas', 'atlas-hide', 'rafas', 'desktop', 'terminal', 'last'):
             for args in (('enable', '--' + mode), ('--' + mode, 'enable')):
                 result = self.call(*args)
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -118,7 +118,7 @@ boot_screen_on
         return subprocess.run(['bash', '-c', script, 'test', str(ROOT / 'atlas-commands/atlas-screen'), policy, last_mode], capture_output=True, text=True)
 
     def test_last_tracks_the_runtime_mode(self):
-        for mode in ('atlas', 'rafas', 'desktop', 'terminal'):
+        for mode in ('atlas', 'atlas-hide', 'rafas', 'desktop', 'terminal'):
             self.assertEqual(self.call('last', mode).stdout, 'ON:' + mode + '\n')
 
     def test_fixed_boot_mode_is_independent_of_last_runtime_mode(self):

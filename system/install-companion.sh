@@ -14,10 +14,14 @@ for name in atlas-rafas atlas-app; do
   install -m 755 "$repo/atlas-commands/$name" "/usr/local/bin/$name"
 done
 install -d -m 755 -o "$owner" -g "$owner" "$atlas_home/.atlas/companion"
-for name in server.py crypto.py relay.py README.md; do
+for name in server.py crypto.py relay.py ble_pair.py README.md; do
   preserve "$atlas_home/.atlas/companion/$name"
   install -m 644 "$repo/.atlas/companion/$name" "$atlas_home/.atlas/companion/$name"
 done
+if ! python3 -c 'import dbus_next' >/dev/null 2>&1; then
+  apt-get update -qq
+  DEBIAN_FRONTEND=noninteractive apt-get install -y python3-dbus-next bluez
+fi
 preserve /etc/systemd/system/atlas-companion.service
 # The source unit uses the reference Pi account; the installer resolves yours.
 sed -e "s|^User=.*|User=$owner|" -e "s|^Group=.*|Group=$owner|" \

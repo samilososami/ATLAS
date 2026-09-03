@@ -7,6 +7,7 @@ import android.content.pm.PackageManager;
 import android.hardware.biometrics.*;
 import android.net.Uri;
 import android.os.*;
+import android.provider.Settings;
 import android.security.keystore.*;
 import android.speech.*;
 import android.util.Base64;
@@ -41,19 +42,27 @@ public final class MainActivity extends Activity {
     private long speechGeneration=0;
     private PermissionRequest micRequest;
     private String permissionId;
+    private String permissionKind;
+    private BlePairingManager blePairing;
     private android.content.SharedPreferences prefs;
 
     @Override public void onCreate(Bundle state) {
         prefs=getSharedPreferences("atlas",MODE_PRIVATE);
-        setTheme(isLight()?R.style.AtlasThemeLight:R.style.AtlasTheme);
+        setTheme(R.style.AtlasThemeLight);
         super.onCreate(state);
         locked=prefs.getBoolean("lock",false);
-        connection=new AtlasConnection(this);updater=new AppUpdater(this);
+        connection=AtlasRuntime.connection(this);updater=new AppUpdater(this);
+        blePairing=new BlePairingManager(this,new BlePairingManager.Events(){
+            public void found(String name){event("pairDevice",object("name",name));}
+            public void error(String message){event("pairError",object("message",message));}
+            public void success(String payload){savePairingPayload(payload);}
+        });
         readWidgetIntent(getIntent());
         web=new WebView(this);
         frame=new FrameLayout(this);
         frame.addView(web,new FrameLayout.LayoutParams(-1,-1)); setContentView(frame);
         applyAppearance();
+        immersive();
         // WebView ignores padding for its document viewport. Inset the parent so
         // fixed HTML navigation also clears Android's bars and the keyboard.
         frame.setOnApplyWindowInsetsListener((v,insets)->{
@@ -87,19 +96,25 @@ public final class MainActivity extends Activity {
         });
         web.loadUrl("https://atlas.local/index.html");
     }
-    private boolean isLight(){return "light".equals(prefs.getString("theme","dark"));}
+    private boolean isLight(){return true;}
     private void applyAppearance(){
-        boolean light=isLight();int background=light?0xfff2f4f8:0xff080f20;
-        setTheme(light?R.style.AtlasThemeLight:R.style.AtlasTheme);
+        int background=0xfff2f4f8;
+        setTheme(R.style.AtlasThemeLight);
         getWindow().setStatusBarColor(background);getWindow().setNavigationBarColor(background);
         int mask=WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS|WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS;
-        getWindow().getInsetsController().setSystemBarsAppearance(light?mask:0,mask);
+        getWindow().getInsetsController().setSystemBarsAppearance(mask,mask);
         frame.setBackgroundColor(background);web.setBackgroundColor(background);
     }
+    private void immersive(){
+        getWindow().setDecorFitsSystemWindows(false);
+        WindowInsetsController controller=getWindow().getInsetsController();
+        if(controller!=null){controller.setSystemBarsBehavior(WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);controller.hide(WindowInsets.Type.systemBars());}
+    }
+    @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused)immersive();}
     private JSONObject object(Object... kv){JSONObject o=new JSONObject();try{for(int i=0;i<kv.length;i+=2)o.put((String)kv[i],kv[i+1]);}catch(Exception ignored){}return o;}
     private JSONObject config(){return object("paired",connection.pairing!=null,"name",connection.pairing==null?"ATLAS A1":connection.pairing.optString("name"),
         "relayConfigured",connection.pairing!=null&&!connection.pairing.optString("relay").isEmpty(),"lock",prefs.getBoolean("lock",false),
-        "danger",prefs.getBoolean("danger",true),"pairAuth",prefs.getBoolean("pairAuth",true),"transport",prefs.getString("transport","auto"),"theme",isLight()?"light":"dark","version",appVersion());}
+        "danger",prefs.getBoolean("danger",true),"onboarding",prefs.getBoolean("onboarding",false),"theme","light","version",appVersion());}
     private String appVersion(){try{return getPackageManager().getPackageInfo(getPackageName(),0).versionName;}catch(Exception e){return "ATLAS";}}
     private void readWidgetIntent(Intent intent){String type=intent.getStringExtra("widgetType");if(Arrays.asList("action","status","quota","chat","voice").contains(type))widgetLaunch=object("type",type,"actionId",intent.getStringExtra("actionId"));}
     private void deliverWidget(){if(pageReady&&!locked&&!background&&widgetLaunch!=null){JSONObject next=widgetLaunch;widgetLaunch=null;event("widget",next);}}
@@ -124,6 +139,70 @@ public final class MainActivity extends Activity {
     private void event(String name,Object value){ui.post(()->{if(pageReady)web.evaluateJavascript("window.nativeEvent&&nativeEvent("+JSONObject.quote(name)+","+json(value)+")",null);});}
     private void answer(String id,Object result,String error){ui.post(()->web.evaluateJavascript("window.nativeReply&&nativeReply("+JSONObject.quote(id)+","+json(result)+","+(error==null?"null":JSONObject.quote(error))+")",null));}
     private JSONObject rpc(String method,JSONObject params)throws Exception{return connection.rpc(method,params);}
+    private boolean granted(String kind){
+        switch(kind){
+            case "microphone":return checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED;
+            case "notifications":return Build.VERSION.SDK_INT<33||checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)==PackageManager.PERMISSION_GRANTED;
+            case "bluetooth":return Build.VERSION.SDK_INT<31?checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED:
+                checkSelfPermission(Manifest.permission.BLUETOOTH_SCAN)==PackageManager.PERMISSION_GRANTED&&checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT)==PackageManager.PERMISSION_GRANTED;
+            case "overlay":return Settings.canDrawOverlays(this);
+            case "location":return checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED;
+            case "camera":return checkSelfPermission(Manifest.permission.CAMERA)==PackageManager.PERMISSION_GRANTED;
+            case "contacts":return checkSelfPermission(Manifest.permission.READ_CONTACTS)==PackageManager.PERMISSION_GRANTED&&checkSelfPermission(Manifest.permission.WRITE_CONTACTS)==PackageManager.PERMISSION_GRANTED;
+            case "calendar":return checkSelfPermission(Manifest.permission.READ_CALENDAR)==PackageManager.PERMISSION_GRANTED&&checkSelfPermission(Manifest.permission.WRITE_CALENDAR)==PackageManager.PERMISSION_GRANTED;
+            case "phone":return checkSelfPermission(Manifest.permission.READ_PHONE_STATE)==PackageManager.PERMISSION_GRANTED&&checkSelfPermission(Manifest.permission.CALL_PHONE)==PackageManager.PERMISSION_GRANTED&&checkSelfPermission(Manifest.permission.ANSWER_PHONE_CALLS)==PackageManager.PERMISSION_GRANTED;
+            case "calllog":return checkSelfPermission(Manifest.permission.READ_CALL_LOG)==PackageManager.PERMISSION_GRANTED&&checkSelfPermission(Manifest.permission.WRITE_CALL_LOG)==PackageManager.PERMISSION_GRANTED;
+            case "sms":return checkSelfPermission(Manifest.permission.READ_SMS)==PackageManager.PERMISSION_GRANTED&&checkSelfPermission(Manifest.permission.SEND_SMS)==PackageManager.PERMISSION_GRANTED;
+            case "wifi":return Build.VERSION.SDK_INT<33||checkSelfPermission(Manifest.permission.NEARBY_WIFI_DEVICES)==PackageManager.PERMISSION_GRANTED;
+            case "media":return Build.VERSION.SDK_INT<33?checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE)==PackageManager.PERMISSION_GRANTED:
+                checkSelfPermission(Manifest.permission.READ_MEDIA_IMAGES)==PackageManager.PERMISSION_GRANTED&&checkSelfPermission(Manifest.permission.READ_MEDIA_VIDEO)==PackageManager.PERMISSION_GRANTED&&checkSelfPermission(Manifest.permission.READ_MEDIA_AUDIO)==PackageManager.PERMISSION_GRANTED;
+            case "storage":return Build.VERSION.SDK_INT<30||Environment.isExternalStorageManager();
+            case "activity":return checkSelfPermission(Manifest.permission.ACTIVITY_RECOGNITION)==PackageManager.PERMISSION_GRANTED&&checkSelfPermission(Manifest.permission.BODY_SENSORS)==PackageManager.PERMISSION_GRANTED;
+            default:return false;
+        }
+    }
+    private String[] normalPermissions(String kind){
+        switch(kind){
+            case "microphone":return new String[]{Manifest.permission.RECORD_AUDIO};
+            case "notifications":return Build.VERSION.SDK_INT>=33?new String[]{Manifest.permission.POST_NOTIFICATIONS}:new String[0];
+            case "bluetooth":return Build.VERSION.SDK_INT>=31?new String[]{Manifest.permission.BLUETOOTH_SCAN,Manifest.permission.BLUETOOTH_CONNECT}:new String[]{Manifest.permission.ACCESS_FINE_LOCATION};
+            case "location":return new String[]{Manifest.permission.ACCESS_COARSE_LOCATION,Manifest.permission.ACCESS_FINE_LOCATION};
+            case "camera":return new String[]{Manifest.permission.CAMERA};
+            case "contacts":return new String[]{Manifest.permission.READ_CONTACTS,Manifest.permission.WRITE_CONTACTS};
+            case "calendar":return new String[]{Manifest.permission.READ_CALENDAR,Manifest.permission.WRITE_CALENDAR};
+            case "phone":return new String[]{Manifest.permission.READ_PHONE_STATE,Manifest.permission.READ_PHONE_NUMBERS,Manifest.permission.CALL_PHONE,Manifest.permission.ANSWER_PHONE_CALLS};
+            case "calllog":return new String[]{Manifest.permission.READ_CALL_LOG,Manifest.permission.WRITE_CALL_LOG};
+            case "sms":return new String[]{Manifest.permission.READ_SMS,Manifest.permission.SEND_SMS,Manifest.permission.RECEIVE_SMS};
+            case "wifi":return Build.VERSION.SDK_INT>=33?new String[]{Manifest.permission.NEARBY_WIFI_DEVICES}:new String[0];
+            case "media":return Build.VERSION.SDK_INT>=33?new String[]{Manifest.permission.READ_MEDIA_IMAGES,Manifest.permission.READ_MEDIA_VIDEO,Manifest.permission.READ_MEDIA_AUDIO}:new String[]{Manifest.permission.READ_EXTERNAL_STORAGE};
+            case "activity":return new String[]{Manifest.permission.ACTIVITY_RECOGNITION,Manifest.permission.BODY_SENSORS};
+            default:return new String[0];
+        }
+    }
+    private void requestPermissionKind(String id,String kind){
+        if(granted(kind)){answer(id,object("granted",true),null);return;}
+        if("overlay".equals(kind)){
+            startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,Uri.parse("package:"+getPackageName())));
+            answer(id,object("granted",false,"opened",true),null);return;
+        }
+        if("storage".equals(kind)&&Build.VERSION.SDK_INT>=30){
+            startActivity(new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,Uri.parse("package:"+getPackageName())));
+            answer(id,object("granted",false,"opened",true),null);return;
+        }
+        String[] permissions=normalPermissions(kind);
+        if(permissions.length==0){answer(id,object("granted",true),null);return;}
+        permissionId=id;permissionKind=kind;requestPermissions(permissions,19);
+    }
+    private void savePairingPayload(String code){
+        io.execute(()->{try{
+            JSONObject next=new JSONObject(new String(connection.decode(code.substring(7)),StandardCharsets.UTF_8));
+            if(next.optInt("v")!=1||connection.decode(next.getString("key")).length!=32||!next.getString("pin").matches("[0-9a-f]{64}")||!next.getString("relay").startsWith("wss://"))throw new IOException("Datos de emparejamiento incompletos");
+            JSONObject before=connection.pairing;connection.close();connection.pairing=next;
+            try{rpc("ping",new JSONObject());}catch(Exception e){connection.pairing=before;throw e;}
+            prefs.edit().putString("pair",connection.encrypt(next.toString().getBytes(StandardCharsets.UTF_8),connection.vaultKey(),null)).apply();
+            AtlasLinkService.start(this);event("pairSuccess",config());
+        }catch(Exception e){event("pairError",object("message",e.getMessage()==null?"No se pudo emparejar ATLAS A1":e.getMessage()));}});
+    }
     private void authenticate(String reason,Runnable success,Runnable cancel){
         if(authPending){cancel.run();return;}
         int allowed=BiometricManager.Authenticators.BIOMETRIC_STRONG|BiometricManager.Authenticators.DEVICE_CREDENTIAL;
@@ -175,30 +254,17 @@ public final class MainActivity extends Activity {
                     case "updates.check": if(updateBusy)throw new IOException("Espera a que termine la descarga");work(id,()->updater.check());break;
                     case "updates.install": installUpdate(id,p);break;
                     case "widgets.sync": WidgetStore.sync(MainActivity.this,p.getJSONArray("actions"));answer(id,object("ok",true),null);break;
-                    case "widgets.add": {
-                        android.appwidget.AppWidgetManager manager=getSystemService(android.appwidget.AppWidgetManager.class);
-                        if(!manager.isRequestPinAppWidgetSupported())throw new IOException("Mantén pulsada la pantalla de inicio y busca ATLAS en Widgets");
-                        boolean requested=manager.requestPinAppWidget(new ComponentName(MainActivity.this,AtlasWidgetProvider.class),null,null);
-                        answer(id,object("requested",requested),null);break;
-                    }
-                    case "pair": {
-                        Runnable save=()->work(id,()->{
-                            String code=p.getString("code").trim();if(!code.startsWith("atlas1:"))throw new IOException("Código ATLAS inválido");
-                            JSONObject next=new JSONObject(new String(connection.decode(code.substring(7)),StandardCharsets.UTF_8));
-                            if(next.optInt("v")!=1||connection.decode(next.getString("key")).length!=32||!next.getString("pin").matches("[0-9a-f]{64}")||!next.getString("url").startsWith("https://"))throw new IOException("Código incompleto");
-                            JSONObject before=connection.pairing;connection.pairing=next;
-                            try{rpc("ping",new JSONObject());}catch(Exception e){connection.pairing=before;throw e;}
-                            prefs.edit().putString("pair",connection.encrypt(next.toString().getBytes(StandardCharsets.UTF_8),connection.vaultKey(),null)).apply();return config();
-                        });
-                        if(prefs.getBoolean("pairAuth",true))authenticate("Emparejar con tu ATLAS A1",save,()->answer(id,null,"Emparejamiento cancelado"));else save.run();break;
-                    }
-                    case "forget": connection.pairing=null;prefs.edit().remove("pair").apply();connection.close();WidgetStore.prefs(MainActivity.this).edit().remove("status").remove("time").remove("error").apply();AtlasWidgetProvider.updateAll(MainActivity.this);answer(id,config(),null);break;
+                    case "permissions.status": answer(id,object("granted",granted(p.getString("kind"))),null);break;
+                    case "permissions.request": requestPermissionKind(id,p.getString("kind"));break;
+                    case "onboarding.finish": prefs.edit().putBoolean("onboarding",true).apply();answer(id,config(),null);break;
+                    case "pair.scan": blePairing.scan();answer(id,object("scanning",true),null);break;
+                    case "pair.submit": blePairing.submit(p.optString("code"));answer(id,object("connecting",true),null);break;
+                    case "pair.stop": blePairing.stop();answer(id,object("ok",true),null);break;
+                    case "forget": connection.pairing=null;prefs.edit().remove("pair").apply();connection.close();stopService(new Intent(MainActivity.this,AtlasLinkService.class));WidgetStore.prefs(MainActivity.this).edit().remove("status").remove("time").remove("error").apply();AtlasWidgetProvider.updateAll(MainActivity.this);answer(id,config(),null);break;
                     case "settings": {
-                        Runnable change=()->{for(String k:new String[]{"lock","danger","pairAuth"})if(p.has(k))prefs.edit().putBoolean(k,p.optBoolean(k)).apply();
-                            if(p.has("transport")&&Arrays.asList("auto","lan","relay").contains(p.optString("transport")))prefs.edit().putString("transport",p.optString("transport")).apply();
-                            if(p.has("theme")&&Arrays.asList("light","dark").contains(p.optString("theme"))){prefs.edit().putString("theme",p.optString("theme")).apply();applyAppearance();}
+                        Runnable change=()->{for(String k:new String[]{"lock","danger"})if(p.has(k))prefs.edit().putBoolean(k,p.optBoolean(k)).apply();
                             answer(id,config(),null);};
-                        if(p.has("lock")||p.has("danger")||p.has("pairAuth"))authenticate("Cambiar protección de ATLAS",change,()->answer(id,null,"Sin cambios"));else change.run();break;
+                        if(p.has("lock")||p.has("danger"))authenticate("Cambiar protección de ATLAS",change,()->answer(id,null,"Sin cambios"));else change.run();break;
                     }
                     case "microphone":
                         if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED)answer(id,object("ok",true),null);
@@ -207,10 +273,14 @@ public final class MainActivity extends Activity {
                     case "haptic": web.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK);answer(id,object("ok",true),null);break;
                     case "execute": io.execute(()->{
                         try {JSONObject prepared=rpc("command.prepare",p);
-                            ui.post(()->confirm(id,"Ejecutar en ATLAS A1",prepared.optString("command"),()->work(id,()->rpc("command.execute",object("nonce",prepared.getString("nonce"))))));
+                            Runnable run=()->work(id,()->rpc("command.execute",object("nonce",prepared.getString("nonce"))));
+                            ui.post(()->{if(prefs.getBoolean("danger",true))authenticate("Ejecutar en ATLAS A1",run,()->answer(id,null,"No autorizado"));else run.run();});
                         }catch(Exception e){answer(id,null,e.getMessage());}
                     });break;
-                    case "terminal.open": confirm(id,"Abrir terminal","Acceso interactivo a A1 como su usuario. Los comandos con sudo pueden administrar todo el dispositivo.",()->work(id,()->rpc(method,p)));break;
+                    case "terminal.open": {
+                        Runnable run=()->work(id,()->rpc(method,p));
+                        if(prefs.getBoolean("danger",true))authenticate("Abrir shell de ATLAS A1",run,()->answer(id,null,"No autorizado"));else run.run();break;
+                    }
                     case "offer": work(id,()->{
                         String url=p.getString("url");Uri u=Uri.parse(url);
                         if(!"https".equals(u.getScheme())||!Arrays.asList("api.openai.com","chatgpt.com").contains(u.getHost()))throw new SecurityException("Servidor de voz no autorizado");
@@ -227,14 +297,17 @@ public final class MainActivity extends Activity {
         }
     }
     @Override public void onRequestPermissionsResult(int n,String[] permissions,int[] grants){
-        super.onRequestPermissionsResult(n,permissions,grants);boolean ok=grants.length>0&&grants[0]==PackageManager.PERMISSION_GRANTED;
-        if(micRequest!=null){if(ok)micRequest.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});else micRequest.deny();micRequest=null;}
-        if(permissionId!=null){answer(permissionId,object("ok",ok),ok?null:"Micrófono denegado");permissionId=null;}
+        super.onRequestPermissionsResult(n,permissions,grants);
+        if(n==7){boolean ok=checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED;
+            if(micRequest!=null){if(ok)micRequest.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});else micRequest.deny();micRequest=null;}
+            if(permissionId!=null){answer(permissionId,object("granted",ok),ok?null:"Micrófono denegado");permissionId=null;permissionKind=null;}return;}
+        if(n==19&&permissionId!=null){boolean ok=granted(permissionKind);answer(permissionId,object("granted",ok),null);permissionId=null;permissionKind=null;}
     }
-    @Override protected void onResume(){super.onResume();background=false;
+    @Override protected void onResume(){super.onResume();background=false;immersive();if(connection.pairing!=null)AtlasLinkService.start(this);
+        event("permissionsChanged",object("ok",true));
         if(locked&&!authPending){web.setVisibility(View.INVISIBLE);authenticate("Desbloquear ATLAS",()->{locked=false;web.setVisibility(View.VISIBLE);deliverWidget();},this::finish);}else deliverWidget();
     }
     @Override protected void onStop(){background=true;locked=prefs.getBoolean("lock",false);speech(false);event("suspend",object("reason","background"));
         io.execute(()->{try{rpc("session.close",new JSONObject());}catch(Exception ignored){}});super.onStop();}
-    @Override protected void onDestroy(){speech(false);connection.close();web.destroy();io.shutdown();super.onDestroy();}
+    @Override protected void onDestroy(){speech(false);blePairing.stop();web.destroy();io.shutdown();super.onDestroy();}
 }

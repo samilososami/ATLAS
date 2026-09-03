@@ -37,12 +37,14 @@ Usage:
   atlas-screen --desktop
   atlas-screen --terminal
   atlas-screen --atlas
+  atlas-screen --atlas-hide
   atlas-screen --rafas
   atlas-screen --atlas off
   atlas-screen enable
   atlas-screen enable --desktop
   atlas-screen enable --terminal
   atlas-screen enable --atlas
+  atlas-screen enable --atlas-hide
   atlas-screen enable --rafas
   atlas-screen enable --last
   atlas-screen disable
@@ -66,7 +68,7 @@ selected_mode() {
   ensure_mode_store
   mode="$(tr -d '[:space:]' < "$MODE_FILE")"
   case "$mode" in
-    desktop|terminal|atlas|rafas) printf '%s\n' "$mode" ;;
+    desktop|terminal|atlas|atlas-hide|rafas) printf '%s\n' "$mode" ;;
     *) printf 'desktop\n' ;;
   esac
 }
@@ -91,7 +93,7 @@ selected_boot_mode() {
   fi
   mode="$(tr -d '[:space:]' < "$BOOT_MODE_FILE")"
   case "$mode" in
-    desktop|terminal|atlas|rafas|last) printf '%s\n' "$mode" ;;
+    desktop|terminal|atlas|atlas-hide|rafas|last) printf '%s\n' "$mode" ;;
     *) printf 'last\n' ;;
   esac
 }
@@ -209,6 +211,20 @@ start_atlas() {
   systemctl stop "$RAFAS_SERVICE" >/dev/null 2>&1 || true
   systemctl stop "$LIGHTDM_SERVICE" "$TERMINAL_SERVICE" "$GETTY_SERVICE"
   systemctl start atlas-webscreen.service
+  for _ in $(seq 1 180); do
+    if curl --fail --silent --max-time 1 http://127.0.0.1:5000/ >/dev/null 2>&1; then
+      break
+    fi
+    if systemctl is-failed --quiet atlas-webscreen.service; then
+      echo "ATLAS WebScreen failed before the kiosk could start." >&2
+      return 1
+    fi
+    sleep 0.5
+  done
+  if ! curl --fail --silent --max-time 1 http://127.0.0.1:5000/ >/dev/null 2>&1; then
+    echo "ATLAS WebScreen did not become ready." >&2
+    return 1
+  fi
   systemctl restart "$KIOSK_SERVICE"
   chvt 1 >/dev/null 2>&1 || true
   for _ in $(seq 1 250); do
@@ -220,6 +236,13 @@ start_atlas() {
   done
   echo "ATLAS kiosk did not become ready. Check: journalctl -u $KIOSK_SERVICE -n 40" >&2
   return 1
+}
+
+start_atlas_hidden() {
+  start_atlas
+  # Keep Chrome, Realtime, microphone and speaker alive; only hide HDMI.
+  set_framebuffer_blank 4
+  force_connector off
 }
 
 start_rafas() {
@@ -253,10 +276,15 @@ screen_on() {
     desktop) start_desktop ;;
     terminal) start_terminal ;;
     atlas) start_atlas ;;
+    atlas-hide) start_atlas_hidden ;;
     rafas) start_rafas ;;
   esac
 
-  echo "ATLAS screen is on in ${mode} mode."
+  if [ "$mode" = atlas-hide ]; then
+    echo "ATLAS is listening with the physical screen hidden."
+  else
+    echo "ATLAS screen is on in ${mode} mode."
+  fi
 }
 
 screen_off() {
@@ -317,7 +345,7 @@ print_status() {
   if systemctl is-active --quiet "$RAFAS_SERVICE"; then
     active_surface="rafas"
   elif systemctl is-active --quiet "$KIOSK_SERVICE"; then
-    active_surface="atlas"
+    if [ "$mode" = atlas-hide ] && [ "$power" = off ]; then active_surface="atlas-hide"; else active_surface="atlas"; fi
   elif systemctl is-active --quiet "$LIGHTDM_SERVICE"; then
     active_surface="desktop"
   elif systemctl is-active --quiet "$TERMINAL_SERVICE"; then
@@ -338,7 +366,7 @@ main() {
   # Validate the complete request before changing files, services or HDMI.
   for argument in "$@"; do
     case "$argument" in
-      --desktop|--terminal|--atlas|--rafas)
+      --desktop|--terminal|--atlas|--atlas-hide|--rafas)
         value="${argument#--}"
         [ -z "$mode" ] || [ "$mode" = "$value" ] || usage
         mode="$value"

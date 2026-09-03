@@ -32,13 +32,11 @@ def main():
         sys.exit(subprocess.call(['sudo','-n','systemctl',a.action,'atlas-companion.service']))
     if a.action=='logs': sys.exit(subprocess.call(['journalctl','-u','atlas-companion.service','-n','60','--no-pager']))
     if a.action=='pair':
-        c=config(); ips=subprocess.check_output(['hostname','-I'],text=True).split()
-        cert=ssl.PEM_cert_to_DER_cert((STATE/'certificate.pem').read_text())
-        payload={'v':1,'name':os.uname().nodename,'url':'https://'+(ips[0] if ips else 'atlas-a1.local')+':5010',
-                 'pin':hashlib.sha256(cert).hexdigest(),'key':c['key'],'room':c['room'],'relay':c['relay']}
-        print('CÓDIGO PRIVADO: concede administración de A1. No lo publiques ni lo compartas.\n')
-        print('atlas1:'+b64(json.dumps(payload).encode()))
-        return
+        helper=ROOT/'.atlas/companion/ble_pair.py'
+        if not helper.exists(): raise SystemExit('Falta el servicio de emparejamiento Bluetooth. Reinstala ATLAS Companion.')
+        command=['/usr/bin/python3',str(helper)]
+        if os.geteuid()!=0: command=['sudo','-n',*command]
+        sys.exit(subprocess.call(command))
     if a.action=='relay':
         if not a.url or urlparse(a.url).scheme!='wss' or not urlparse(a.url).hostname:
             raise SystemExit('Uso: atlas-app relay wss://tu-dominio/connect')
@@ -56,11 +54,12 @@ def main():
     service=subprocess.run(['systemctl','is-active','atlas-companion.service'],capture_output=True,text=True).stdout.strip()
     try: state=json.loads((STATE/'status.json').read_text())
     except (OSError,ValueError): state={}
-    result={'service':service,'localUrl':'https://atlas-a1.local:5010','paired':(STATE/'config.json').exists(),
+    c=config(); device=c.get('pairedDevice')
+    result={'service':service,'localUrl':'https://atlas-a1.local:5010','paired':bool(device),'pairedDevice':device,
             'fresh':time.time()-state.get('updatedAt',0)<20,**state}
     if a.json: print(json.dumps(result)); return
+    connected=bool(state.get('clients',{})) and result['fresh']
     print('ATLAS APP\nServicio:',service,'\nRelay:',state.get('relay','sin configurar'))
-    print('Móviles conectados:',len(state.get('clients',{})),'\nConversación activa:',state.get('voiceActive',False))
-    print('Terminales:',state.get('terminals',0),'\nEstado reciente:',result['fresh'])
-    print('Emparejar: atlas-app pair · Diagnóstico: atlas-rafas · Logs: atlas-app logs')
+    print('Dispositivo emparejado:',device or 'ninguno','\nConexión actual:','conectada' if connected else 'desconectada')
+    print('Conversación activa:',state.get('voiceActive',False),'\nTerminales:',state.get('terminals',0))
 if __name__=='__main__': main()
