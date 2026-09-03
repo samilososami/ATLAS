@@ -16,10 +16,10 @@ public final class WidgetConfigureActivity extends Activity {
         int id=getIntent().getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID,AppWidgetManager.INVALID_APPWIDGET_ID);
         if(id==AppWidgetManager.INVALID_APPWIDGET_ID){finish();return;}
         getWindow().setStatusBarColor(0xff080f20);getWindow().setNavigationBarColor(0xff080f20);
-        getWindow().getInsetsController().setSystemBarsAppearance(0,WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS|WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS);
         LinearLayout content=new LinearLayout(this);content.setOrientation(LinearLayout.VERTICAL);content.setPadding(28,32,28,24);content.setBackgroundColor(0xff080f20);
         content.setOnApplyWindowInsetsListener((v,insets)->{android.graphics.Insets b=insets.getInsets(WindowInsets.Type.systemBars());v.setPadding(28,b.top+32,28,b.bottom+24);return WindowInsets.CONSUMED;});
         ScrollView scroll=new ScrollView(this);scroll.setFillViewport(true);scroll.addView(content);setContentView(scroll);content.requestApplyInsets();
+        WindowInsetsController controller=getWindow().getInsetsController();if(controller!=null)controller.setSystemBarsAppearance(0,WindowInsetsController.APPEARANCE_LIGHT_STATUS_BARS|WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS);
         TextView title=text("Tu Atlas, a un toque.",27);content.addView(title);
         content.addView(text("Elige el contenido. Después puedes mantener pulsado el widget en tu pantalla de inicio para cambiar su tamaño, desde 2×2.",15));
         Spinner type=new Spinner(this);type.setAdapter(new ArrayAdapter<>(this,android.R.layout.simple_spinner_dropdown_item,new String[]{"Botón guardado","Estado de A1","Límites de Codex","Chat con Atlas","Hablar · Pulsar"}));content.addView(type);

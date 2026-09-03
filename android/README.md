@@ -1,4 +1,4 @@
-# ATLAS Android · 0.1.3 preview
+# ATLAS Android · 0.1.4 preview
 
 Android 11+ companion for an owner-controlled ATLAS A1. Install the APK from
 [GitHub Releases](https://github.com/samilososami/ATLAS/releases). This is a

@@ -6,6 +6,8 @@ const root=__dirname+'/app/src/main/';
 const read=p=>fs.readFileSync(root+p,'utf8');
 test('widget is home-screen only, resizable, and never smaller than 2x2',()=>{
  const xml=read('res/xml/atlas_widget_info.xml');assert.match(xml,/targetCellWidth="2"/);assert.match(xml,/targetCellHeight="2"/);assert.match(xml,/resizeMode="horizontal\|vertical"/);assert.match(xml,/widgetCategory="home_screen"/);
+ const manifest=read('AndroidManifest.xml');assert.match(manifest,/android.permission.ACCESS_NETWORK_STATE/);
+ const configure=read('java/dev/atlas/a1/WidgetConfigureActivity.java');assert.ok(configure.indexOf('setContentView(scroll)')<configure.indexOf('getInsetsController()'));
 });
 test('widget actions open the app and command execution remains behind native confirmation',()=>{
  const widget=read('java/dev/atlas/a1/AtlasWidgetProvider.java');assert.match(widget,/MainActivity\.class/);assert.doesNotMatch(widget,/command\.execute|Runtime\.getRuntime|ProcessBuilder/);
