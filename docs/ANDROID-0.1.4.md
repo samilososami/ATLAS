@@ -11,4 +11,12 @@ It includes everything from 0.1.3:
 - Dark as the default appearance for new installations, while preserving an existing preference;
 - resizable 2×2+ widgets for saved actions, A1 status, Codex limits, Chat and Push-to-talk shortcuts.
 
-The APK is published before the corrected widget and full self-update flows are exercised in the emulator. Compilation, JavaScript/policy tests and Android Lint pass before publication.
+The APK was published before emulator verification, as requested. Post-publication verification then covered:
+
+- a complete in-app update from 0.1.3 to 0.1.4, including release discovery, notes, download, digest/signature checks and Android's installer confirmation;
+- widget pinning and configuration on Android 15;
+- real resizing from the 2×2 minimum to a wider layout in Pixel Launcher;
+- Chat and Push-to-talk deep links, plus selection of all four default saved actions;
+- a clean Android runtime log for the corrected widget flows.
+
+Compilation, JavaScript/policy tests and Android Lint also pass.
