@@ -3,8 +3,6 @@
 </p>
 
 <h1>
-  <img src="assets/atlas-icon.png" alt="ATLAS" width="54" align="left">
-  ATLAS
 </h1>
 
 ATLAS es un prototipo de agente de inteligencia artificial físico, personalizable y de bajo coste. Integra OpenClaw, modelos de lenguaje, memoria persistente, herramientas del sistema y distintos canales de comunicación en un dispositivo dedicado.
