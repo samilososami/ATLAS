@@ -1,9 +1,22 @@
-/* Theme is intentionally fixed to the ATLAS dark palette. */
-:root{color-scheme:dark;--bg:#080f20;--surface:#111b2d;--surface2:#172338;--text:#eff2f8;--muted:#8b9ab4;--line:#ffffff0d}
-body{background:var(--bg);color:var(--text)}
-.segmented{background:#030918}.segmented .selected{background:#20314e;color:#fff;box-shadow:0 2px 5px #0003,inset 0 1px #ffffff0a}
-.message.user{background:#192b46}.message.assistant,.settings-group,.quota-card,.status-list,.hardware{background:var(--surface)}
-#chat-form,dialog{background:#0e192a;border-color:#29364c}input,textarea,select{background:#0b1425;color:var(--text);border-color:#2b3950}.setting select{background:#1a2940}
-nav{background:#0d1729f5;border-color:#ffffff08}.action-card{background:linear-gradient(150deg,#19263a,#111c2f);border-color:#ffffff09;box-shadow:inset 0 1px #ffffff05,0 4px 10px #0001}.add-button{border-color:#324460}
-.secondary,.icon-button,#icon-picker button{background:#1b2a43}.console{background:#050c19;color:#b4c5e0}.meter,.update-progress:before{background:#26334a}#terminal-keys button{background:#172439;color:#b2c7e6}
-.switch:not(:checked){background:#344056}.setting-device>span{background:#1f3960}#toast{background:#243550;color:#fff;border-color:#456084;box-shadow:0 5px 25px #0006}.issue{background:#49352155;color:#e3b479}
+/*
+ * ATLAS currently ships as a dark-first companion. Theme ownership stays in
+ * this small final cascade layer so system colour-scheme and native controls
+ * cannot flash light while the WebView starts.
+ */
+
+:root,
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #071020;
+  --bg-deep: #030918;
+  --bg-soft: #0c1930;
+  --surface: #101b2d;
+  --surface-raised: #17253b;
+  --surface-strong: #1d2d46;
+  --surface-input: #0b1628;
+  --text: #f2f5fa;
+  --text-soft: #c5d0df;
+  --muted: #8d9db5;
+  --muted-strong: #a8b7cc;
+  --line: rgb(255 255 255 / 7%);
+}

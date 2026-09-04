@@ -1,10 +1,11 @@
 <resources>
-    <style name="AtlasTheme" parent="android:style/Theme.Material.NoActionBar">
+    <style name="AtlasThemeBase" parent="android:style/Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item><item name="android:windowLightStatusBar">false</item>
         <item name="android:statusBarColor">#080F20</item><item name="android:navigationBarColor">#080F20</item>
         <item name="android:windowBackground">#080F20</item><item name="android:colorAccent">#388CFF</item>
-        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowActionModeOverlay">true</item><item name="android:windowNoTitle">true</item>
     </style>
+    <style name="AtlasTheme" parent="@style/AtlasThemeBase" />
     <style name="AtlasThemeLight" parent="android:style/Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item><item name="android:windowLightStatusBar">true</item>
         <item name="android:windowLightNavigationBar">true</item>

@@ -1,0 +1,7 @@
+<resources>
+    <style name="AtlasTheme" parent="@style/AtlasThemeBase">
+        <item name="android:windowSplashScreenBackground">#080F20</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/icon_foreground</item>
+        <item name="android:windowSplashScreenAnimationDuration">280</item>
+    </style>
+</resources>

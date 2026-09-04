@@ -1,6 +1,7 @@
 package dev.atlas.a1;
 
 import android.Manifest;
+import android.animation.ValueAnimator;
 import android.app.*;
 import android.content.*;
 import android.content.pm.PackageManager;
@@ -12,6 +13,7 @@ import android.security.keystore.*;
 import android.speech.*;
 import android.util.Base64;
 import android.view.*;
+import android.view.animation.PathInterpolator;
 import android.webkit.*;
 import android.widget.*;
 import java.io.*;
@@ -45,6 +47,7 @@ public final class MainActivity extends Activity {
     private String permissionKind;
     private BlePairingManager blePairing;
     private android.content.SharedPreferences prefs;
+    private boolean initialRevealPending=true;
     private final AtlasConnection.RelayObserver relayObserver=(state,a1Online,detail)->{if(!background)event("linkState",linkConfig(state,a1Online,detail));};
     private final Runnable pauseWeb=()->{if(background&&web!=null){web.onPause();web.pauseTimers();}};
 
@@ -55,12 +58,16 @@ public final class MainActivity extends Activity {
         locked=prefs.getBoolean("lock",false);
         connection=AtlasRuntime.connection(this);connection.addRelayObserver(relayObserver);updater=new AppUpdater(this);
         blePairing=new BlePairingManager(this,new BlePairingManager.Events(){
+            public void state(String state,String message){event("pairState",object("state",state,"message",message));}
             public void found(String name){event("pairDevice",object("name",name));}
             public void error(String message){event("pairError",object("message",message));}
             public void success(String payload){savePairingPayload(payload);}
         });
         readWidgetIntent(getIntent());
         web=new WebView(this);
+        web.setAlpha(0f);
+        web.setScaleX(.992f);web.setScaleY(.992f);
+        web.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_YES);
         web.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_BOUND,true);
         frame=new FrameLayout(this);
         frame.addView(web,new FrameLayout.LayoutParams(-1,-1)); setContentView(frame);
@@ -88,7 +95,7 @@ public final class MainActivity extends Activity {
                     return new WebResourceResponse(mime,"UTF-8",getAssets().open("web"+path));
                 } catch(IOException e){return new WebResourceResponse("text/plain","UTF-8",new ByteArrayInputStream(new byte[0]));}
             }
-            @Override public void onPageFinished(WebView v,String url){pageReady=true;event("ready",config());deliverWidget();}
+            @Override public void onPageFinished(WebView v,String url){pageReady=true;event("ready",config());deliverWidget();revealInitialPage();}
         });
         web.setWebChromeClient(new WebChromeClient(){
             @Override public void onPermissionRequest(PermissionRequest r){runOnUiThread(()->{
@@ -99,6 +106,21 @@ public final class MainActivity extends Activity {
         });
         web.loadUrl("https://atlas.local/index.html");
     }
+    private boolean animationsEnabled(){return ValueAnimator.areAnimatorsEnabled();}
+    private void animateWebVisible(){
+        web.animate().cancel();web.setVisibility(View.VISIBLE);
+        if(!animationsEnabled()){web.setAlpha(1f);web.setScaleX(1f);web.setScaleY(1f);return;}
+        web.setAlpha(0f);web.setScaleX(.992f);web.setScaleY(.992f);
+        web.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(320)
+            .setInterpolator(new PathInterpolator(.22f,1f,.36f,1f)).withLayer().start();
+    }
+    private void revealInitialPage(){
+        if(!initialRevealPending)return;initialRevealPending=false;
+        if(locked||web.getVisibility()!=View.VISIBLE){web.setAlpha(1f);web.setScaleX(1f);web.setScaleY(1f);return;}
+        animateWebVisible();
+    }
+    private void revealAfterUnlock(){initialRevealPending=false;animateWebVisible();}
+    private void haptic(int kind){ui.post(()->{if(!background&&web!=null&&web.isShown())web.performHapticFeedback(kind);});}
     private boolean isLight(){return false;}
     private void applyAppearance(){
         int background=0xff080f20;
@@ -289,7 +311,14 @@ public final class MainActivity extends Activity {
                         if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED)answer(id,object("ok",true),null);
                         else {permissionId=id;requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},7);}break;
                     case "wake": speech(p.optBoolean("enabled"));answer(id,object("ok",true),null);break;
-                    case "haptic": web.performHapticFeedback(HapticFeedbackConstants.CONTEXT_CLICK);answer(id,object("ok",true),null);break;
+                    case "haptic": {
+                        String kind=p.optString("kind","context");
+                        int feedback="selection".equals(kind)?HapticFeedbackConstants.CLOCK_TICK:
+                            "press".equals(kind)?HapticFeedbackConstants.VIRTUAL_KEY:
+                            "confirm".equals(kind)||"success".equals(kind)?HapticFeedbackConstants.CONFIRM:
+                            "reject".equals(kind)||"error".equals(kind)?HapticFeedbackConstants.REJECT:HapticFeedbackConstants.CONTEXT_CLICK;
+                        haptic(feedback);answer(id,object("ok",true),null);break;
+                    }
                     case "execute": io.execute(()->{
                         try {JSONObject prepared=rpc("command.prepare",p);
                             Runnable run=()->work(id,()->rpc("command.execute",object("nonce",prepared.getString("nonce"))));
@@ -324,9 +353,9 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onResume(){super.onResume();background=false;ui.removeCallbacks(pauseWeb);web.resumeTimers();web.onResume();immersive();if(connection.pairing!=null)AtlasLinkService.start(this);
         event("permissionsChanged",object("ok",true));event("linkState",config());
-        if(locked&&!authPending){web.setVisibility(View.INVISIBLE);authenticate("Desbloquear ATLAS",()->{locked=false;web.setVisibility(View.VISIBLE);deliverWidget();ui.postDelayed(this::maybeRequestPersistentLink,700);},this::finish);}else {deliverWidget();ui.postDelayed(this::maybeRequestPersistentLink,700);}
+        if(locked&&!authPending){web.animate().cancel();web.setVisibility(View.INVISIBLE);authenticate("Desbloquear ATLAS",()->{locked=false;revealAfterUnlock();deliverWidget();ui.postDelayed(this::maybeRequestPersistentLink,700);},this::finish);}else {deliverWidget();ui.postDelayed(this::maybeRequestPersistentLink,700);}
     }
     @Override protected void onStop(){locked=prefs.getBoolean("lock",false);speech(false);event("suspend",object("reason","background"));background=true;
-        ui.postDelayed(pauseWeb,250);io.execute(()->{try{rpc("session.close",new JSONObject());}catch(Exception ignored){}});super.onStop();}
+        blePairing.stop();web.animate().cancel();web.setAlpha(1f);web.setScaleX(1f);web.setScaleY(1f);ui.postDelayed(pauseWeb,250);io.execute(()->{try{rpc("session.close",new JSONObject());}catch(Exception ignored){}});super.onStop();}
     @Override protected void onDestroy(){pageReady=false;speech(false);blePairing.stop();connection.removeRelayObserver(relayObserver);web.destroy();io.shutdown();super.onDestroy();}
 }

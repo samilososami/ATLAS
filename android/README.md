@@ -1,8 +1,12 @@
-# ATLAS Android · 0.1.11 preview
+# ATLAS Android · 0.1.12 preview
 
 Android 11+ companion for an owner-controlled ATLAS A1. Install the APK from
 [GitHub Releases](https://github.com/samilososami/ATLAS/releases). This is a
 development-signed preview, not the ATLAS OS disk image.
+
+Version 0.1.12 brings the tactile visual language of the onboarding pages to
+the full app, with event-driven motion, semantic haptics and a staged pairing
+experience that remains lightweight while ATLAS is idle or in the background.
 
 ## First connection
 
