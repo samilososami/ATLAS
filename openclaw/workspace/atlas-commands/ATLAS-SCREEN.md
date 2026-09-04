@@ -67,6 +67,23 @@ atlas-screen --atlas
 
 This opens `http://localhost:5000/?kiosk=1` in fullscreen Google Chrome on the physical screen. No desktop is hiding underneath. Google Chrome runs as `sami`, with its sandbox enabled and its own private profile under `/home/atlas/.atlas/screen/chrome-profile`.
 
+To keep ATLAS listening and speaking while hiding the physical image, use:
+
+```bash
+atlas-screen --atlas-hide
+```
+
+This keeps the HDMI link, the existing Chrome and Realtime session, microphone
+and TS7 Pro speakers active, but powers down the panel through DDC. It
+deliberately does not force the HDMI connector off, because the display speakers
+disappear from PipeWire together with that connector. `atlas-screen --atlas`
+wakes the panel without restarting Chrome. Use `atlas-screen off` only when both
+the kiosk and its HDMI audio may stop.
+
+The TS7 Pro panel-power path uses the system package `ddcutil`; install it with
+`apt install ddcutil` on a fresh image. If DDC is unavailable, ATLAS falls back
+to disabling only the XRandR video output while retaining the HDMI connector.
+
 Use the official `google-chrome-stable` ARM64 package. The launcher calls that binary directly; the system policy lives at `/etc/opt/chrome/policies/managed/atlas-webscreen.json`. Keep the profile private and out of the public repository. Your browser luggage is not release material.
 
 A mode on its own switches immediately and wakes the display if needed.

@@ -207,7 +207,38 @@ start_terminal() {
   exit 1
 }
 
+set_atlas_display_power() {
+  local state="$1" output=""
+
+  # The TS7 Pro exposes both its panel controls and speakers over HDMI. DDC
+  # powers only the panel, so the HDMI audio sink stays available. Never use
+  # force_connector off for atlas-hide: that removes the speakers as well.
+  if command -v ddcutil >/dev/null 2>&1; then
+    if [ "$state" = off ]; then
+      if timeout 8s ddcutil --display 1 setvcp D6 4 >/dev/null 2>&1; then
+        return 0
+      fi
+    else
+      timeout 8s ddcutil --display 1 setvcp D6 1 >/dev/null 2>&1 || true
+    fi
+  fi
+
+  # XRandR keeps the HDMI connector (and therefore audio) present. It is also
+  # the recovery path if DDC is unavailable on a replacement display.
+  output="$(env DISPLAY="$DISPLAY_ID" XAUTHORITY=/run/atlas-screen-kiosk/Xauthority \
+    runuser -u sami -- xrandr --query 2>/dev/null | awk '$2 == "connected" { print $1; exit }')"
+  [ -n "$output" ] || return 1
+  if [ "$state" = off ]; then
+    env DISPLAY="$DISPLAY_ID" XAUTHORITY=/run/atlas-screen-kiosk/Xauthority \
+      runuser -u sami -- xrandr --output "$output" --off
+  else
+    env DISPLAY="$DISPLAY_ID" XAUTHORITY=/run/atlas-screen-kiosk/Xauthority \
+      runuser -u sami -- xrandr --output "$output" --auto --primary --brightness 1
+  fi
+}
+
 start_atlas() {
+  local display_state="${1:-on}"
   systemctl stop "$RAFAS_SERVICE" >/dev/null 2>&1 || true
   systemctl stop "$LIGHTDM_SERVICE" "$TERMINAL_SERVICE" "$GETTY_SERVICE"
   systemctl start atlas-webscreen.service
@@ -225,10 +256,20 @@ start_atlas() {
     echo "ATLAS WebScreen did not become ready." >&2
     return 1
   fi
+
+  # Toggling atlas <-> atlas-hide must not restart Chrome. A restart would
+  # interrupt the Realtime turn that requested the mode change.
+  if [ -e /run/atlas-screen-kiosk/ready ] && systemctl is-active --quiet "$KIOSK_SERVICE"; then
+    chvt 1 >/dev/null 2>&1 || true
+    set_atlas_display_power "$display_state"
+    return 0
+  fi
+
   systemctl restart "$KIOSK_SERVICE"
   chvt 1 >/dev/null 2>&1 || true
   for _ in $(seq 1 250); do
     if [ -e /run/atlas-screen-kiosk/ready ] && systemctl is-active --quiet "$KIOSK_SERVICE"; then
+      set_atlas_display_power "$display_state"
       return 0
     fi
     if systemctl is-failed --quiet "$KIOSK_SERVICE"; then break; fi
@@ -239,10 +280,7 @@ start_atlas() {
 }
 
 start_atlas_hidden() {
-  start_atlas
-  # Keep Chrome, Realtime, microphone and speaker alive; only hide HDMI.
-  set_framebuffer_blank 4
-  force_connector off
+  start_atlas off
 }
 
 start_rafas() {
@@ -345,7 +383,13 @@ print_status() {
   if systemctl is-active --quiet "$RAFAS_SERVICE"; then
     active_surface="rafas"
   elif systemctl is-active --quiet "$KIOSK_SERVICE"; then
-    if [ "$mode" = atlas-hide ] && [ "$power" = off ]; then active_surface="atlas-hide"; else active_surface="atlas"; fi
+    if [ "$mode" = atlas-hide ]; then
+      active_surface="atlas-hide"
+      # DDC powers down the panel without changing the DRM connector state.
+      power="off"
+    else
+      active_surface="atlas"
+    fi
   elif systemctl is-active --quiet "$LIGHTDM_SERVICE"; then
     active_surface="desktop"
   elif systemctl is-active --quiet "$TERMINAL_SERVICE"; then

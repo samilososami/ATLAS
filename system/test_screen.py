@@ -77,6 +77,50 @@ main "$@"
     def test_duplicate_same_value_is_safe(self):
         self.assertEqual(self.call('--atlas', '--atlas', 'on', 'on').stdout.count('SAVE:'), 1)
 
+    def test_atlas_hide_keeps_hdmi_connector_and_audio_alive(self):
+        script = '''source "$1"
+start_atlas() { echo "START_ATLAS:$1"; }
+set_framebuffer_blank() { echo UNEXPECTED_FRAMEBUFFER_BLANK; }
+force_connector() { echo UNEXPECTED_CONNECTOR_CHANGE; }
+start_atlas_hidden
+'''
+        result = subprocess.run(
+            ['bash', '-c', script, 'test', str(ROOT / 'atlas-commands/atlas-screen')],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, 'START_ATLAS:off\n')
+
+    def test_existing_atlas_session_is_not_restarted_when_hiding(self):
+        script = '''source "$1"
+systemctl() {
+  case "$1:$2" in
+    is-active:atlas-screen-kiosk.service) return 0 ;;
+    restart:atlas-screen-kiosk.service) echo UNEXPECTED_RESTART ;;
+  esac
+  return 0
+}
+curl() { return 0; }
+chvt() { :; }
+set_atlas_display_power() { echo "DISPLAY:$1"; }
+mkdir() { :; }
+touch() { :; }
+test() { :; }
+start_atlas off
+'''
+        # The ready marker is tested by the real shell builtin. Substitute its
+        # path locally so this test remains pure and does not touch /run.
+        source = (ROOT / 'atlas-commands/atlas-screen').read_text().replace(
+            '/run/atlas-screen-kiosk/ready', '/dev/null'
+        )
+        result = subprocess.run(
+            ['bash', '-c', script.replace('source "$1"', 'source /dev/stdin'), 'test'],
+            input=source, capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('DISPLAY:off\n', result.stdout)
+        self.assertNotIn('UNEXPECTED_RESTART', result.stdout)
+
     def test_mode_only_switch_leaves_its_own_terminal_cgroup_first(self):
         script = '''source "$1"
 grep() { return 0; }
