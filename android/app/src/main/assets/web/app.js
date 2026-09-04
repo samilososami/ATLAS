@@ -9,7 +9,7 @@ const paths={mic:'M8 6a4 4 0 0 1 8 0v6a4 4 0 0 1-8 0Zm-3 5v1a7 7 0 0 0 14 0v-1M1
 function icon(name){if(name==='spark'||name==='settings'){const s=document.createElement('span');s.className='glyph '+(name==='spark'?'glyph-atlas':'glyph-gear');return s;}const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.setAttribute('viewBox','0 0 24 24');const p=document.createElementNS(svg.namespaceURI,'path');p.setAttribute('d',paths[name]||paths.bolt);svg.append(p);return svg;}
 $$('[data-icon]').forEach(el=>el.append(icon(el.dataset.icon)));
 function setConnected(ok){$('#connection').classList.toggle('online',!!ok);}
-function renderConfig(c){config=c;$('#pair-card').hidden=!!c.paired;$('#device-card').hidden=!c.paired;$('#device-name').textContent=lastStatus?.model||c.name||'Raspberry Pi';$('#pair-state').textContent=c.linkState==='online'?'Conectada':c.linkState==='relay'?'Relay conectado · A1 no disponible':c.linkDetail||'Última conexión pendiente';$('#battery-access').hidden=!c.paired||!!c.batteryUnrestricted;setConnected(c.linkState==='online');for(const k of ['lock','danger'])$('#'+k).checked=!!c[k];if(c.version){$('#installed-version').textContent='v'+String(c.version).replace(/^v/,'');$('.about .version').textContent='v'+String(c.version).replace(/^v/,'');}if(!c.onboarding)openOnboarding();}
+function renderConfig(c){config=c;$('#pair-card').hidden=!!c.paired;$('#device-card').hidden=!c.paired;$('#device-name').textContent=lastStatus?.model||c.name||'Raspberry Pi';$('#pair-state').textContent=c.linkState==='online'?'Conectada':c.linkState==='relay'?'Relay conectado · A1 no disponible':c.linkDetail||'Última conexión pendiente';$('#battery-access').hidden=!c.paired||!!c.batteryUnrestricted;setConnected(c.linkState==='online');for(const k of ['lock','danger'])$('#'+k).checked=!!c[k];if(c.version){$('#installed-version').textContent='v'+String(c.version).replace(/^v/,'');$('.about .version').textContent='v'+String(c.version).replace(/^v/,'');}if(!c.onboarding&&$('#onboarding').hidden)openOnboarding();}
 function showTab(name){$$('.page').forEach(p=>p.classList.toggle('active',p.id==='tab-'+name));$$('#tabs button').forEach(b=>b.classList.toggle('active',b.dataset.tab===name));if(name==='status')safe(refreshStatus)();if(name==='terminal')setTimeout(()=>fit?.fit(),50);window.scrollTo(0,0);}
 $$('#tabs button').forEach(b=>b.onclick=()=>showTab(b.dataset.tab));
 function bubble(text,role='assistant'){const area=$('#messages');$('.welcome')?.remove();const el=document.createElement('div');el.className='message '+role;el.textContent=text;area.append(el);area.scrollTop=area.scrollHeight;return el;}
@@ -25,7 +25,7 @@ const intro=[
   ['Así, puedes pedirle que te ponga recordatorios…','07-reminders.png'],
   ['…que conteste llamadas telefónicas…','08-phone-calls.png'],
   ['…o que te ordene los archivos.','09-file-organizer.png'],
-  ['Pero para que pueda hacer todo eso, necesita ciertos permisos. Solo unos pocos son obligatorios, pero recomendamos encarecidamente dar acceso completo para disfrutar de la mejor experiencia posible.','10-permissions.png']
+  ['Para hacer todo esto, ATLAS necesita algunos permisos. Solo unos pocos son obligatorios, pero recomendamos permitirlos todos.','10-permissions.png']
 ];
 const permissionPages=[
   ['microphone','MICRÓFONO','El permiso principal para poder interactuar con ATLAS por voz.',true,'','11-microphone.png'],
@@ -47,7 +47,32 @@ const permissionPages=[
 const onboarding=[...intro.map(([text,asset],i)=>({text,asset:`onboarding/${asset}`,permissionIntro:i===intro.length-1})),...permissionPages.map(([kind,title,text,required,tag,asset])=>({kind,title,text,required,tag,asset:`onboarding/${asset}`}))];let onboardIndex=0,allowingAll=false;
 function openOnboarding(){onboardIndex=0;$('#onboarding').hidden=false;renderOnboarding();}
 async function permissionGranted(kind){return (await native('permissions.status',{kind})).granted;}
-function renderOnboarding(){const p=onboarding[onboardIndex],permission=!!p.kind,image=$('#onboarding-image');$('#onboarding-kicker').textContent=permission?'PERMISOS':'';$('#onboarding-title').textContent=permission?p.title:p.text;$('#onboarding-subtitle').textContent=permission?p.text:'';image.src=p.asset;image.alt=permission?`ATLAS y el permiso ${p.title.toLowerCase()}`:'Ilustración de ATLAS';const next=onboarding[onboardIndex+1];if(next?.asset)new Image().src=next.asset;$('#permission-button').hidden=!permission;$('#permission-button').textContent='Permitir '+(permission?p.title.toLowerCase():'');$('#allow-all').hidden=!p.permissionIntro;$('#new-tag').hidden=!p.tag;$('#onboarding-back').disabled=onboardIndex===0;$('#onboarding-next').textContent=permission&&!p.required?'Omitir y siguiente':'Siguiente';if(permission)permissionGranted(p.kind).then(ok=>{if(onboarding[onboardIndex]===p){$('#permission-button').textContent=ok?'Permitido ✓':'Permitir '+p.title.toLowerCase();$('#onboarding-next').disabled=p.required&&!ok;}}).catch(()=>{});else $('#onboarding-next').disabled=false;}
+function renderOnboarding(){
+  const p=onboarding[onboardIndex],permission=!!p.kind,image=$('#onboarding-image'),permissionButton=$('#permission-button');
+  $('#onboarding-kicker').textContent=permission?'PERMISOS':'';
+  $('#onboarding-title').textContent=permission?p.title:p.text;
+  $('#onboarding-subtitle').textContent=permission?p.text:'';
+  image.src=p.asset;
+  image.alt=permission?`ATLAS y el permiso ${p.title.toLowerCase()}`:'Ilustración de ATLAS';
+  const next=onboarding[onboardIndex+1];
+  if(next?.asset)new Image().src=next.asset;
+  permissionButton.hidden=!permission;
+  permissionButton.disabled=false;
+  permissionButton.classList.remove('granted');
+  permissionButton.textContent='Permitir '+(permission?p.title.toLowerCase():'');
+  $('#allow-all').hidden=!p.permissionIntro;
+  $('#new-tag').hidden=!p.tag;
+  $('#onboarding-back').disabled=onboardIndex===0;
+  $('#onboarding-next').textContent=permission&&!p.required?'Omitir y siguiente':'Siguiente';
+  if(permission)permissionGranted(p.kind).then(ok=>{
+    if(onboarding[onboardIndex]!==p)return;
+    permissionButton.textContent=ok?'Permitido':'Permitir '+p.title.toLowerCase();
+    permissionButton.classList.toggle('granted',ok);
+    permissionButton.disabled=ok;
+    $('#onboarding-next').disabled=p.required&&!ok;
+  }).catch(()=>{});
+  else $('#onboarding-next').disabled=false;
+}
 async function requestCurrent(){const p=onboarding[onboardIndex];if(!p.kind)return true;const r=await native('permissions.request',{kind:p.kind});const ok=r.granted||await permissionGranted(p.kind);renderOnboarding();return ok;}
 async function advance(){const p=onboarding[onboardIndex];if(p.kind&&p.required&&!(await permissionGranted(p.kind))){toast('Este permiso es necesario para continuar');return;}if(onboardIndex<onboarding.length-1){onboardIndex++;renderOnboarding();return;}renderConfig(await native('onboarding.finish'));$('#onboarding').hidden=true;}
 $('#permission-button').onclick=safe(requestCurrent);$('#onboarding-next').onclick=safe(advance);$('#onboarding-back').onclick=()=>{if(onboardIndex>0){onboardIndex--;renderOnboarding();}};
