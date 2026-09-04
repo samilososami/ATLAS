@@ -1,6 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Audio devices belong to sami's desktop session.  Commands launched by a
+# system service do not inherit its D-Bus variables, and a direct root call
+# otherwise targets a separate (usually nonexistent) root audio server.
+if [ "$(id -u)" -eq 0 ] && id sami >/dev/null 2>&1; then
+  exec runuser -u sami -- env \
+    HOME=/home/atlas \
+    XDG_RUNTIME_DIR=/run/user/"$(id -u sami)" \
+    DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/"$(id -u sami)"/bus \
+    "$0" "$@"
+fi
+
+ATLAS_AUDIO_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+export XDG_RUNTIME_DIR="$ATLAS_AUDIO_RUNTIME_DIR"
+export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=$ATLAS_AUDIO_RUNTIME_DIR/bus}"
+
 TMP_DIR="/home/atlas/.openclaw/workspaces/tmp"
 
 if [ -t 1 ]; then
