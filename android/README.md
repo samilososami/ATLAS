@@ -1,4 +1,4 @@
-# ATLAS Android · 0.1.6 preview
+# ATLAS Android · 0.1.7 preview
 
 Android 11+ companion for an owner-controlled ATLAS A1. Install the APK from
 [GitHub Releases](https://github.com/samilososami/ATLAS/releases). This is a
@@ -28,8 +28,10 @@ See the companion instructions. A pairing code is an administration secret.
 - **Acciones:** named command tiles, 23 icons and seven accent colors. Long-press
   a tile to edit/delete. Every command shows its exact text before execution.
 - **Terminal:** real PTY, resize, Ctrl-C, arrows, keyboard and xterm scrollback.
-- **Estado:** actual A1 diagnostics, services and 5-hour/weekly quota when Gateway
-  reports them. Unavailable data is never presented as zero.
+- **Estado:** actual A1 diagnostics, services and the quota windows reported by
+  Gateway. Pro shows only the weekly window; Plus shows 5-hour and weekly.
+  Unavailable data is never presented as zero, and changing plan only requires
+  refreshing OAuth rather than changing the UI.
 - **Ajustes:** encrypted pairing, LAN/relay/auto transport, app lock, action/pairing
   biometrics, native voices, reasoning levels and a verified GitHub release
   updater. **Oscuro** is the default; **Claro** uses the off-white palette. The choice persists without

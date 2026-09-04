@@ -153,8 +153,10 @@ el puerto a Internet; contraseña y HTTPS siguen siendo trabajo futuro.
 
 Pruebas sin llamadas a modelos: `python3 -m unittest -v test_access_control.py`.
 
-El tab ATLAS muestra arriba a la derecha la cuota disponible de Codex para las
-ventanas de cinco horas y semanal, con la fecha de renovación en Europe/Madrid.
+El tab ATLAS muestra arriba a la derecha las ventanas de cuota que comunica
+Codex, con la fecha de renovación en Europe/Madrid. En Pro aparece únicamente
+la semanal; en Plus aparecen cinco horas y semanal. El perfil se deriva de la
+respuesta autenticada de Gateway y cambia automáticamente al renovar OAuth.
 `codex_usage.py` consulta `usage.status` a través del bridge persistente y guarda
 una lectura compartida durante sesenta segundos. No crea turnos del agente ni
 devuelve tokens, datos de cuenta o facturación. Si la lectura falla, se indica

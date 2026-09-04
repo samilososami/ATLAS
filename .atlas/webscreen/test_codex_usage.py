@@ -23,7 +23,8 @@ class CodexUsageTests(unittest.TestCase):
 
     def test_only_public_fields(self):
         data = normalize_usage(sample())
-        self.assertEqual(set(data), {"fiveHour", "weekly", "updatedAt"})
+        self.assertEqual(set(data), {"fiveHour", "weekly", "updatedAt", "planProfile"})
+        self.assertEqual(data["planProfile"], "plus")
         self.assertNotIn("not-for-browser", str(data))
         self.assertNotIn("private@example", str(data))
         self.assertNotIn("billing", str(data))
@@ -34,6 +35,17 @@ class CodexUsageTests(unittest.TestCase):
         data["providers"][0]["windows"] = [{"label": "5h", "usedPercent": 0}]
         self.assertIsNone(normalize_usage(data)["weekly"])
         self.assertEqual(normalize_usage(data)["fiveHour"]["remainingPercent"], 100)
+
+    def test_pro_plan_uses_weekly_profile(self):
+        data = sample()
+        data["providers"][0]["plan"] = "prolite"
+        data["providers"][0]["windows"] = [
+            {"label": "168h", "usedPercent": 2, "resetAt": 1789083660000},
+        ]
+        normalized = normalize_usage(data)
+        self.assertEqual(normalized["planProfile"], "pro")
+        self.assertIsNone(normalized["fiveHour"])
+        self.assertEqual(normalized["weekly"]["remainingPercent"], 98)
 
     def test_invalid_values_and_providers(self):
         data = sample()

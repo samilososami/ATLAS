@@ -14,7 +14,12 @@ def finite_number(value: Any) -> bool:
 
 
 def normalize_usage(summary: dict[str, Any]) -> dict[str, Any]:
-    result: dict[str, Any] = {"fiveHour": None, "weekly": None, "updatedAt": None}
+    result: dict[str, Any] = {
+        "fiveHour": None,
+        "weekly": None,
+        "updatedAt": None,
+        "planProfile": "auto",
+    }
     if not isinstance(summary, dict):
         return result
     providers = summary.get("providers")
@@ -28,6 +33,11 @@ def normalize_usage(summary: dict[str, Any]) -> dict[str, Any]:
         windows = provider.get("windows")
         if provider.get("error") or not isinstance(windows, list):
             continue
+        plan = str(provider.get("plan") or "").strip().lower()
+        if plan.startswith("pro"):
+            result["planProfile"] = "pro"
+        elif plan:
+            result["planProfile"] = "plus"
         for window in windows:
             if not isinstance(window, dict):
                 continue
@@ -41,6 +51,13 @@ def normalize_usage(summary: dict[str, Any]) -> dict[str, Any]:
             reset = window.get("resetAt")
             result[key] = {"usedPercent": used, "remainingPercent": round(100 - used, 1),
                            "resetAt": int(reset) if finite_number(reset) and reset > 0 else None}
+    # Older Gateway builds did not report a plan name. The shape of the
+    # authoritative quota response is still enough to select the presentation.
+    if result["planProfile"] == "auto":
+        if result["fiveHour"] is not None:
+            result["planProfile"] = "plus"
+        elif result["weekly"] is not None:
+            result["planProfile"] = "pro"
     updated = summary.get("updatedAt")
     if finite_number(updated) and updated > 0:
         result["updatedAt"] = int(updated)

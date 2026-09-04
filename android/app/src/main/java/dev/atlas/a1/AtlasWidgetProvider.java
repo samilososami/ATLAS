@@ -47,8 +47,12 @@ public class AtlasWidgetProvider extends AppWidgetProvider {
         }else if(type.equals("voice")){title="ATLAS · VOZ";value="Habla\ncon Atlas";hint="Abrir Pulsar";icon="mic";body="Abre Pulsar, prepara la voz y mantén el botón para hablar. El micrófono no se activa desde el escritorio.";
         }else if(type.equals("quota")){
             title="CODEX · CUOTAS";icon="activity";JSONObject usage=s.optJSONObject("usage");
-            value="5 h   "+remaining(usage,"fiveHour")+"\nSemana   "+remaining(usage,"weekly");
-            hint="Disponible · "+age;body=reset(usage,"fiveHour","5 horas")+"\n"+reset(usage,"weekly","Semana");
+            boolean weeklyOnly=usage!=null&&("pro".equals(usage.optString("planProfile"))||
+                (usage.isNull("fiveHour")&&!usage.isNull("weekly")));
+            value=weeklyOnly?"Semana   "+remaining(usage,"weekly"):
+                "5 h   "+remaining(usage,"fiveHour")+"\nSemana   "+remaining(usage,"weekly");
+            hint="Disponible · "+age;body=weeklyOnly?reset(usage,"weekly","Semana"):
+                reset(usage,"fiveHour","5 horas")+"\n"+reset(usage,"weekly","Semana");
         }else if(type.equals("cpu")){
             title="A1 · CPU";icon="activity";value=s.isNull("temperatureC")?"—":String.format(java.util.Locale.ROOT,"%.1f °C",s.optDouble("temperatureC"));hint=age;body="Temperatura actual del procesador";
         }else if(type.equals("ram")){

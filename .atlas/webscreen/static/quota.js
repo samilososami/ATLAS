@@ -13,7 +13,9 @@
   function render(data) {
     panel.classList.toggle("stale", Boolean(data.stale));
     status.textContent = data.message || "Límites no disponibles";
+    const weeklyOnly = data.planProfile === "pro" || (!data.fiveHour && Boolean(data.weekly));
     for (const [key, row] of rows) {
+      row.hidden = key === "fiveHour" && weeklyOnly;
       const quota = data[key];
       const available = quota && typeof quota.remainingPercent === "number"
         && Number.isFinite(quota.remainingPercent);
