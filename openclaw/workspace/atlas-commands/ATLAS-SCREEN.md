@@ -74,15 +74,15 @@ atlas-screen --atlas-hide
 ```
 
 This keeps the HDMI link, the existing Chrome and Realtime session, microphone
-and TS7 Pro speakers active, but powers down the panel through DDC. It
-deliberately does not force the HDMI connector off, because the display speakers
-disappear from PipeWire together with that connector. `atlas-screen --atlas`
-wakes the panel without restarting Chrome. Use `atlas-screen off` only when both
-the kiosk and its HDMI audio may stop.
+and TS7 Pro speakers active. The panel remains powered because its built-in
+amplifier turns off with it; ATLAS instead covers Chrome with an opaque
+fullscreen black surface while leaving the monitor's own brightness unchanged.
+`atlas-screen --atlas` removes the cover without restarting Chrome. Use
+`atlas-screen off` only when both the kiosk and its HDMI audio may stop.
 
-The TS7 Pro panel-power path uses the system package `ddcutil`; install it with
-`apt install ddcutil` on a fresh image. If DDC is unavailable, ATLAS falls back
-to disabling only the XRandR video output while retaining the HDMI connector.
+The black surface uses `python3-tk` and `xdotool`; install them on a fresh image
+with `apt install python3-tk xdotool`. `ddcutil` is optional and is used only to
+wake a panel left in DDC standby by an older ATLAS installation.
 
 Use the official `google-chrome-stable` ARM64 package. The launcher calls that binary directly; the system policy lives at `/etc/opt/chrome/policies/managed/atlas-webscreen.json`. Keep the profile private and out of the public repository. Your browser luggage is not release material.
 

@@ -1,0 +1,23 @@
+#!/usr/bin/env python3
+"""Opaque fullscreen cover used by atlas-screen --atlas-hide."""
+
+import tkinter as tk
+
+
+root = tk.Tk(className="AtlasBlackOverlay")
+root.title("ATLAS Black Overlay")
+root.configure(background="#000000", cursor="none")
+root.overrideredirect(True)
+
+
+def cover_screen() -> None:
+    width = root.winfo_screenwidth()
+    height = root.winfo_screenheight()
+    root.geometry(f"{width}x{height}+0+0")
+    root.lift()
+    root.attributes("-topmost", True)
+    root.after(250, cover_screen)
+
+
+root.after_idle(cover_screen)
+root.mainloop()

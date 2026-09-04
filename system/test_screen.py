@@ -89,7 +89,7 @@ start_atlas_hidden
             capture_output=True, text=True,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout, 'START_ATLAS:off\n')
+        self.assertEqual(result.stdout, 'START_ATLAS:hidden\n')
 
     def test_existing_atlas_session_is_not_restarted_when_hiding(self):
         script = '''source "$1"
@@ -102,11 +102,11 @@ systemctl() {
 }
 curl() { return 0; }
 chvt() { :; }
-set_atlas_display_power() { echo "DISPLAY:$1"; }
+set_atlas_display_visibility() { echo "DISPLAY:$1"; }
 mkdir() { :; }
 touch() { :; }
 test() { :; }
-start_atlas off
+start_atlas hidden
 '''
         # The ready marker is tested by the real shell builtin. Substitute its
         # path locally so this test remains pure and does not touch /run.
@@ -118,7 +118,7 @@ start_atlas off
             input=source, capture_output=True, text=True,
         )
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn('DISPLAY:off\n', result.stdout)
+        self.assertIn('DISPLAY:hidden\n', result.stdout)
         self.assertNotIn('UNEXPECTED_RESTART', result.stdout)
 
     def test_mode_only_switch_leaves_its_own_terminal_cgroup_first(self):

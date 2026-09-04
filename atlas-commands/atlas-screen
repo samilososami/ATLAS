@@ -5,6 +5,7 @@ LIGHTDM_SERVICE="lightdm.service"
 TERMINAL_SERVICE="atlas-screen-terminal.service"
 KIOSK_SERVICE="atlas-screen-kiosk.service"
 RAFAS_SERVICE="atlas-rafas.service"
+OVERLAY_SERVICE="atlas-screen-black-overlay.service"
 GETTY_SERVICE="getty@tty1.service"
 BOOT_ON_SERVICE="atlas-screen-boot-on.service"
 BOOT_OFF_SERVICE="atlas-screen-boot-off.service"
@@ -207,38 +208,45 @@ start_terminal() {
   exit 1
 }
 
-set_atlas_display_power() {
-  local state="$1" output=""
-
-  # The TS7 Pro exposes both its panel controls and speakers over HDMI. DDC
-  # powers only the panel, so the HDMI audio sink stays available. Never use
-  # force_connector off for atlas-hide: that removes the speakers as well.
+ensure_monitor_power_on() {
   if command -v ddcutil >/dev/null 2>&1; then
-    if [ "$state" = off ]; then
-      if timeout 8s ddcutil --display 1 setvcp D6 4 >/dev/null 2>&1; then
-        return 0
-      fi
-    else
-      timeout 8s ddcutil --display 1 setvcp D6 1 >/dev/null 2>&1 || true
-    fi
+    timeout 8s ddcutil --display 1 setvcp D6 1 >/dev/null 2>&1 || true
   fi
+}
 
-  # XRandR keeps the HDMI connector (and therefore audio) present. It is also
-  # the recovery path if DDC is unavailable on a replacement display.
-  output="$(env DISPLAY="$DISPLAY_ID" XAUTHORITY=/run/atlas-screen-kiosk/Xauthority \
-    runuser -u sami -- xrandr --query 2>/dev/null | awk '$2 == "connected" { print $1; exit }')"
-  [ -n "$output" ] || return 1
-  if [ "$state" = off ]; then
-    env DISPLAY="$DISPLAY_ID" XAUTHORITY=/run/atlas-screen-kiosk/Xauthority \
-      runuser -u sami -- xrandr --output "$output" --off
+start_black_overlay() {
+  local window=""
+  systemctl start "$OVERLAY_SERVICE"
+  for _ in $(seq 1 50); do
+    window="$(env DISPLAY="$DISPLAY_ID" XAUTHORITY=/run/atlas-screen-kiosk/Xauthority \
+      runuser -u sami -- xdotool search --name '^ATLAS Black Overlay$' 2>/dev/null | tail -n 1 || true)"
+    if [ -n "$window" ]; then
+      env DISPLAY="$DISPLAY_ID" XAUTHORITY=/run/atlas-screen-kiosk/Xauthority \
+        runuser -u sami -- xdotool windowsize "$window" 1024 600 windowmove "$window" 0 0 windowraise "$window"
+      return 0
+    fi
+    sleep 0.1
+  done
+  echo "ATLAS could not cover the physical screen." >&2
+  return 1
+}
+
+set_atlas_display_visibility() {
+  local state="$1"
+  if [ "$state" = hidden ]; then
+    # The panel must remain powered because its built-in amplifier is powered
+    # with it. Hide the image with an opaque X11 cover. Do not alter hardware
+    # brightness: this panel incorrectly maps every DDC brightness write to 0.
+    start_black_overlay
+    ensure_monitor_power_on
   else
-    env DISPLAY="$DISPLAY_ID" XAUTHORITY=/run/atlas-screen-kiosk/Xauthority \
-      runuser -u sami -- xrandr --output "$output" --auto --primary --brightness 1
+    ensure_monitor_power_on
+    systemctl stop "$OVERLAY_SERVICE" >/dev/null 2>&1 || true
   fi
 }
 
 start_atlas() {
-  local display_state="${1:-on}"
+  local display_state="${1:-visible}"
   systemctl stop "$RAFAS_SERVICE" >/dev/null 2>&1 || true
   systemctl stop "$LIGHTDM_SERVICE" "$TERMINAL_SERVICE" "$GETTY_SERVICE"
   systemctl start atlas-webscreen.service
@@ -261,7 +269,7 @@ start_atlas() {
   # interrupt the Realtime turn that requested the mode change.
   if [ -e /run/atlas-screen-kiosk/ready ] && systemctl is-active --quiet "$KIOSK_SERVICE"; then
     chvt 1 >/dev/null 2>&1 || true
-    set_atlas_display_power "$display_state"
+    set_atlas_display_visibility "$display_state"
     return 0
   fi
 
@@ -269,7 +277,7 @@ start_atlas() {
   chvt 1 >/dev/null 2>&1 || true
   for _ in $(seq 1 250); do
     if [ -e /run/atlas-screen-kiosk/ready ] && systemctl is-active --quiet "$KIOSK_SERVICE"; then
-      set_atlas_display_power "$display_state"
+      set_atlas_display_visibility "$display_state"
       return 0
     fi
     if systemctl is-failed --quiet "$KIOSK_SERVICE"; then break; fi
@@ -280,7 +288,7 @@ start_atlas() {
 }
 
 start_atlas_hidden() {
-  start_atlas off
+  start_atlas hidden
 }
 
 start_rafas() {
@@ -309,6 +317,11 @@ screen_on() {
   mode="$(selected_mode)"
   force_connector on
   set_framebuffer_blank 0
+  ensure_monitor_power_on
+
+  if [ "$mode" != atlas ] && [ "$mode" != atlas-hide ]; then
+    systemctl stop "$OVERLAY_SERVICE" >/dev/null 2>&1 || true
+  fi
 
   case "$mode" in
     desktop) start_desktop ;;
@@ -327,6 +340,7 @@ screen_on() {
 
 screen_off() {
   keep_native_boot_minimal
+  systemctl stop "$OVERLAY_SERVICE" >/dev/null 2>&1 || true
   systemctl stop "$RAFAS_SERVICE" >/dev/null 2>&1 || true
 
   if systemctl is-active --quiet "$LIGHTDM_SERVICE"; then
@@ -385,8 +399,6 @@ print_status() {
   elif systemctl is-active --quiet "$KIOSK_SERVICE"; then
     if [ "$mode" = atlas-hide ]; then
       active_surface="atlas-hide"
-      # DDC powers down the panel without changing the DRM connector state.
-      power="off"
     else
       active_surface="atlas"
     fi

@@ -17,6 +17,16 @@ class ChromeLaunchers(unittest.TestCase):
             with self.subTest(path=path):
                 subprocess.run(['bash', '-n', str(ROOT / path)], check=True)
 
+    def test_hidden_screen_overlay_is_valid_python(self):
+        subprocess.run(
+            ['python3', '-m', 'py_compile',
+             str(ROOT / 'system/libexec/atlas-screen-black-overlay')],
+            check=True,
+        )
+        unit = (ROOT / 'system/systemd/atlas-screen-black-overlay.service').read_text()
+        self.assertIn('User=sami', unit)
+        self.assertIn('PartOf=atlas-screen-kiosk.service', unit)
+
     def test_both_launchers_use_official_chrome_with_sandbox(self):
         for path in ('system/libexec/atlas-screen-kiosk-session',
                      '.atlas/desktop/bin/open-chrome'):

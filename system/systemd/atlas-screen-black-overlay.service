@@ -1,0 +1,16 @@
+[Unit]
+Description=ATLAS hidden-screen black overlay
+After=atlas-screen-kiosk.service
+PartOf=atlas-screen-kiosk.service
+
+[Service]
+Type=simple
+User=sami
+Group=sami
+Environment=HOME=/home/atlas
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/run/atlas-screen-kiosk/Xauthority
+ExecStart=/usr/local/libexec/atlas-screen-black-overlay
+Restart=on-failure
+RestartSec=1
+
