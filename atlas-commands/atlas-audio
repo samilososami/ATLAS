@@ -85,6 +85,15 @@ restart_audio_stack() {
   ensure_audio_server
 }
 
+refresh_kiosk_audio_client() {
+  # Chrome does not reliably recover its PulseAudio connection when PipeWire
+  # is replaced underneath it.  Leaving that stale client running makes every
+  # Realtime attempt fail and reconnect roughly every ten seconds.
+  if sudo -n systemctl is-active --quiet atlas-screen-kiosk.service 2>/dev/null; then
+    sudo -n systemctl restart atlas-screen-kiosk.service
+  fi
+}
+
 ensure_bluetooth_audio_support() {
   ensure_audio_server
   if dpkg -s pipewire-pulse >/dev/null 2>&1; then
@@ -429,8 +438,8 @@ explain_connect_failure() {
   local mac="$2"
   if printf '%s' "$output" | grep -q 'br-connection-profile-unavailable'; then
     cat >&2 <<EOF
-Bluetooth connected, but no audio profile was available.
-I restarted the audio stack and retried. If it still fails, restart the headset/speaker pairing mode and try again:
+The device is paired, but its A2DP audio profile is not currently available.
+Select the Bluetooth input/pairing mode on the speaker, disconnect it from any other phone, and try again:
   atlas-audio connect $mac
 EOF
   elif printf '%s' "$output" | grep -q 'br-connection-page-timeout'; then
@@ -454,15 +463,23 @@ connect_bt_device() {
   local mac="$1"
   local output=""
   local rc=1
+  local audio_restarted=0
   ensure_bluetooth_audio_support
   bluetoothctl trust "$mac" >/dev/null 2>&1 || true
   for attempt in 1 2 3; do
     output="$(bluetoothctl connect "$mac" 2>&1)" && rc=0 || rc=$?
     printf '%s\n' "$output"
     if [ "$rc" -eq 0 ]; then
+      [ "$audio_restarted" -eq 0 ] || refresh_kiosk_audio_client
       return 0
     fi
     if printf '%s' "$output" | grep -q 'br-connection-profile-unavailable'; then
+      # A paired speaker can be remembered by BlueZ while powered off, on a
+      # different input, or connected elsewhere.  Do not destroy the live
+      # Chrome audio session unless the device is actually visible now.
+      if ! discover_bt_for_query "$mac" >/dev/null; then
+        break
+      fi
       # BlueZ publishes the device first; the user audio session must start
       # afterwards so WirePlumber/PulseAudio can register fresh A2DP endpoints.
       # Restarting bluetooth after the audio stack removes those endpoints and
@@ -471,6 +488,7 @@ connect_bt_device() {
       sleep 1
       bt_power_on
       restart_audio_stack
+      audio_restarted=1
       ensure_bluetooth_audio_support
     elif printf '%s' "$output" | grep -q 'br-connection-page-timeout'; then
       break
@@ -480,6 +498,7 @@ connect_bt_device() {
       sleep 1
     fi
   done
+  [ "$audio_restarted" -eq 0 ] || refresh_kiosk_audio_client
   explain_connect_failure "$output" "$mac"
   return "$rc"
 }
@@ -761,6 +780,7 @@ PY
     restart_audio_stack
     ensure_bluetooth_audio_support
     atlas-audio status
+    refresh_kiosk_audio_client
     ;;
   -h|--help|help)
     usage
