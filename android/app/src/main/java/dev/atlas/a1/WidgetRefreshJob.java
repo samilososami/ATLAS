@@ -16,7 +16,8 @@ public final class WidgetRefreshJob extends JobService {
     }
     @Override public boolean onStartJob(JobParameters params){
         worker=new Thread(()->{
-            try(AtlasConnection client=new AtlasConnection(this)){
+            try{
+                AtlasConnection client=AtlasRuntime.connection(this);
                 if(client.pairing==null)throw new IllegalStateException("Sin emparejar");
                 // Do not let a result from a forgotten/replaced device reappear in widgets.
                 String pair=getSharedPreferences("atlas",0).getString("pair",null);

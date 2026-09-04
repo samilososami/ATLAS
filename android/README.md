@@ -1,4 +1,4 @@
-# ATLAS Android · 0.1.7 preview
+# ATLAS Android · 0.1.8 preview
 
 Android 11+ companion for an owner-controlled ATLAS A1. Install the APK from
 [GitHub Releases](https://github.com/samilososami/ATLAS/releases). This is a
@@ -17,6 +17,15 @@ development-signed preview, not the ATLAS OS disk image.
 Local access works on the same network. Internet access needs your own public
 WSS relay; no Tailscale, managed VPN or external companion app is required.
 See the companion instructions. A pairing code is an administration secret.
+
+After pairing, a foreground link supervisor keeps one encrypted relay socket
+owned by the app process even when the activity is closed. It reacts immediately
+to Wi-Fi/mobile-data handoffs, probes A1 every 25 seconds and retries relay failures
+with exponential backoff capped at 30 seconds. Relay availability and A1 presence
+are separate states: an offline Pi no longer tears down a healthy Cloudflare link.
+Android asks once to exempt ATLAS from battery optimization; the same control stays
+available in Settings until granted. Force-stopping ATLAS in Android Settings still
+stops the process and link by design.
 
 ## Five tabs
 

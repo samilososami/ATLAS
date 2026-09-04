@@ -45,13 +45,14 @@ public final class MainActivity extends Activity {
     private String permissionKind;
     private BlePairingManager blePairing;
     private android.content.SharedPreferences prefs;
+    private final AtlasConnection.RelayObserver relayObserver=(state,a1Online,detail)->event("linkState",linkConfig(state,a1Online,detail));
 
     @Override public void onCreate(Bundle state) {
         prefs=getSharedPreferences("atlas",MODE_PRIVATE);
         setTheme(R.style.AtlasTheme);
         super.onCreate(state);
         locked=prefs.getBoolean("lock",false);
-        connection=AtlasRuntime.connection(this);updater=new AppUpdater(this);
+        connection=AtlasRuntime.connection(this);connection.addRelayObserver(relayObserver);updater=new AppUpdater(this);
         blePairing=new BlePairingManager(this,new BlePairingManager.Events(){
             public void found(String name){event("pairDevice",object("name",name));}
             public void error(String message){event("pairError",object("message",message));}
@@ -112,9 +113,24 @@ public final class MainActivity extends Activity {
     }
     @Override public void onWindowFocusChanged(boolean focused){super.onWindowFocusChanged(focused);if(focused)immersive();}
     private JSONObject object(Object... kv){JSONObject o=new JSONObject();try{for(int i=0;i<kv.length;i+=2)o.put((String)kv[i],kv[i+1]);}catch(Exception ignored){}return o;}
-    private JSONObject config(){return object("paired",connection.pairing!=null,"name",connection.pairing==null?"ATLAS A1":connection.pairing.optString("name"),
+    private JSONObject config(){return linkConfig(connection.relayState(),connection.isA1Online(),connection.relayDetail());}
+    private JSONObject linkConfig(AtlasConnection.RelayState state,boolean a1Online,String detail){return object("paired",connection.pairing!=null,"name",connection.pairing==null?"ATLAS A1":connection.pairing.optString("name"),
         "relayConfigured",connection.pairing!=null&&!connection.pairing.optString("relay").isEmpty(),"lock",prefs.getBoolean("lock",false),
-        "danger",prefs.getBoolean("danger",true),"onboarding",prefs.getBoolean("onboarding",false),"theme","dark","version",appVersion());}
+        "danger",prefs.getBoolean("danger",true),"onboarding",prefs.getBoolean("onboarding",false),"theme","dark","version",appVersion(),
+        "linkState",state==AtlasConnection.RelayState.ONLINE?(a1Online?"online":"relay"):state==AtlasConnection.RelayState.CONNECTING?"connecting":"reconnecting",
+        "linkDetail",detail,"batteryUnrestricted",batteryUnrestricted());}
+    private boolean batteryUnrestricted(){return getSystemService(PowerManager.class).isIgnoringBatteryOptimizations(getPackageName());}
+    private void openBatteryAccess(){
+        try{startActivity(new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,Uri.parse("package:"+getPackageName())));}
+        catch(Exception unavailable){startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));}
+    }
+    private void maybeRequestPersistentLink(){
+        if(connection.pairing==null||batteryUnrestricted()||prefs.getBoolean("batteryPrompted",false)||background)return;
+        prefs.edit().putBoolean("batteryPrompted",true).apply();
+        new AlertDialog.Builder(this).setTitle("Mantener ATLAS conectado")
+            .setMessage("Permite que ATLAS funcione sin restricciones de batería para conservar la conexión con A1 cuando cierres la app o apagues la pantalla.")
+            .setNegativeButton("Ahora no",null).setPositiveButton("Permitir",(d,w)->openBatteryAccess()).show();
+    }
     private String appVersion(){try{return getPackageManager().getPackageInfo(getPackageName(),0).versionName;}catch(Exception e){return "ATLAS";}}
     private void readWidgetIntent(Intent intent){String type=intent.getStringExtra("widgetType");if(Arrays.asList("action","status","quota","chat","voice").contains(type))widgetLaunch=object("type",type,"actionId",intent.getStringExtra("actionId"));}
     private void deliverWidget(){if(pageReady&&!locked&&!background&&widgetLaunch!=null){JSONObject next=widgetLaunch;widgetLaunch=null;event("widget",next);}}
@@ -200,7 +216,7 @@ public final class MainActivity extends Activity {
             JSONObject before=connection.pairing;connection.close();connection.pairing=next;
             try{rpc("ping",new JSONObject());}catch(Exception e){connection.pairing=before;throw e;}
             prefs.edit().putString("pair",connection.encrypt(next.toString().getBytes(StandardCharsets.UTF_8),connection.vaultKey(),null)).apply();
-            AtlasLinkService.start(this);event("pairSuccess",config());
+            AtlasLinkService.start(this);event("pairSuccess",config());ui.postDelayed(this::maybeRequestPersistentLink,1400);
         }catch(Exception e){event("pairError",object("message",e.getMessage()==null?"No se pudo emparejar ATLAS A1":e.getMessage()));}});
     }
     private void authenticate(String reason,Runnable success,Runnable cancel){
@@ -256,6 +272,7 @@ public final class MainActivity extends Activity {
                     case "widgets.sync": WidgetStore.sync(MainActivity.this,p.getJSONArray("actions"));answer(id,object("ok",true),null);break;
                     case "permissions.status": answer(id,object("granted",granted(p.getString("kind"))),null);break;
                     case "permissions.request": requestPermissionKind(id,p.getString("kind"));break;
+                    case "battery.open": openBatteryAccess();answer(id,config(),null);break;
                     case "onboarding.finish": prefs.edit().putBoolean("onboarding",true).apply();answer(id,config(),null);break;
                     case "pair.scan": blePairing.scan();answer(id,object("scanning",true),null);break;
                     case "pair.submit": blePairing.submit(p.optString("code"));answer(id,object("connecting",true),null);break;
@@ -304,10 +321,10 @@ public final class MainActivity extends Activity {
         if(n==19&&permissionId!=null){boolean ok=granted(permissionKind);answer(permissionId,object("granted",ok),null);permissionId=null;permissionKind=null;}
     }
     @Override protected void onResume(){super.onResume();background=false;immersive();if(connection.pairing!=null)AtlasLinkService.start(this);
-        event("permissionsChanged",object("ok",true));
-        if(locked&&!authPending){web.setVisibility(View.INVISIBLE);authenticate("Desbloquear ATLAS",()->{locked=false;web.setVisibility(View.VISIBLE);deliverWidget();},this::finish);}else deliverWidget();
+        event("permissionsChanged",object("ok",true));event("linkState",config());
+        if(locked&&!authPending){web.setVisibility(View.INVISIBLE);authenticate("Desbloquear ATLAS",()->{locked=false;web.setVisibility(View.VISIBLE);deliverWidget();ui.postDelayed(this::maybeRequestPersistentLink,700);},this::finish);}else {deliverWidget();ui.postDelayed(this::maybeRequestPersistentLink,700);}
     }
     @Override protected void onStop(){background=true;locked=prefs.getBoolean("lock",false);speech(false);event("suspend",object("reason","background"));
         io.execute(()->{try{rpc("session.close",new JSONObject());}catch(Exception ignored){}});super.onStop();}
-    @Override protected void onDestroy(){speech(false);blePairing.stop();web.destroy();io.shutdown();super.onDestroy();}
+    @Override protected void onDestroy(){pageReady=false;speech(false);blePairing.stop();connection.removeRelayObserver(relayObserver);web.destroy();io.shutdown();super.onDestroy();}
 }
