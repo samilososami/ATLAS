@@ -19,7 +19,8 @@ vm.runInNewContext(fs.readFileSync(`${__dirname}/static/realtime.js`, 'utf8'), {
 });
 
 const { wakeInvocation, wakeHasRequest, silenceInvocation, withTurnSeparator,
-  commandLabel, responseExpectsReply, likelyAssistantEcho, captureConstraints } = window.AtlasRealtime._test;
+  commandLabel, responseExpectsReply, benignRealtimeError,
+  likelyAssistantEcho, captureConstraints } = window.AtlasRealtime._test;
 assert.equal(wakeInvocation('Atlas, qué hora es'), true);
 assert.equal(wakeInvocation('Oye Atlas, dime la hora'), true);
 assert.equal(wakeInvocation('Adlas, mira el almacenamiento'), true);
@@ -39,10 +40,38 @@ assert.equal(commandLabel('  vcgencmd   measure_temp\n'), 'vcgencmd measure_temp
 assert.equal(responseExpectsReply('¿Quieres que mire algo más?'), true);
 assert.equal(responseExpectsReply('¿Quieres que mire algo más?»'), true);
 assert.equal(responseExpectsReply('La temperatura es de 48 grados.'), false);
+assert.equal(benignRealtimeError({ code: 'response_cancel_not_active' }), true);
+assert.equal(benignRealtimeError({ message: 'Cancellation failed: no active response found' }), true);
+assert.equal(benignRealtimeError({ code: 'server_error', message: 'Internal server error' }), false);
 assert.equal(likelyAssistantEcho('El agente que', 'Soy ATLAS, el agente que vive en tu Raspberry Pi.'), true);
 assert.equal(likelyAssistantEcho('El agente', 'Soy ATLAS, el agente físico de OpenATLAS.'), true);
 assert.equal(likelyAssistantEcho('Espera, mira primero la memoria', 'Te estaba explicando el almacenamiento.'), false);
 assert.equal(captureConstraints().audio.echoCancellation, true);
+
+// response.cancel races are expected when the provider finishes between the
+// local interruption decision and delivery of the cancellation. They must not
+// tear down a healthy peer and trigger the global reconnect loop.
+const cancellationLogs = [];
+const cancellationFallbacks = [];
+const cancellationRace = window.AtlasRealtime.create({
+  fetch: async () => ({ ok: true }),
+  callbacks: {
+    addLog: message => cancellationLogs.push(message),
+    onFallback: error => cancellationFallbacks.push(error),
+  },
+});
+cancellationRace.closed = false;
+cancellationRace.state = 'ready';
+cancellationRace.channel = { readyState: 'open', send() {}, close() {} };
+cancellationRace.handleEvent(JSON.stringify({
+  type: 'error',
+  error: { code: 'invalid_request_error', message: 'Cancellation failed: no active response found' },
+}));
+assert.equal(cancellationRace.closed, false);
+assert.equal(cancellationRace.state, 'ready');
+assert.equal(cancellationFallbacks.length, 0);
+assert.equal(cancellationLogs.at(-1), 'Cancelación Realtime ya resuelta; la sesión sigue conectada');
+cancellationRace.stop(false);
 
 const sent = [];
 const idleScreens = [];

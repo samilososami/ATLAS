@@ -103,6 +103,13 @@
     return /\?[\s"'»”’)\]]*$/u.test(text);
   }
 
+  function benignRealtimeError(error = {}) {
+    const code = String(error.code || "").toLowerCase();
+    const message = String(error.message || "");
+    if (["response_cancel_not_active", "output_audio_buffer_clear_empty"].includes(code)) return true;
+    return /(?:cancellation failed:\s*)?no active response (?:found|to cancel)/iu.test(message);
+  }
+
   function speechChunkLength(text, final = false) {
     if (final) return text.length;
     // Wait for pronounceable boundaries, never arbitrary token counts. A dot
@@ -924,6 +931,12 @@
           this.finishResponse(event);
           return;
         case "error":
+          if (benignRealtimeError(event.error)) {
+            this.callbacks.addLog?.("Cancelación Realtime ya resuelta; la sesión sigue conectada");
+            this.postEvent("response.cancel_race_ignored",
+              "La respuesta terminó antes de que llegara su cancelación");
+            return;
+          }
           if (/active response in progress/iu.test(String(event.error?.message || ""))) {
             this.clearResponseCreateTimer();
             this.responseAfterInput = false;
@@ -1789,7 +1802,7 @@
     model: MODEL,
     voice: DEFAULT_VOICE,
     _test: { normalized, wakeInvocation, wakeHasRequest, silenceInvocation, withTurnSeparator,
-      commandLabel, responseExpectsReply, likelyAssistantEcho, captureConstraints, speechChunkLength,
+      commandLabel, responseExpectsReply, benignRealtimeError, likelyAssistantEcho, captureConstraints, speechChunkLength,
       realtimeTools: REALTIME_TOOLS },
   };
 })();

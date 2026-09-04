@@ -448,9 +448,14 @@ connect_bt_device() {
       return 0
     fi
     if printf '%s' "$output" | grep -q 'br-connection-profile-unavailable'; then
-      restart_audio_stack
+      # BlueZ publishes the device first; the user audio session must start
+      # afterwards so WirePlumber/PulseAudio can register fresh A2DP endpoints.
+      # Restarting bluetooth after the audio stack removes those endpoints and
+      # makes every immediate retry fail with profile-unavailable again.
       sudo -n systemctl restart bluetooth
       sleep 1
+      bt_power_on
+      restart_audio_stack
       ensure_bluetooth_audio_support
     elif printf '%s' "$output" | grep -q 'br-connection-page-timeout'; then
       break
