@@ -1,4 +1,4 @@
-# ATLAS Android · 0.1.9 preview
+# ATLAS Android · 0.1.10 preview
 
 Android 11+ companion for an owner-controlled ATLAS A1. Install the APK from
 [GitHub Releases](https://github.com/samilososami/ATLAS/releases). This is a
@@ -44,8 +44,7 @@ stops the process and link by design.
   refreshing OAuth rather than changing the UI.
 - **Ajustes:** encrypted pairing, LAN/relay/auto transport, app lock, action/pairing
   biometrics, native voices, reasoning levels and a verified GitHub release
-  updater. **Oscuro** is the default; **Claro** uses the off-white palette. The choice persists without
-  recreating the activity or dropping an active session; blue accents stay fixed.
+  updater. The interface uses the fixed ATLAS dark palette and its blue accents.
 
 ## Home-screen widgets and updates
 
@@ -66,6 +65,9 @@ to install apps from ATLAS and always presents the system installation confirmat
 The visual shell is bundled HTML/CSS/JS inside Android WebView, with native Java
 for networking, pinned TLS, Keystore, biometrics, permissions and recognition.
 No remote website is loaded as the app UI. Icons use the supplied ATLAS artwork.
+The first-run tutorial includes 25 page-specific PNG illustrations, one for each
+narrative or permission step; generated assets are real-alpha PNGs and are loaded
+one page ahead to avoid visual flashes without decoding the full set at startup.
 The filled ATLAS silhouette and rounded gear are vector UI glyphs. The decorative
 white ATLAS wordmark sits on navy for contrast in both themes. The full-color
 header and central logos are unchanged; only the launcher inset grew from 22%

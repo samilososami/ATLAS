@@ -1,0 +1,41 @@
+.onboarding-heading {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+}
+
+.onboarding-heading h1 {
+  min-width: 0;
+}
+
+.onboarding-heading .new-tag {
+  background: #1684ff24;
+  border: 1px solid #45aaff66;
+  border-radius: 999px;
+  flex: none;
+  font-size: 10px;
+  letter-spacing: .4px;
+  margin: 0;
+  padding: 4px 7px;
+}
+
+.onboarding-asset {
+  display: grid;
+  height: clamp(240px, 34vh, 340px);
+  margin: 18px 0;
+  place-content: center;
+  position: relative;
+}
+
+.onboarding-asset img {
+  display: block;
+  filter: drop-shadow(0 16px 24px #0003);
+  inset: 0;
+  height: 100%;
+  max-height: 100%;
+  max-width: 100%;
+  object-fit: contain;
+  position: absolute;
+  width: 100%;
+}
