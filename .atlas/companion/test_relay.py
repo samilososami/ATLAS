@@ -30,5 +30,11 @@ class RelayTests(unittest.IsolatedAsyncioTestCase):
     async def test_offline_is_explicit(self):
         app=await self.join('app');await app.send_json({'box':'opaque'})
         self.assertIn('error',await app.receive_json(timeout=2))
+    async def test_presence_is_pushed_without_polling(self):
+        app=await self.join('app')
+        pi=await self.join('pi')
+        self.assertEqual(await app.receive_json(timeout=2),{'presence':True,'online':True})
+        await pi.close()
+        self.assertEqual(await app.receive_json(timeout=2),{'presence':True,'online':False})
 
 if __name__=='__main__':unittest.main()

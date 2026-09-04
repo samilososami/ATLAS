@@ -70,8 +70,12 @@ try {
   const invalid = await connect({ role: "pi", room: "room-one", password: "wrong" });
   assert.equal(invalid.closed, true);
 
+  const presenceApp = await connect({ role: "app", room: "room-one" });
+  assert.equal(presenceApp.hello.online, false);
+  const onlinePresence = message(presenceApp.socket);
   const pi = await connect({ role: "pi", room: "room-one", password: "pi-password" });
   assert.equal(pi.hello.ok, true);
+  assert.deepEqual(await onlinePresence, { presence: true, online: true });
   const app = await connect({ role: "app", room: "room-one" });
   assert.deepEqual(app.hello, { ok: true, online: true });
 
@@ -91,7 +95,10 @@ try {
   offlineRoom.socket.send(JSON.stringify({ box: "opaque" }));
   assert.deepEqual(await offlinePromise, { error: "A1 desconectado" });
 
-  for (const socket of [pi.socket, app.socket, offlineRoom.socket]) socket.close();
+  const offlinePresence = message(presenceApp.socket);
+  pi.socket.close();
+  assert.deepEqual(await offlinePresence, { presence: true, online: false });
+  for (const socket of [presenceApp.socket, app.socket, offlineRoom.socket]) socket.close();
   console.log("ATLAS Cloudflare relay integration tests passed");
 } finally {
   worker.kill("SIGTERM");

@@ -45,7 +45,7 @@ function peerId() {
 export default {
   fetch(request, environment) {
     const url = new URL(request.url);
-    if (url.pathname === "/health") return json({ service: "atlas-relay", version: "0.1.0" });
+    if (url.pathname === "/health") return json({ service: "atlas-relay", version: "0.1.1" });
     if (url.pathname !== "/connect") return json({ error: "not_found" }, 404);
     if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") return json({ error: "websocket_required" }, 426);
     const relay = environment.ATLAS_RELAY.get(environment.ATLAS_RELAY.idFromName("atlas-global-relay"));
@@ -98,6 +98,16 @@ export class AtlasRelay {
     });
   }
 
+  notifyApps(room, online) {
+    const message = JSON.stringify({ presence: true, online });
+    for (const socket of this.sockets()) {
+      const value = attachment(socket);
+      if (value.authenticated && value.role === "app" && value.room === room) {
+        try { socket.send(message); } catch { /* stale socket */ }
+      }
+    }
+  }
+
   appCount() {
     return this.sockets().filter((socket) => {
       const value = attachment(socket);
@@ -133,6 +143,7 @@ export class AtlasRelay {
     next.rateCount = 0;
     socket.serializeAttachment(next);
     socket.send(JSON.stringify({ ok: true, online: role === "pi" || Boolean(this.findPi(room)) }));
+    if (role === "pi") this.notifyApps(room, true);
   }
 
   rateAllowed(socket, value) {
@@ -172,6 +183,11 @@ export class AtlasRelay {
     if (app) app.send(JSON.stringify({ box: value.box }));
   }
 
-  webSocketClose() {}
+  webSocketClose(socket) {
+    const value = attachment(socket);
+    if (value.authenticated && value.role === "pi" && !this.findPi(value.room, socket)) {
+      this.notifyApps(value.room, false);
+    }
+  }
   webSocketError(socket) { this.close(socket, 1011, "WebSocket error"); }
 }

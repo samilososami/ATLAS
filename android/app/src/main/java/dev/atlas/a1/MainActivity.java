@@ -45,7 +45,8 @@ public final class MainActivity extends Activity {
     private String permissionKind;
     private BlePairingManager blePairing;
     private android.content.SharedPreferences prefs;
-    private final AtlasConnection.RelayObserver relayObserver=(state,a1Online,detail)->event("linkState",linkConfig(state,a1Online,detail));
+    private final AtlasConnection.RelayObserver relayObserver=(state,a1Online,detail)->{if(!background)event("linkState",linkConfig(state,a1Online,detail));};
+    private final Runnable pauseWeb=()->{if(background&&web!=null){web.onPause();web.pauseTimers();}};
 
     @Override public void onCreate(Bundle state) {
         prefs=getSharedPreferences("atlas",MODE_PRIVATE);
@@ -60,6 +61,7 @@ public final class MainActivity extends Activity {
         });
         readWidgetIntent(getIntent());
         web=new WebView(this);
+        web.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_BOUND,true);
         frame=new FrameLayout(this);
         frame.addView(web,new FrameLayout.LayoutParams(-1,-1)); setContentView(frame);
         applyAppearance();
@@ -320,11 +322,11 @@ public final class MainActivity extends Activity {
             if(permissionId!=null){answer(permissionId,object("granted",ok),ok?null:"Micrófono denegado");permissionId=null;permissionKind=null;}return;}
         if(n==19&&permissionId!=null){boolean ok=granted(permissionKind);answer(permissionId,object("granted",ok),null);permissionId=null;permissionKind=null;}
     }
-    @Override protected void onResume(){super.onResume();background=false;immersive();if(connection.pairing!=null)AtlasLinkService.start(this);
+    @Override protected void onResume(){super.onResume();background=false;ui.removeCallbacks(pauseWeb);web.resumeTimers();web.onResume();immersive();if(connection.pairing!=null)AtlasLinkService.start(this);
         event("permissionsChanged",object("ok",true));event("linkState",config());
         if(locked&&!authPending){web.setVisibility(View.INVISIBLE);authenticate("Desbloquear ATLAS",()->{locked=false;web.setVisibility(View.VISIBLE);deliverWidget();ui.postDelayed(this::maybeRequestPersistentLink,700);},this::finish);}else {deliverWidget();ui.postDelayed(this::maybeRequestPersistentLink,700);}
     }
-    @Override protected void onStop(){background=true;locked=prefs.getBoolean("lock",false);speech(false);event("suspend",object("reason","background"));
-        io.execute(()->{try{rpc("session.close",new JSONObject());}catch(Exception ignored){}});super.onStop();}
+    @Override protected void onStop(){locked=prefs.getBoolean("lock",false);speech(false);event("suspend",object("reason","background"));background=true;
+        ui.postDelayed(pauseWeb,250);io.execute(()->{try{rpc("session.close",new JSONObject());}catch(Exception ignored){}});super.onStop();}
     @Override protected void onDestroy(){pageReady=false;speech(false);blePairing.stop();connection.removeRelayObserver(relayObserver);web.destroy();io.shutdown();super.onDestroy();}
 }

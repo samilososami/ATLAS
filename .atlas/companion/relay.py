@@ -6,6 +6,11 @@ from aiohttp import web, WSMsgType
 
 def application(devices):
     app=web.Application(client_max_size=2_000_000); rooms={}; peers={}
+    async def presence(room,online):
+        message={'presence':True,'online':online}
+        for peer_room,peer_ws in list(peers.values()):
+            if peer_room==room and not peer_ws.closed:
+                with contextlib.suppress(ConnectionError,RuntimeError): await peer_ws.send_json(message)
     async def connect(request):
         ws=web.WebSocketResponse(heartbeat=20,max_msg_size=2_000_000)
         await ws.prepare(request); room=None; peer=None; role=None
@@ -25,6 +30,7 @@ def application(devices):
                 peer=secrets.token_hex(16); peers[peer]=(room,ws)
             else: await ws.close(code=1008); return ws
             await ws.send_json({'ok':True,'online':room in rooms})
+            if role=='pi': await presence(room,True)
             window=time.monotonic(); count=0
             async for event in ws:
                 if event.type!=WSMsgType.TEXT: continue
@@ -46,7 +52,8 @@ def application(devices):
         except (ValueError,asyncio.TimeoutError,ConnectionError): pass
         finally:
             if peer: peers.pop(peer,None)
-            if role=='pi' and rooms.get(room) is ws: rooms.pop(room,None)
+            if role=='pi' and rooms.get(room) is ws:
+                rooms.pop(room,None);await presence(room,False)
         return ws
     app.router.add_get('/connect',connect)
     return app

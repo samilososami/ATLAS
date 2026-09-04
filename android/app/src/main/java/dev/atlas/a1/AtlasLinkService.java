@@ -6,14 +6,13 @@ import android.content.pm.ServiceInfo;
 import android.net.*;
 import android.os.*;
 import java.util.concurrent.*;
-import org.json.JSONObject;
 
 /** Owns the persistent encrypted A1 link independently from the visible activity. */
 public final class AtlasLinkService extends Service {
     static final String CHANNEL="atlas-link";
     private static final int NOTIFICATION_ID=41;
-    private static final long PROBE_MS=25_000;
-    private static final long MAX_RETRY_MS=30_000;
+    private static final long OFFLINE_FALLBACK_MS=300_000;
+    private static final long MAX_RETRY_MS=60_000;
 
     private final Object scheduleLock=new Object();
     private final AtlasConnection.RelayObserver relayObserver=this::relayChanged;
@@ -27,6 +26,9 @@ public final class AtlasLinkService extends Service {
     private volatile boolean destroyed;
     private AtlasConnection connection;
     private NotificationManager notifications;
+    private String publishedState="";
+    private String publishedText="";
+    private boolean publishedOnline;
 
     static void start(Context context){
         if(!context.getSharedPreferences("atlas",0).contains("pair"))return;
@@ -55,7 +57,7 @@ public final class AtlasLinkService extends Service {
             @Override public void onLost(Network network){
                 if(network.equals(activeNetwork)){
                     activeNetwork=null;connection.resetRelay("Sin conexión a Internet");
-                    updateState("waiting",false,"Esperando conexión a Internet");scheduleAttempt(5_000);
+                    updateState("waiting",false,"Esperando conexión a Internet");scheduleAttempt(OFFLINE_FALLBACK_MS);
                 }
             }
         };
@@ -81,7 +83,6 @@ public final class AtlasLinkService extends Service {
         if(destroyed)return;
         if(state==AtlasConnection.RelayState.ONLINE){
             retryMs=1_000;updateState(a1Online?"online":"relay",a1Online,a1Online?"ATLAS A1 conectado":"Relay conectado · esperando a A1");
-            scheduleAttempt(PROBE_MS);
         }else if(state==AtlasConnection.RelayState.CONNECTING){
             updateState("connecting",false,"Conectando con ATLAS A1…");
         }else{
@@ -91,6 +92,8 @@ public final class AtlasLinkService extends Service {
     }
 
     private void updateState(String state,boolean a1Online,String text){
+        if(state.equals(publishedState)&&a1Online==publishedOnline&&text.equals(publishedText))return;
+        publishedState=state;publishedOnline=a1Online;publishedText=text;
         getSharedPreferences("atlas-link",MODE_PRIVATE).edit().putString("state",state).putBoolean("a1Online",a1Online)
             .putString("detail",text).putLong("updatedAt",System.currentTimeMillis()).apply();
         if(notifications!=null)notifications.notify(NOTIFICATION_ID,notification(text));
@@ -116,23 +119,16 @@ public final class AtlasLinkService extends Service {
         if(destroyed)return;
         if(connection.pairing==null){stopSelf();return;}
         if(!hasInternet()){
-            updateState("waiting",false,"Esperando conexión a Internet");scheduleAttempt(5_000);return;
+            updateState("waiting",false,"Esperando conexión a Internet");scheduleAttempt(OFFLINE_FALLBACK_MS);return;
         }
         try{
             connection.connectRelay();
-            try{
-                connection.rpc("ping",new JSONObject());
-                updateState("online",true,"ATLAS A1 conectado");
-            }catch(Exception unavailable){
-                if(connection.isRelayConnected())updateState("relay",false,"Relay conectado · esperando a A1");
-                else throw unavailable;
-            }
-            retryMs=1_000;scheduleAttempt(PROBE_MS);
+            retryMs=1_000;
         }catch(Exception failure){
             if(!connection.isRelayConnected()){
                 if(connection.relayState()!=AtlasConnection.RelayState.DISCONNECTED)connection.resetRelay("No se pudo completar la conexión");
-                updateState("reconnecting",false,"Reconectando con ATLAS A1…");scheduleAttempt(retryMs);
-            }else scheduleAttempt(PROBE_MS);
+                else scheduleFailure();
+            }
         }
     }
 

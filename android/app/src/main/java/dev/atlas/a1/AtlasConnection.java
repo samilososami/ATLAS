@@ -72,6 +72,7 @@ final class AtlasConnection implements AutoCloseable {
     boolean isA1Online(){return a1Online;}
     String relayDetail(){return relayDetail;}
     private void setRelayState(RelayState state,boolean online,String detail){
+        if(relayState==state&&a1Online==online&&Objects.equals(relayDetail,detail))return;
         relayState=state;a1Online=online;relayDetail=detail;
         for(RelayObserver observer:relayObservers)try{observer.changed(state,online,detail);}catch(Exception ignored){}
     }
@@ -136,7 +137,7 @@ final class AtlasConnection implements AutoCloseable {
         String url=pairing.optString("relay");if(!url.startsWith("wss://"))throw new IOException("No hay relay configurado. Conecta a la misma Wi-Fi que A1.");
         relayReady=new CompletableFuture<>();
         setRelayState(RelayState.CONNECTING,false,"Conectando con el relay");
-        relay=normal.newBuilder().pingInterval(20,TimeUnit.SECONDS).build().newWebSocket(new Request.Builder().url(url).build(),new WebSocketListener(){
+        relay=normal.newBuilder().pingInterval(60,TimeUnit.SECONDS).build().newWebSocket(new Request.Builder().url(url).build(),new WebSocketListener(){
             @Override public void onOpen(WebSocket w,Response r){if(!w.send(object("role","app","room",pairing.optString("room")).toString()))failRelay(w,"El relay no aceptó la autenticación");}
             @Override public void onMessage(WebSocket w,String text){try{
                 if(!current(w))return;
@@ -145,6 +146,10 @@ final class AtlasConnection implements AutoCloseable {
                     if(!v.optBoolean("ok")){failRelay(w,"El relay rechazó la conexión");return;}
                     CompletableFuture<Boolean> ready=currentReady(w);if(ready!=null)ready.complete(true);
                     setRelayState(RelayState.ONLINE,v.optBoolean("online"),v.optBoolean("online")?"ATLAS A1 conectado":"Relay conectado; esperando a A1");return;
+                }
+                if(v.optBoolean("presence")){
+                    boolean online=v.optBoolean("online");
+                    setRelayState(RelayState.ONLINE,online,online?"ATLAS A1 conectado":"Relay conectado; esperando a A1");return;
                 }
                 if(v.has("box")){
                     JSONObject plain=unseal(v.getString("box"));CompletableFuture<JSONObject> f=pending.remove(plain.getString("id"));if(f!=null)f.complete(plain);
