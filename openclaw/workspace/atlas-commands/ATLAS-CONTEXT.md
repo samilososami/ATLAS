@@ -29,3 +29,7 @@ If sami asks to forget the WebScreen or terminal ATLAS conversation, clear its
 cache or start the context fresh, use `atlas-context empty`. If he asks to keep
 the useful bits but reduce its size, use `atlas-context compact`. Do not narrate
 this housekeeping unless he asks; the UI shows its own progress bar.
+
+`compact` is still performed by an active WebScreen because that surface owns
+the compaction workflow. `atlas-chat` consumes the resulting shared summary on
+its next normal session; an ephemeral session remains isolated.

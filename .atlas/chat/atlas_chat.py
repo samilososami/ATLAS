@@ -27,9 +27,10 @@ WEBSCREEN_DIR = Path(os.environ.get(
     "ATLAS_WEBSCREEN_DIR", ATLAS_HOME / ".atlas" / "webscreen",
 ))
 CHAT_DIR = Path(os.environ.get("ATLAS_CHAT_DIR", ATLAS_HOME / ".atlas" / "chat"))
+TERMINAL_INSTRUCTIONS_FILE = CHAT_DIR / "TERMINAL_INSTRUCTIONS.md"
 HISTORY_FILE = CHAT_DIR / "history"
 LOG_DIR = CHAT_DIR / "logs"
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 
 REALTIME_TOOLS: list[dict[str, Any]] = [
     {
@@ -134,6 +135,23 @@ class AtlasChat:
         os.chmod(CHAT_DIR, 0o700)
         os.chmod(LOG_DIR, 0o700)
 
+    def _build_context(self) -> tuple[str, dict[str, Any]]:
+        return self.webscreen.build_realtime_context(
+            persistent_context=None if self.persist else "",
+        )
+
+    @staticmethod
+    def _terminal_instructions() -> str:
+        try:
+            value = TERMINAL_INSTRUCTIONS_FILE.read_text(encoding="utf-8").strip()
+        except OSError as error:
+            raise AtlasChatError(
+                f"No se pudieron cargar las instrucciones de terminal: {error}"
+            ) from error
+        if not value:
+            raise AtlasChatError("Las instrucciones de terminal están vacías")
+        return value
+
     def log(self, event: str, **payload: Any) -> None:
         path = LOG_DIR / f"{datetime.now().astimezone():%Y-%m-%d}.jsonl"
         record = {
@@ -167,8 +185,9 @@ class AtlasChat:
         with self.console.status("[dim]Conectando con ATLAS…[/]", spinner="dots"):
             try:
                 reservation = self.webscreen.BRIDGE.create_talk_session(params)
-                context, self.context_stats = self.webscreen.build_realtime_context()
+                context, self.context_stats = self._build_context()
                 instructions = self.webscreen.read_realtime_instructions()
+                terminal_instructions = self._terminal_instructions()
                 secret = str(reservation.get("clientSecret") or "")
                 if not secret:
                     raise AtlasChatError("OpenAI no devolvió una sesión Realtime válida")
@@ -185,7 +204,9 @@ class AtlasChat:
                     "session": {
                         "type": "realtime",
                         "output_modalities": ["text"],
-                        "instructions": "\n\n".join((instructions, context)),
+                        "instructions": "\n\n".join(
+                            (instructions, context, terminal_instructions),
+                        ),
                         "tools": REALTIME_TOOLS,
                         "tool_choice": "auto",
                         "truncation": {"type": "retention_ratio", "retention_ratio": 0.8},
@@ -567,9 +588,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("-p", "--prompt", help="envía un prompt y termina")
     parser.add_argument(
         "--ephemeral", action="store_true",
-        help="no añade el turno a la memoria conversacional compartida",
+        help="no carga ni modifica la memoria conversacional compartida",
     )
-    parser.add_argument("--verbose", action="store_true", help="registra todos los eventos del proveedor")
+    parser.add_argument(
+        "--verbose", action="store_true",
+        help="registra los tipos de evento del proveedor para diagnóstico",
+    )
     parser.add_argument("--version", action="version", version=f"atlas-chat {VERSION}")
     return parser.parse_args(argv)
 

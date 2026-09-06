@@ -63,6 +63,13 @@ files for the existing ATLAS OS installation, not a universal installer.
 Review paths, the `sami` service user and `/home/atlas` home before installing.
 Never overwrite a live user's files without a focused backup.
 
+Install or update the text-only Realtime client with
+`sudo bash system/install-chat.sh`. The focused installer copies `atlas-chat`
+to `/usr/local/bin`, installs its runtime and terminal instruction layer under
+`/home/atlas/.atlas/chat`, reuses WebScreen's Python environment and safely
+adds any missing command-map references without replacing private workspace
+content.
+
 The touch keyboard sources now live under `../misc/atlas-touch-type/`; install
 its two helpers into `/usr/local/libexec/` too. `../misc/rafas/` contains the
 small native hotkey listener and its build instructions. Their READMEs are the

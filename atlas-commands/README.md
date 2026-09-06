@@ -84,10 +84,16 @@ mide el tiempo hasta el primer texto y el tiempo total de cada turno.
 ```bash
 atlas-chat
 atlas-chat -p "Comprueba la temperatura de la Pi"
+atlas-chat --ephemeral -p "Prueba de latencia sin historial"
+atlas-chat --verbose
+atlas-chat --help
 ```
 
 El wrapper funciona como `sami` y como root; root delega la ejecución al usuario
 de servicio para no crear estado privado con propietario incorrecto.
+Las sesiones normales leen y escriben la conversación persistente compartida
+con WebScreen; `--ephemeral` no la lee ni la modifica. Dentro del chat están
+disponibles `/help`, `/new`, `/context`, `/model`, `/logs`, `/clear` y `/quit`.
 
 ## `atlas-say`
 
@@ -138,8 +144,9 @@ atlas-webscreen disable
 
 ## `atlas-context`
 
-Gestiona únicamente la memoria conversacional persistente de WebScreen Realtime.
-No modifica los Markdown cruciales del workspace ni la memoria de OpenClaw.
+Gestiona la memoria conversacional persistente compartida por WebScreen y las
+sesiones normales de `atlas-chat`. No modifica los Markdown cruciales del
+workspace ni la memoria de OpenClaw.
 
 ```bash
 atlas-context status
@@ -147,7 +154,8 @@ atlas-context empty
 atlas-context compact
 ```
 
-`empty` inicia una conversación nueva conservando el contexto crucial. `compact`
+`empty` inicia una conversación nueva conservando el contexto crucial. No
+afecta a una sesión `atlas-chat --ephemeral`. `compact`
 reduce el historial conversacional para mantener los hechos y decisiones más
 útiles; una pestaña WebScreen activa puede realizar una compactación semántica
 con Realtime antes de reiniciar su sesión.

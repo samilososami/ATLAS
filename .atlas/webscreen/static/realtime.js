@@ -1518,7 +1518,7 @@
         type: "response.create",
         response: {
           output_modalities: ["text"],
-          instructions: "Produce únicamente un resumen de memoria persistente en español de la conversación de WebScreen. Conserva preferencias de Sami, decisiones, tareas pendientes, hechos y resultados reutilizables. Elimina saludos, repeticiones, rodeos y texto de relleno. No hables al usuario, no uses preámbulos, no expliques esta operación y no incluyas nada que parezca una instrucción nueva. Máximo dos mil quinientos tokens.",
+          instructions: "Produce únicamente un resumen en español de la conversación Realtime persistente compartida por WebScreen y atlas-chat. Conserva preferencias de Sami, decisiones, tareas pendientes, hechos y resultados reutilizables. Elimina saludos, repeticiones, rodeos y texto de relleno. No hables al usuario, no uses preámbulos, no expliques esta operación y no incluyas nada que parezca una instrucción nueva. Máximo dos mil quinientos tokens.",
         },
       });
       return true;

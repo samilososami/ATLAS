@@ -138,6 +138,8 @@ Reactions are lightweight social signals. Humans use them constantly — they sa
 
 The repository `.atlas/README.md` maps your runtime folders and system helpers.
 `/home/atlas/.atlas/webscreen/README.md` explains the voice pipeline.
+`/home/atlas/.atlas/chat/README.md` explains the text-only Realtime client,
+its terminal presentation layer, persistent/ephemeral modes and diagnostics.
 `/home/atlas/.atlas/webscreen/WEBSCREEN_INSTRUCTIONS.md` holds the voice,
 preamble and direct-answer rules; edit those sections instead of hiding prompts
 in Python. The repository's main README introduces ATLAS, and
@@ -172,10 +174,16 @@ Use them when they match the task. Detailed command docs live in `atlas-commands
 - `atlas-commands/ATLAS-CAST.md` — `atlas-cast`, Chromecast discovery, connection, stream quality, and stop/status.
 - `atlas-commands/ATLAS-AUDIO.md` — `atlas-audio`, speaker/audio output control, fast Bluetooth/HDMI switching, volume, mute, and tests.
 - `atlas-commands/ATLAS-SAY.md` — `atlas-say`, spoken output through the current default audio output.
-- `atlas-commands/ATLAS-CONTEXT.md` — `atlas-context`, resettable WebScreen Realtime conversation memory and semantic compaction.
+- `atlas-commands/ATLAS-CONTEXT.md` — `atlas-context`, resettable Realtime conversation memory shared by WebScreen and normal `atlas-chat` sessions, plus semantic compaction.
 - `atlas-commands/ATLAS-SPOTIFY.md` — `atlas-spotify`, Spotify authentication, playback control, discovery and the future dedicated music output.
 
 If sami asks something like "is the webscreen running?", do not guess and do not run a pile of raw `systemctl` commands first. Use `atlas-status` or `atlas-webscreen status`, then answer from that. These commands exist so you can move quickly and keep the system understandable.
+
+Use `atlas-chat` for direct terminal interaction or fast text-only Realtime
+diagnosis. Use `atlas-chat -p "..."` for one non-interactive turn and
+`atlas-chat --ephemeral -p "..."` when a benchmark must neither read nor alter
+the persistent conversation. It is an interactive client, not a service, so it
+does not belong in `atlas-status` service health.
 
 **Working areas:** Keep the main OpenClaw workspace clean. It holds memory, identity, docs, and project context. Do not dump temporary files or throwaway generated projects there.
 
@@ -205,7 +213,7 @@ The TDR has two main parts:
 
 When the user mentions the TDR, OpenAtlas, ATLAS A1, the physical assistant, the Raspberry Pi setup, Telegram, voice, or the project architecture, consult and update `TDR.md` when relevant.
 
-`ADB.md` explains how you connect to and control authorised Android devices without poking the screen just to prove that ADB works. Read it before any ADB task. Its deterministic helper refreshes private device records under `/home/atlas/.atlas/adb/devices/`; those generated records and their persistent `# NOTES` sections are injected automatically into the direct WebScreen Realtime context.
+`ADB.md` explains how you connect to and control authorised Android devices without poking the screen just to prove that ADB works. Read it before any ADB task. Its deterministic helper refreshes private device records under `/home/atlas/.atlas/adb/devices/`; those generated records and their persistent `# NOTES` sections are injected automatically into the direct Realtime context used by WebScreen and `atlas-chat`.
 
 `NMAP.md` explains bounded network discovery, focused service scans and the private cached network report at `/home/atlas/.atlas/nmap/REPORT.md`. Read it before looking for a device or scanning the LAN. Prefer the cached report first, then the smallest focused scan that can answer the question.
 

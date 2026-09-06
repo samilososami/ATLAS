@@ -12,7 +12,8 @@ test -x "$venv/bin/python" || { echo "WebScreen venv not found: $venv" >&2; exit
 
 backup="$atlas_home/.atlas/backups/chat-$(date +%Y%m%d-%H%M%S)"
 install -d -m 700 -o "$atlas_user" -g "$atlas_group" "$backup"
-for path in /usr/local/bin/atlas-chat "$atlas_home/.atlas/chat/atlas_chat.py"; do
+for path in /usr/local/bin/atlas-chat "$atlas_home/.atlas/chat/atlas_chat.py" \
+  "$atlas_home/.atlas/chat/TERMINAL_INSTRUCTIONS.md"; do
   if [[ -f $path ]]; then
     cp --parents -- "$path" "$backup/"
   fi
@@ -23,6 +24,10 @@ install -m 600 -o "$atlas_user" -g "$atlas_group" \
   "$repo/.atlas/chat/atlas_chat.py" "$atlas_home/.atlas/chat/atlas_chat.py"
 install -m 644 -o "$atlas_user" -g "$atlas_group" \
   "$repo/.atlas/chat/README.md" "$atlas_home/.atlas/chat/README.md"
+install -m 644 -o "$atlas_user" -g "$atlas_group" \
+  "$repo/.atlas/chat/TERMINAL_INSTRUCTIONS.md" "$atlas_home/.atlas/chat/TERMINAL_INSTRUCTIONS.md"
+install -m 644 -o "$atlas_user" -g "$atlas_group" \
+  "$repo/.atlas/chat/requirements.txt" "$atlas_home/.atlas/chat/requirements.txt"
 install -m 755 "$repo/atlas-commands/atlas-chat" /usr/local/bin/atlas-chat
 
 if ! "$venv/bin/python" -c 'import rich, websockets' >/dev/null 2>&1; then
@@ -33,5 +38,6 @@ doc_dir="$atlas_home/.openclaw/workspace/atlas-commands"
 install -d -m 755 -o "$atlas_user" -g "$atlas_group" "$doc_dir"
 install -m 644 -o "$atlas_user" -g "$atlas_group" \
   "$repo/openclaw/workspace/atlas-commands/ATLAS-CHAT.md" "$doc_dir/ATLAS-CHAT.md"
+python3 "$repo/system/install-chat-docs.py" "$repo" "$atlas_home" "$backup"
 
 printf 'atlas-chat installed. Backup: %s\n' "$backup"

@@ -69,6 +69,9 @@ Una sola pestaña controla WebScreen a la vez. Las demás muestran **Tomar contr
   el mismo OAuth, instrucciones, contexto y herramientas. Transmite la respuesta
   en blanco y separa en gris cada comando, búsqueda y salida real, además de
   mostrar tiempos de primer texto y finalización.
+  Las sesiones normales comparten la conversación persistente de WebScreen;
+  `--ephemeral` no la lee ni la modifica. Una capa final adapta únicamente la
+  presentación al terminal, permitiendo Markdown, rutas, cifras y unidades.
 - Chrome detecta la palabra exacta `Atlas`, también dentro de una frase, sin silencio previo ni veto semántico. En el A1, la petición inicial de Chrome se envía como texto a Realtime; el portátil también utiliza audio Realtime. `gpt-4o-mini-transcribe` aporta una transcripción auxiliar de los turnos de audio, no el razonamiento.
 - Solo en A1, el micrófono y el detector se bloquean durante la reproducción y 200 ms después. El resto de dispositivos conserva sus interrupciones naturales. La continuación cuando Atlas hace una pregunta es de cuatro segundos.
 - Se pueden elegir voces nativas de OpenAI, navegador o ElevenLabs, y esfuerzo Default, Minimal, Low, Medium, High y Xhigh, según admita el proveedor. Default omite el ajuste. Los resultados provisionales de Chrome se sustituyen al corregirse y el texto idéntico no reinicia la espera.
@@ -109,7 +112,14 @@ Los tokens, API keys, sesiones, credenciales, historiales, datos personales y co
 
 ## Comandos de ATLAS
 
-La carpeta [`atlas-commands`](atlas-commands) contiene los comandos `atlas-*` utilizados para gestionar audio, Spotify, pantalla, casting, estado del sistema, TTS y servicios del dispositivo. Cada comando se acompaña de una descripción breve y ejemplos de uso.
+La carpeta [`atlas-commands`](atlas-commands) contiene los comandos `atlas-*` utilizados para gestionar audio, Spotify, pantalla, casting, estado del sistema, TTS, servicios del dispositivo y el cliente Realtime de terminal. Cada comando se acompaña de una descripción breve y ejemplos de uso.
+
+Para instalar o actualizar el chat de terminal en ATLAS A1, conservando copias
+fechadas y dejándolo disponible tanto para `sami` como para root:
+
+```bash
+sudo bash system/install-chat.sh
+```
 
 ## Estructura del repositorio
 

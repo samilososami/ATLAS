@@ -25,6 +25,14 @@ navegador. Puede ejecutar acciones mediante una shell directa: no lo expongas a
 Internet y limita su acceso a una red de confianza. Las credenciales se leen
 en el backend y no deben enviarse al cliente.
 
+`atlas-chat` reutiliza esa shell directa desde una terminal local y puede
+ejecutar acciones reales como el usuario de servicio `sami`. No abre un puerto
+nuevo ni incorpora autenticación propia: su frontera es la cuenta del sistema
+desde la que se invoca. Cuando se lanza como root, el wrapper baja privilegios a
+`sami`. Los historiales y logs permanecen privados bajo `.atlas/chat/`; no deben
+publicarse. `--verbose` registra tipos de eventos, no secretos ni payloads
+completos del proveedor.
+
 El acceso exclusivo utiliza permisos efímeros por pestaña y valida el control
 en el backend. Esto evita peticiones de otros clientes sin el permiso actual,
 pero no identifica a una persona: el primero que llega cuando está libre

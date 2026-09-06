@@ -7,7 +7,7 @@ usage() {
   cat <<'USAGE'
 usage: atlas-context <status|empty|compact>
 
-  status   show resettable WebScreen conversational context state
+  status   show shared resettable Realtime conversational context state
   empty    erase only conversational context and request a fresh WebScreen session
   compact  request a semantic compaction from the next active WebScreen session
 

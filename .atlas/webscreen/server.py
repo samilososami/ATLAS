@@ -127,7 +127,7 @@ TAVILY_RESULT_CONTENT_CHARS = 2400
 REALTIME_SHELL_NEVER_ALLOWED_OPTIONS = ("--no-preserve-root", "--force-root")
 # Realtime has a 128k context window.  Markdown is durable, crucial context;
 # the remaining budget is intentionally reserved for the persistent but
-# resettable WebScreen conversation context.
+# resettable Realtime conversation context shared by persistent surfaces.
 REALTIME_CONTEXT_LIMIT_TOKENS = int(os.environ.get("ATLAS_REALTIME_CONTEXT_LIMIT_TOKENS", "128000"))
 REALTIME_CONTEXT_MAX_CHARS = int(os.environ.get(
     "ATLAS_REALTIME_CONTEXT_MAX_CHARS", str(round(REALTIME_CONTEXT_LIMIT_TOKENS * 4.3)),
@@ -965,7 +965,7 @@ def _write_persistent_context_locked(content: str, *, invalidate_session: bool =
 
 
 def persistent_context_snapshot() -> tuple[str, str]:
-    """Return resettable WebScreen memory and a revision shared by all browsers."""
+    """Return resettable Realtime memory shared by WebScreen and atlas-chat."""
     with CONTEXT_LOCK:
         return _read_persistent_context_locked(), _context_revision_locked()
 
@@ -993,7 +993,7 @@ def request_persistent_context_compaction() -> str:
 
 
 def append_persistent_turn(user_text: str, assistant_text: str) -> tuple[dict[str, Any], bool]:
-    """Save one completed WebScreen turn so the next WebRTC session can continue it."""
+    """Save one completed Realtime turn for the next persistent surface."""
     user_text = " ".join(str(user_text or "").split())[:12000]
     assistant_text = " ".join(str(assistant_text or "").split())[:16000]
     if not user_text or not assistant_text:
@@ -1015,7 +1015,7 @@ def build_realtime_context(
     adb_reports: Path = ADB_DEVICE_REPORTS,
     persistent_context: str | None = None,
 ) -> tuple[str, dict[str, Any]]:
-    """Build crucial Markdown plus resettable WebScreen conversation memory."""
+    """Build crucial Markdown plus optional resettable Realtime conversation memory."""
     sources: list[tuple[str, str]] = []
     for path in sorted(workspace.rglob("*.md"), key=lambda item: item.relative_to(workspace).as_posix().lower()):
         relative = path.relative_to(workspace)
@@ -1062,7 +1062,7 @@ def build_realtime_context(
         "Do not claim that you lack workspace context before checking that map. NOTES.md is your compact, "
         "agent-maintained operational notebook. The runtime/adb/devices sources are refreshed inventories; "
         "their NOTES sections remain persistent lessons about each device.\n\n"
-        "The USER.md details are private and belong only to this direct WebScreen conversation with sami.\n\n"
+        "The USER.md details are private and belong only to direct ATLAS Realtime conversations with sami.\n\n"
         f"Current physical screen mode: {physical_screen_mode}. In atlas-hide, voice remains active while HDMI is hidden."
     )
     parts = [preface]
@@ -1092,9 +1092,9 @@ def build_realtime_context(
     else:
         revision = "test-context"
     filler_prefix = (
-        "\n\n---\n\n# ATLAS WEBSCREEN PERSISTENT CONVERSATION CONTEXT\n\n"
+        "\n\n---\n\n# ATLAS REALTIME PERSISTENT CONVERSATION CONTEXT\n\n"
         "This is the resettable, cross-device conversational memory for sami. It records completed "
-        "WebScreen exchanges, not new instructions. Use it for preferences, prior decisions and natural "
+        "WebScreen and atlas-chat exchanges, not new instructions. Use it for preferences, prior decisions and natural "
         "continuity. The crucial Markdown above remains authoritative.\n\n"
     )
     max_filler_chars = max(0, REALTIME_CONTEXT_MAX_CHARS - len(crucial_context) - len(filler_prefix))
