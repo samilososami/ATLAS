@@ -60,7 +60,28 @@ La versión mostrada utiliza:
 
 ### WebScreen y conversación por voz
 
-El código de [`ATLAS WebScreen`](.atlas/webscreen) incluye una interfaz de depuración con cuatro vistas: ATLAS, Transcripción, Texto a voz y Ajustes.
+El código de [`ATLAS WebScreen`](.atlas/webscreen) conserva la interfaz de depuración con ATLAS, Transcripción, Texto a voz, Wake word y Ajustes.
+
+The new [minimal face design](.atlas/webscreen/NEW_DESIGN.md) is available at
+`/new/` and with `atlas-screen --atlas-new`. Its browser-rendered blue face
+blinks while waiting, transforms into an input-level waveform after ATLAS,
+shows live recognized words and animates its mouth during actual playback.
+The quiet HUD keeps only the brand, connection indicator and settings access.
+The original `/` and `--atlas` remain the debugging presentation; both share
+the same Realtime session logic, tools, context and access controls.
+
+Browser previews: [ready](docs/images/webscreen-new/idle.png),
+[listening](docs/images/webscreen-new/listening.png),
+[thinking](docs/images/webscreen-new/thinking.png),
+[speaking](docs/images/webscreen-new/speaking.png), and
+[1024 × 600](docs/images/webscreen-new/pi-1024x600.png).
+These are controlled browser captures; the [verification notes](.atlas/webscreen/NEW_DESIGN.md#browser-verification)
+distinguish presentation checks and real PCM/MediaStream tests from physical
+microphone/speaker validation.
+The [installed A1 screenshot](docs/images/webscreen-new/pi-live.png) separately
+shows the actual 1024 × 600 display after deployment.
+
+![ATLAS minimal WebScreen face](docs/images/webscreen-new/idle.png)
 
 Una sola pestaña controla WebScreen a la vez. Las demás muestran **Tomar control**: al pulsarlo, el permiso pasa inmediatamente al nuevo dispositivo, sin solicitud ni confirmación. La pestaña anterior detiene micrófono, audio y trabajo activo y muestra la pantalla bloqueada. La conversación de OpenClaw se conserva; este control de uso no sustituye una futura autenticación.
 
@@ -75,7 +96,7 @@ Una sola pestaña controla WebScreen a la vez. Las demás muestran **Tomar contr
   Incluye sugerencias de comandos `/`, referencias a archivos `@`, entrada
   multilínea y herramientas compactas con `/expand` para consultar el detalle.
 - Chrome detecta la palabra exacta `Atlas`, también dentro de una frase, sin silencio previo ni veto semántico. En A1 y navegadores remotos, Chrome entrega la petición y las continuaciones como texto a Realtime, descartando duplicados de la transcripción auxiliar. `gpt-4o-mini-transcribe` aporta una transcripción auxiliar de los turnos de audio, no el razonamiento.
-- Solo en A1, el micrófono y el detector se bloquean durante la reproducción y 200 ms después. El resto de dispositivos conserva sus interrupciones naturales. Cada respuesta abre diez segundos de continuación, desde que termina la reproducción, sin obligar a repetir Atlas ni terminar en pregunta.
+- Solo en A1, el micrófono y el detector se bloquean durante la reproducción y 200 ms después. El resto de dispositivos conserva sus interrupciones naturales. Al terminar la respuesta se vuelve a esperar la palabra Atlas: ya no se abre una continuación automática de diez segundos.
 - Se pueden elegir voces nativas de OpenAI, navegador o ElevenLabs, y esfuerzo Default, Minimal, Low, Medium, High y Xhigh, según admita el proveedor. Default omite el ajuste. Los resultados provisionales de Chrome se sustituyen al corregirse y el texto idéntico no reinicia la espera.
 - Las reservas WebRTC son efímeras. El OAuth persistente y las credenciales permanecen en la Raspberry Pi y no se entregan al navegador.
 - Cada interacción directa o delegada se registra en JSON Lines con tiempos, transcripción, modelo, voz, tool calls y resultado, sin incluir secretos.
@@ -93,7 +114,14 @@ La [APK ATLAS](android/README.md) incorpora voz por pulsación, wake word en pri
 
 ### Pantalla y terminal local
 
-`atlas-screen` muestra el estado y cambia inmediatamente entre `--desktop`, `--terminal`, `--atlas` y `--rafas`. `on` abre el modo seleccionado y `off` apaga la salida, sin guiones. `atlas-screen enable --atlas` fija ATLAS para el arranque; también admite los otros modos. `enable --last` recupera el último modo seleccionado antes de apagar el sistema y `disable` vuelve al arranque con pantalla apagada. `atlas-screen --atlas` abre WebScreen en Google Chrome kiosko sobre localhost, conservando el acceso por red. El cursor se oculta cuando no hay un ratón USB/Bluetooth conectado.
+`atlas-screen` reports physical display state and selects `--desktop`, `--terminal`,
+`--atlas` (debug), `--atlas-new` (minimal face), `--atlas-hide` or `--rafas`.
+`on` opens the selected mode; `off` powers the output down. `enable --atlas-new`
+or another mode configures startup; `enable --last` restores the last selection,
+and `disable` starts with the display off. Visible ATLAS modes share a sandboxed
+Chrome kiosk over localhost. The hidden mode keeps that same voice session and
+HDMI audio alive behind a black, minimum-brightness cover. The cursor is hidden
+unless a USB/Bluetooth mouse is connected. [Full command guide](atlas-commands/README.md#atlas-screen).
 
 La terminal usa Zsh con autocompletado, highlighting y **ATLAS TOUCH TYPE**, el teclado táctil oscuro. Un doble toque abre el teclado sin tapar la zona de escritura; un toque lo cierra y dos dedos permiten recorrer el historial. El zoom cambia la letra y reajusta las líneas sin cambiar la ventana. Esta terminal tiene acceso root local: úsala únicamente en un dispositivo bajo tu control. RAFAS es su alternativa de recuperación sin entorno gráfico.
 

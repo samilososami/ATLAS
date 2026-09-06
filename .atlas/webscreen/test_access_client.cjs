@@ -22,7 +22,7 @@ function client(options = {}) {
     addEventListener: (name, fn) => events.set(name, fn), dispatchEvent() {} };
   const document = { querySelector: node, visibilityState: 'visible',
     addEventListener: (name, fn) => documentEvents.set(name, fn) };
-  vm.runInNewContext(source, { window, Event, Headers, AbortSignal, AbortController,
+  vm.runInNewContext(source, { window, Event, Headers, URL, AbortSignal, AbortController,
     console: { warn: (...args) => warnings.push(args) },
     performance: { now: () => now },
     document,
@@ -252,4 +252,142 @@ test('online and visibility recovery bypass backoff without producing request st
   }
   assert.equal(c.calls.length, 3);
   assert.equal(c.window.atlasAccess.hasControl(), true);
+});
+
+test('successful protected API traffic preserves control during an isolated heartbeat stall', async () => {
+  const c = client(); await tick();
+  c.setFetch(async url => url === '/api/access/heartbeat'
+    ? new Promise(() => {}) : { status: 200, ok: true });
+  c.setTime(1700); c.timers.find(t => t.delay === 500).fn(); await tick();
+  c.setTime(6500);
+  await c.window.atlasAccess.fetch('/api/realtime/context');
+  c.setTime(8200); c.timers.find(t => t.delay === 250).fn();
+  assert.equal(c.suspended, 0, 'authorized useful traffic is also proof of a live owned lease');
+  assert.equal(c.window.atlasAccess.hasControl(), true);
+  c.setTime(14600); c.timers.find(t => t.delay === 250).fn();
+  assert.equal(c.suspended, 1, 'without further proof the same eight-second watchdog still stops audio');
+});
+
+test('successful protected POST traffic also renews the existing local lease', async () => {
+  const c = client(); await tick();
+  c.setTime(6500);
+  await c.window.atlasAccess.fetch('/api/realtime/event', { method: 'POST', body: '{}' });
+  c.setTime(8200); c.timers.find(t => t.delay === 250).fn();
+  assert.equal(c.window.atlasAccess.hasControl(), true);
+  assert.equal(c.suspended, 0);
+});
+
+test('public health, access routes and failed requests are not authorization evidence', async () => {
+  for (const [url, method, status] of [
+    ['/api/health', 'GET', 200], ['/favicon.svg', 'GET', 200],
+    ['/api/access/heartbeat', 'POST', 200], ['/api/realtime/context', 'GET', 500],
+    ['/api/../api/access/heartbeat', 'POST', 200], ['/api/../health', 'GET', 200],
+    ['https://elsewhere.invalid/api/settings', 'GET', 200],
+  ]) {
+    const c = client(); await tick();
+    c.setTime(6500); c.setStatus(status);
+    await c.window.atlasAccess.fetch(url, { method });
+    c.setTime(8200); c.timers.find(t => t.delay === 250).fn();
+    assert.equal(c.window.atlasAccess.hasControl(), false, `${method} ${url} must not extend ownership`);
+    assert.equal(c.suspended, 1);
+  }
+});
+
+test('protected success uses the request start, never its delayed response time', async () => {
+  const c = client(); await tick();
+  let resolveReply;
+  c.setFetch(() => new Promise(resolve => { resolveReply = resolve; }));
+  c.setTime(6000);
+  const response = c.window.atlasAccess.fetch('/api/settings');
+  c.setTime(7900); resolveReply({ status: 200, ok: true }); await response;
+  c.setTime(13900); c.timers.find(t => t.delay === 250).fn();
+  assert.equal(c.suspended, 0);
+  c.setTime(14000); c.timers.find(t => t.delay === 250).fn();
+  assert.equal(c.suspended, 1, 'a delayed result does not extend the lease to response time + grace');
+});
+
+test('a delayed heartbeat cannot overwrite newer protected-traffic lease proof', async () => {
+  const c = client(); await tick();
+  let resolveHeartbeat;
+  c.setFetch(async url => url === '/api/access/heartbeat'
+    ? new Promise(resolve => { resolveHeartbeat = resolve; }) : { status: 200, ok: true });
+  c.setTime(4000); c.timers.find(t => t.delay === 500).fn(); await tick();
+  c.setTime(6500); await c.window.atlasAccess.fetch('/api/settings');
+  c.setTime(7000);
+  resolveHeartbeat({ status: 200, ok: true, json: async () => ({ owner: true }) });
+  await tick();
+  c.setTime(12500); c.timers.find(t => t.delay === 250).fn();
+  assert.equal(c.suspended, 0);
+  assert.equal(c.window.atlasAccess.hasControl(), true);
+  c.setTime(14500); c.timers.find(t => t.delay === 250).fn();
+  assert.equal(c.suspended, 1, 'the newest request-start proof still expires after eight seconds');
+});
+
+test('successful replies cannot revive local expiry or a caller-aborted request', async () => {
+  for (const expireFirst of [true, false]) {
+    const c = client(); await tick();
+    const abort = new AbortController();
+    let resolveReply;
+    c.setFetch(() => new Promise(resolve => { resolveReply = resolve; }));
+    c.setTime(6500);
+    const response = c.window.atlasAccess.fetch('/api/settings', { signal: abort.signal });
+    if (expireFirst) {
+      c.setTime(8200); c.timers.find(t => t.delay === 250).fn();
+    } else {
+      abort.abort(); c.setTime(7200);
+    }
+    resolveReply({ status: 200, ok: true }); await response;
+    c.setTime(8500); c.timers.find(t => t.delay === 250).fn();
+    assert.equal(c.window.atlasAccess.hasControl(), false);
+    assert.equal(c.suspended, 1);
+  }
+});
+
+test('authoritative API 401/423 defeats stale protected successes and still revokes immediately', async () => {
+  for (const status of [401, 423]) {
+    const c = client(); await tick();
+    let resolveStale;
+    c.setFetch(async url => url === '/api/realtime/context'
+      ? new Promise(resolve => { resolveStale = resolve; }) : { status, ok: false });
+    c.setTime(6500);
+    const stale = c.window.atlasAccess.fetch('/api/realtime/context');
+    await c.window.atlasAccess.fetch('/api/settings');
+    assert.equal(c.suspended, 1);
+    assert.equal(c.window.atlasAccess.hasControl(), false);
+    resolveStale({ status: 200, ok: true }); await stale;
+    assert.equal(c.window.atlasAccess.hasControl(), false);
+    await assert.rejects(c.window.atlasAccess.fetch('/api/settings'));
+  }
+});
+
+test('ignored access rejection bodies are released without delaying revocation', async () => {
+  for (const status of [401, 423]) {
+    const c = client(); await tick();
+    let cancelled = 0;
+    c.setFetch(async () => ({ status, ok: false,
+      body: { cancel() { cancelled++; return new Promise(() => {}); } },
+      json() { throw new Error('rejected body must not be parsed'); },
+    }));
+    c.setTime(1700); c.timers.find(t => t.delay === 500).fn(); await tick();
+    assert.equal(cancelled, 1);
+    assert.equal(c.window.atlasAccess.hasControl(), false);
+    assert.equal(c.suspended, 1);
+  }
+});
+
+test('pagehide releases the unused fetch body and tolerates cancellation failure', async () => {
+  for (const rejects of [false, true]) {
+    const c = client(); await tick();
+    let cancelled = 0;
+    c.setFetch(async () => ({ status: 200, ok: true, body: {
+      cancel() {
+        cancelled++;
+        return rejects ? Promise.reject(new Error('already closed')) : Promise.resolve();
+      },
+    } }));
+    c.events.get('pagehide')(); await tick();
+    assert.equal(c.calls.at(-1).url, '/api/access/release');
+    assert.equal(cancelled, 1);
+    assert.equal(c.window.atlasAccess.hasControl(), false);
+  }
 });

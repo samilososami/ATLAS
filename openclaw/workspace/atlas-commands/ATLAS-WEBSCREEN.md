@@ -67,6 +67,17 @@ http://atlas-a1.local:5000
 http://<pi-ip>:5000
 ```
 
+Append `/new/` for the minimal animated face. On the physical A1 use
+`atlas-screen --atlas-new`; `atlas-screen --atlas` still opens the original
+debugging surface. They share the backend, voice/context and exclusive control
+lease: changing the presentation is not a new model or another microphone.
+The new face's settings button reveals the existing controls and tools.
+Read `/home/atlas/.atlas/webscreen/NEW_DESIGN.md` for its layout/audio source map.
+The ready face blinks once for 350 ms every 8.7 seconds; it has no permanent
+idle CSS animation or drawing-frame loop. Hidden/non-idle pages and reduced
+motion cancel the blink timers. Repeated unchanged status/transcript updates
+do not rewrite the face DOM. This changes rendering work, not voice ownership.
+
 If HTTPS is enabled in the current version, `status` will show HTTPS URLs.
 
 ## One screen at the wheel
@@ -84,13 +95,20 @@ put; changing chairs is not a memory wipe. Closing a page releases its lease.
 The client heartbeat interval is 1.5 seconds and the server lease is 20 seconds.
 An 8-second local grace window tolerates a transient missed request, then
 releases the local microphone before the backend could assign a stale lease to
-someone else. Authenticated activity also refreshes the server lease.
+someone else. Successful protected API activity also confirms the local lease,
+matching the renewal already performed by server authorization. This tolerates
+an isolated stalled heartbeat while other authorized requests succeed, without
+extending either limit. Only the same current token/generation counts, using
+the request's start time, never a late response time. Public health/static/access
+reads and failed requests are not ownership evidence; expired/revoked control
+or aborted requests cannot be revived by a successful old reply.
 Each request has a four-second total deadline, including the JSON body. Failed
 UI callbacks cannot latch the scheduler. Online/visible events prompt a bounded
 retry, without parallel heartbeats or automatic takeover. A failed health check
 retries after five seconds while this page owns ATLAS, then stops after recovery.
 
-An expired token is renewed; a revoked owner stops immediately. Reconnection
+An authoritative `401` invalidates the token and stops local control before
+registration; `423` revokes control immediately. Reconnection
 uses bounded backoff, ignores late replies from previous pages/sessions, and
 recovers a page restored from the browser's back-forward cache. These checks
 prevent a delayed response from bringing a revoked microphone back to life.
@@ -104,6 +122,11 @@ the unauthenticated HTTP service on a trusted LAN.
 
 ## Voice, follow-up and recovery
 
+The physical kiosk has a private-pipe Chrome watchdog that checks the actual
+document and recovers crashed/error tabs, preserving the selected `/` or `/new/`
+presentation. See [Screen](ATLAS-SCREEN.md) for its bounded browser-only recovery
+and `--atlas-hide` behavior. HTTP success alone does not prove renderer health.
+
 The current conversation uses direct `gpt-realtime-2.1`, the shared Markdown
 context and direct shell/web-search tools. Chrome validates the local ATLAS
 wake word; do not describe the recognizer as a guaranteed offline speech engine.
@@ -111,11 +134,10 @@ Partial/final recognition results must not create duplicate turns. Permission
 or audio-capture errors are shown as microphone errors, not repaired by sending
 unverified speech to the model or enabling the archived pipeline.
 
-After **any completed answer**, a 10-second follow-up window lets the user
-continue without repeating ATLAS. It begins after playback has settled, not
-just when text generation ends, and does not depend on a question mark in the
-answer. On A1, playback and its short acoustic tail are excluded from wake/input
-capture to avoid the assistant triggering itself.
+After **any completed answer**, wait for a new local **ATLAS** wake word.
+There is no automatic follow-up window, even after a question. A bare ATLAS
+still grants time to finish that same request. On A1, playback and its short
+acoustic tail are excluded from wake/input capture to avoid self-triggering.
 
 `REALTIME_INSTRUCTIONS.md` sets concise replies for all current Realtime
 surfaces: usually one or two sentences; routine successful music/device actions
@@ -126,7 +148,19 @@ Recovery has separate bounds: session startup 25 seconds, response-create
 acknowledgement 12 seconds, and an active response with no progress 30 seconds.
 A genuinely running tool is exempt from the model no-progress timer and keeps
 its own bounded backend deadline. Brief WebRTC disconnects receive an 8-second
-grace period; failed/closed transports recover. Sessions are renewed after
+grace period. A subsequent ICE `connecting` state retains that original
+deadline; only `connected` confirms recovery. Failed/closed transports recover.
+An error from the current data channel while it remains `open` is logged as
+`session.channel_warning`, without immediately interrupting playback. It does
+not suppress transport, startup/response deadlines, a closing channel or an
+authoritative provider authentication failure.
+
+Duplicate startup/fallback failures share one reconnect timer and one status
+update. Backoff is 1, 2, 4, then at most 8 seconds; it resets for the next failure
+only after at least 20 seconds of stable readiness. A brief connection does
+not erase repeated-failure history. Stale failures cannot disturb a ready
+replacement, and leaving the ATLAS view or losing control prevents a queued
+retry from reopening the microphone. Sessions are renewed after
 50 minutes, deferred until idle. Expired/stale response events and harmless
 cancellation races must not start a reconnect loop.
 
@@ -142,6 +176,32 @@ interaction's private logs under `/home/atlas/.atlas/webscreen/logs/` and
 IDs. Check network, page ownership, Gateway/authentication, microphone and
 playback separately using [`../ATLAS-CONNECTIONS.md`](../ATLAS-CONNECTIONS.md).
 A provider 500 error alone does not prove OAuth corruption.
+
+The combined JavaScript verification passed
+217 tests (204 WebScreen, 13 kiosk watchdog), including protected-traffic lease
+evidence, stale/revoked replies, bounded ICE/channel recovery, duplicate retries
+and idle rendering. From the
+repository root: `node --test .atlas/webscreen/test_*.cjs system/test_kiosk_watchdog.cjs`.
+
+A controlled A/B on Pi Chrome reproduced shared-memory growth from unconsumed
+JSON response bodies: 40 POSTs with ignored bodies increased the renderer from
+16.05 to 96.05 MiB, exactly 2 MiB per request. Forty equivalent POSTs that read
+their bodies with `response.text()` kept usage flat at 96.05 MiB. The runtime
+used that pattern in fire-and-forget log/event requests. The installed build
+`2026-09-07-connection-4` drains acknowledgement bodies for every HTTP status,
+with a four-second headers/body deadline and late-response cancellation.
+Telemetry has a 64-request in-flight ceiling, no offline queue and no replay;
+backend cancellation is independent of that ceiling. Eight production samples
+over 5 min 15 s kept the same renderer, whose shared memory decreased from
+10.058 to 0.026 MiB with zero retained 2 MiB blocks. There were 74 new-build
+events since deployment (63 during sampling), 209 HTTP 200 replies and no
+unexpected reconnection or Realtime error. No process was restarted during
+sampling. Do not report
+all physical audio microcuts resolved or indefinite connectivity from this
+short observation. The isolated
+no-audio fixture did not reproduce this growth with the previous blink.
+Correlate physical logs and `/dev/shm` usage after the patch; see
+`/home/atlas/.atlas/webscreen/NEW_DESIGN.md` for the evidence boundary.
 
 Distinguish cold connection setup, end-of-user-speech to first model text, and
 actual playback start. `output.first_delta`, `audio.playback_started` and

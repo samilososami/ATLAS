@@ -38,7 +38,7 @@ function setup({ a1 = true, output = 'native', mediaDevices, fetchOverride } = {
     }
     now = until; await flush();
   }
-  return { c, event, sent, logs, screens, fallbacks, followups, advance, flush,
+  return { c, event, sent, logs, screens, fallbacks, followups, advance, flush, timers,
     responses: () => sent.filter(e => e.type === 'response.create'),
     requests: () => sent.filter(e => e.type === 'conversation.item.create' && e.item.role === 'user'),
   };
@@ -58,6 +58,90 @@ test('persistent ICE loss gets one bounded reconnect after eight seconds', async
   p.c.handlePeerConnectionState(); p.c.handlePeerConnectionState();
   await p.advance(8000); assert.equal(p.fallbacks.length, 1); assert.equal(p.c.closed, true);
   await p.advance(20000); assert.equal(p.fallbacks.length, 1); assert.equal(p.responses().length, 0);
+});
+
+test('ICE reconnecting preserves the admitted turn and recovers the same peer', async () => {
+  const p = setup(), peer = { connectionState: 'disconnected', close() {} };
+  p.c.peer = peer; p.c.currentUserText = 'enciende la luz';
+  p.c.localWakeAuthorizedUntil = 45000; p.c.pendingTranscripts = 1;
+  p.c.handlePeerConnectionState(); const timer = p.c.disconnectTimer;
+  await p.advance(3500); peer.connectionState = 'connecting'; p.c.handlePeerConnectionState();
+  assert.equal(p.c.disconnectTimer, timer, 'checking another route does not extend recovery forever');
+  await p.advance(4000); peer.connectionState = 'connected'; p.c.handlePeerConnectionState();
+  await p.advance(9000);
+  assert.equal(p.c.peer, peer); assert.equal(p.c.closed, false); assert.equal(p.c.state, 'ready');
+  assert.equal(p.c.currentUserText, 'enciende la luz'); assert.equal(p.c.localWakeAuthorizedUntil, 45000);
+  assert.equal(p.c.pendingTranscripts, 1); assert.equal(p.c.conversationActive, true);
+  assert.equal(p.fallbacks.length, 0); assert.equal(p.sent.length, 0); assert.equal(p.screens.length, 0);
+});
+
+test('ICE disconnected then stuck connecting cannot silently lose its recovery deadline', async () => {
+  const p = setup(); p.c.peer = { connectionState: 'disconnected', close() {} };
+  p.c.handlePeerConnectionState(); await p.advance(4000);
+  p.c.peer.connectionState = 'connecting'; p.c.handlePeerConnectionState();
+  await p.advance(4000); assert.equal(p.c.closed, true); assert.equal(p.fallbacks.length, 1);
+  await p.advance(20000); assert.equal(p.fallbacks.length, 1); assert.equal(p.sent.length, 0);
+});
+
+test('only an established peer gets a recovery deadline when connecting', async () => {
+  const p = setup(); p.c.peer = { connectionState: 'connecting', close() {} };
+  p.c.state = 'connecting'; p.c.handlePeerConnectionState(); await p.advance(8000);
+  assert.equal(p.c.disconnectTimer, 0); assert.equal(p.fallbacks.length, 0);
+  p.c.state = 'ready'; p.c.handlePeerConnectionState(); await p.advance(8000);
+  assert.equal(p.fallbacks.length, 1); assert.equal(p.responses().length, 0);
+});
+
+test('a stale RTC recovery timeout cannot erase the next recovery deadline', async () => {
+  const p = setup(); p.c.peer = { connectionState: 'disconnected', close() {} };
+  p.c.handlePeerConnectionState(); const old = p.timers.get(p.c.disconnectTimer).fn;
+  p.c.peer.connectionState = 'connected'; p.c.handlePeerConnectionState();
+  p.c.peer.connectionState = 'disconnected'; p.c.handlePeerConnectionState(); const current = p.c.disconnectTimer;
+  old(); assert.equal(p.c.disconnectTimer, current); assert.equal(p.c.closed, false);
+  await p.advance(8000); assert.equal(p.fallbacks.length, 1);
+});
+
+test('an open data channel transport warning does not restart or replay a healthy session', async () => {
+  const p = setup(), channel = p.c.channel, peer = { connectionState: 'connected', close() {} };
+  p.c.peer = peer; p.c.currentUserText = 'pon música'; p.c.nativePlaybackActive = true;
+  p.c.handleDataChannelError(channel, { error: { errorDetail: 'sctp-failure' } });
+  await p.advance(9000);
+  assert.equal(p.c.peer, peer); assert.equal(p.c.channel, channel); assert.equal(p.c.closed, false);
+  assert.equal(p.c.currentUserText, 'pon música'); assert.equal(p.c.nativePlaybackActive, true);
+  assert.equal(p.c.conversationActive, true); assert.equal(p.screens.length, 0); assert.equal(p.sent.length, 0);
+  assert.equal(p.fallbacks.length, 0); assert.ok(p.logs.some(e => e.stage === 'session.channel_warning'));
+});
+
+test('open-channel warnings retain bounded ICE recovery and missing response acknowledgement', async () => {
+  const p = setup(); p.c.peer = { connectionState: 'disconnected', close() {} };
+  p.c.handleDataChannelError(); await p.advance(8000);
+  assert.equal(p.fallbacks.length, 1); assert.equal(p.sent.length, 0);
+  const q = setup(); q.c.peer = { connectionState: 'connected', close() {} };
+  q.c.createResponse(); q.c.handleDataChannelError(); await q.advance(12000);
+  assert.equal(q.fallbacks.length, 1); assert.equal(q.responses().length, 1, 'possible action is never replayed');
+});
+
+test('channel warning cannot suppress failed transport or a closing channel', () => {
+  for (const connectionState of ['failed', 'closed']) {
+    const p = setup(); p.c.peer = { connectionState, close() {} };
+    p.c.handleDataChannelError(); assert.equal(p.fallbacks.length, 1); assert.equal(p.c.closed, true);
+  }
+  for (const readyState of ['connecting', 'closing', 'closed']) {
+    const p = setup(); p.c.channel.readyState = readyState;
+    p.c.handleDataChannelError(); assert.equal(p.fallbacks.length, 1); assert.equal(p.c.closed, true);
+  }
+});
+
+test('error from an obsolete data channel cannot close its replacement', () => {
+  const p = setup(); p.c.handleDataChannelError({ readyState: 'closed' });
+  assert.equal(p.fallbacks.length, 0); assert.equal(p.c.closed, false); assert.equal(p.logs.length, 0);
+});
+
+test('transport warning never masks an authoritative provider authentication error', () => {
+  const p = setup(); p.c.peer = { connectionState: 'connected', close() {} };
+  p.c.handleDataChannelError();
+  p.event('error', { error: { code: 'invalid_api_key', message: 'Invalid authentication credentials' } });
+  assert.equal(p.c.closed, true); assert.equal(p.fallbacks.length, 1);
+  assert.match(p.fallbacks[0], /authentication/); assert.equal(p.responses().length, 0);
 });
 
 test('events from an obsolete peer cannot close its replacement', async () => {
@@ -177,7 +261,7 @@ test('failed response.done surfaces the provider error without disconnect or rep
   assert.ok(p.logs.some(e => e.stage === 'response.failed' && e.detail === 'temporary provider error'));
 });
 
-test('followup opens only after real native playback ends, not at text completion', async () => {
+test('native playback returns to wake immediately after audio ends, never opens followup', async () => {
   const p = setup(); p.c.lastSpeechEndedAt = 10000;
   p.event('response.created', { response: { id: 'spoken' } });
   await p.advance(1500); p.event('output_audio_buffer.started', { response_id: 'spoken' });
@@ -186,16 +270,29 @@ test('followup opens only after real native playback ends, not at text completio
   assert.equal(p.followups.length, 0);
   assert.equal(p.logs.find(e => e.stage === 'audio.playback_started').durationMs, 1500);
   p.event('output_audio_buffer.stopped', { response_id: 'spoken' });
-  assert.equal(p.followups.length, 1, 'playback stopped is valid even after response.done');
-  await p.advance(9999); assert.equal(p.c.conversationActive, true);
-  await p.advance(1); assert.equal(p.c.conversationActive, false);
+  assert.equal(p.followups.length, 0);
+  assert.equal(p.c.conversationActive, false);
+  await p.advance(10000); assert.equal(p.c.conversationActive, false);
 });
 
-test('a statement has the same ten-second conversation window as a question', async () => {
+test('a completed statement returns to wake just like a completed question', async () => {
   const p = setup(); p.c.currentAssistantText = 'La temperatura es de cuarenta grados.';
-  p.c.settleAfterResponse(); assert.equal(p.followups.length, 1);
-  await p.advance(9999); assert.equal(p.c.conversationActive, true);
-  await p.advance(1); assert.equal(p.c.conversationActive, false);
+  p.c.settleAfterResponse(); assert.equal(p.followups.length, 0);
+  assert.equal(p.c.conversationActive, false);
+});
+
+test('a late ambient transcript cannot keep admission open after playback finishes', async () => {
+  const p = setup({ a1: false });
+  p.c.responseFinalized = true;
+  p.c.turnInputPending = true; p.c.pendingTranscripts = 1;
+  p.c.settleAfterResponse();
+  assert.equal(p.c.conversationActive, false);
+  p.event('conversation.item.input_audio_transcription.completed', { item_id: 'ambient', transcript: 'y mañana' });
+  await p.advance(500);
+  assert.equal(p.responses().length, 0);
+  p.c.authorizeLocalWake('ATLAS, y mañana'); p.c.queueLocalWakeRequest('y mañana', true);
+  await p.advance(700);
+  assert.equal(p.responses().length, 1, 'a fresh explicit wake still works');
 });
 
 test('Chrome handles a remote browser wake without auxiliary transcription', async () => {
@@ -208,16 +305,16 @@ test('Chrome handles a remote browser wake without auxiliary transcription', asy
   assert.equal(p.requests()[0].item.content[0].text, 'hola');
 });
 
-test('fresh Chrome followup bypasses unavailable auxiliary transcription exactly once', async () => {
+test('speech after the completed response cannot open a turn without another ATLAS', async () => {
   const p = setup(); p.c.settleAfterResponse();
   p.event('input_audio_buffer.speech_started', { item_id: 'followup' });
-  assert.equal(p.c.beginLocalFollowUp(), true); p.c.queueLocalWakeRequest('y mañana', true);
+  assert.equal(p.c.beginLocalFollowUp(), false); p.c.queueLocalWakeRequest('y mañana', true);
   p.event('input_audio_buffer.speech_stopped', { item_id: 'followup' });
   p.event('input_audio_buffer.committed', { item_id: 'followup' });
   p.event('conversation.item.input_audio_transcription.failed', { item_id: 'followup', error: { code: 'missing_compute_residency_info' } });
-  await p.advance(180); assert.equal(p.requests().length, 1); assert.equal(p.responses().length, 1);
+  await p.advance(180); assert.equal(p.requests().length, 0); assert.equal(p.responses().length, 0);
   p.event('conversation.item.input_audio_transcription.completed', { item_id: 'followup', transcript: 'different duplicate' });
-  assert.equal(p.c.pendingTranscripts, 0); assert.equal(p.requests().length, 1);
+  assert.equal(p.c.pendingTranscripts, 0); assert.equal(p.requests().length, 0);
 });
 
 test('Chrome cannot start followup outside conversation or over active output', () => {
@@ -238,7 +335,7 @@ test('duplicate VAD stop and transcript cannot leave ghost pending input', async
 test('empty transcript restores listening instead of leaving a processing screen', () => {
   const p = setup(); p.c.beginSpeech(); p.c.endSpeech();
   p.c.handleUserTranscript({ item_id: 'empty', transcript: '' });
-  assert.equal(p.c.turnInputPending, false); assert.equal(p.screens.at(-1)[1], 'Puedes seguir hablando');
+  assert.equal(p.c.turnInputPending, false); assert.equal(p.screens.at(-1)[1], 'Esperando a ATLAS');
 });
 
 test('late microphone permission after stop releases capture and cannot revive the session', async () => {

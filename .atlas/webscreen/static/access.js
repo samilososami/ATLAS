@@ -19,7 +19,26 @@
   const REQUEST_TIMEOUT_MS = 4000;
   // Stop before the server's 20s lease expires, but tolerate one lost packet.
   const CONTROL_GRACE_MS = 8000;
+  const PROTECTED_READS = new Set(['/api/settings', '/api/codex-usage',
+    '/api/realtime/context', '/api/wake/profiles']);
   const hasControl = () => owner && performance.now() - lastReply < CONTROL_GRACE_MS;
+  function discardResponse(response) {
+    // Ignored fetch bodies can keep Chrome's shared-memory data pipes alive
+    // until GC. These replies carry no data that the caller needs.
+    try { return Promise.resolve(response.body?.cancel()).catch(() => {}); }
+    catch { return Promise.resolve(); }
+  }
+  function isProtectedRequest(url, options) {
+    // Match AtlasScreenHandler's authorization boundary, not generic reachability.
+    // Public health/static GETs and access snapshots do not prove ownership.
+    if (typeof url !== 'string' || !url.startsWith('/api/')) return false;
+    let route;
+    try { route = new URL(url, 'http://atlas.invalid').pathname; }
+    catch { return false; }
+    if (!route.startsWith('/api/') || route.startsWith('/api/access/')) return false;
+    const method = String(options.method || 'GET').toUpperCase();
+    return method === 'POST' || (method === 'GET' && PROTECTED_READS.has(route));
+  }
   function invokeAdapter(name, fallback) {
     try { return adapter?.[name]?.() ?? fallback; }
     catch (error) {
@@ -102,7 +121,9 @@
           headers: { 'Content-Type': 'application/json', 'X-Atlas-Access': '1', 'X-Atlas-Client': requestToken },
           body: JSON.stringify({ idle: wasIdle, clientKind: isAtlasA1 ? 'atlas-a1' : 'browser' }),
         });
-        const result = [401, 423].includes(response.status) ? null : await response.json();
+        const rejected = [401, 423].includes(response.status);
+        if (rejected) void discardResponse(response);
+        const result = rejected ? null : await response.json();
         return { response, result };
       })();
       const { response, result } = await Promise.race([operation, deadline]);
@@ -130,7 +151,7 @@
       }
       token = result.token || token;
       state = result;
-      lastReply = requestedAt;
+      lastReply = Math.max(lastReply, requestedAt);
       failures = 0;
       nextUpdateAt = performance.now() + HEARTBEAT_MS;
       if (result.activated) message = 'Control activado en la pantalla de ATLAS A1.';
@@ -163,6 +184,8 @@
       if (!hasControl()) throw new Error('Esta pestaña no tiene el control de ATLAS.');
       const headers = new Headers(options.headers);
       const requestToken = token;
+      const requestGeneration = generation;
+      const requestedAt = performance.now();
       headers.set('X-Atlas-Client', requestToken);
       const response = await fetch(url, { ...options, headers });
       if ([401, 423].includes(response.status) && requestToken === token) {
@@ -171,6 +194,14 @@
         cancelPendingRequest();
         nextUpdateAt = 0;
         setOwner(false);
+      } else if (response.ok && isProtectedRequest(url, options)
+          && requestToken === token && requestGeneration === generation
+          && !released && !options.signal?.aborted && hasControl()) {
+        // ACCESS.authorize() already renews the server lease for useful traffic.
+        // Mirror that proof locally so one stalled heartbeat need not cut an
+        // otherwise live voice session. Use request START, never response time:
+        // delayed/expired/revoked requests cannot extend or revive ownership.
+        lastReply = Math.max(lastReply, requestedAt);
       }
       return response;
     },
@@ -192,7 +223,7 @@
       method: 'POST', keepalive: true,
       headers: { 'Content-Type': 'application/json', 'X-Atlas-Access': '1', 'X-Atlas-Client': token },
       body: '{}',
-    }).catch(() => {});
+    }).then(discardResponse).catch(() => {});
   });
   window.addEventListener('pageshow', event => {
     if (event.persisted) {

@@ -7,6 +7,27 @@ arquitectura anterior de preámbulo más agente OpenClaw se conserva únicamente
 como backup reversible en `Backups/WebScreen/legacy-preamble-2026-08-29`: no es
 un fallback ejecutable del flujo actual.
 
+## Minimal face design
+
+`atlas-screen --atlas-new` opens the new face presentation at `/new/?kiosk=1`.
+Remote trusted-LAN browsers can open `/new/`. The original `/` and `--atlas`
+remain the debugging interface. Both render the same underlying DOM and load
+the same access, Realtime, wake, settings, quota and context controllers.
+
+The new design lives in `static/new/`: blue vector face, quiet header, occasional
+blinks, wake-to-waveform transition, live recognized text and audio-driven mouth.
+Controls and diagnostics remain available in the settings/tools panel rather
+than filling the idle screen. No second microphone, agent or credentials flow
+is introduced. See [design and source map](NEW_DESIGN.md).
+
+The ready face uses a single 350 ms blink every 8.7 seconds, not a continuously
+running CSS animation. Blink timers stop outside idle, while the page/view is
+hidden, on page exit and under reduced motion. Identical telemetry does not
+rewrite the face DOM, and idle does not request drawing frames. Real Chromium
+checks found zero animations at rest, two during the blink and zero afterward;
+this is an efficiency check, not proof that the physical renderer memory issue
+or audible microcuts have been resolved.
+
 `atlas-chat` es la superficie hermana de terminal: usa el mismo modelo
 `gpt-realtime-2.1`, las mismas instrucciones y Markdown, las mismas herramientas
 y, salvo con `--ephemeral`, la misma conversación persistente. No abre WebRTC,
@@ -18,7 +39,7 @@ micrófono, TTS ni interfaz web. Su manual operativo está en
 1. El backend solicita una reserva WebRTC efímera para `gpt-realtime-2.1` usando el OAuth ya configurado en la Pi. OpenClaw actúa aquí solo como broker de autenticación: ninguno de sus agentes procesa la conversación. El parámetro protocolario `brain: agent-consult` es el único perfil admitido por `talk.client.create`; no activa el agente legacy. El navegador configura después `atlas_shell` y `atlas_web_search` como herramientas del modelo. Nunca recibe el token persistente ni una API key.
 2. OpenAI Realtime recibe y transcribe el audio, decide el turno y puede generar directamente una de las voces nativas `ash`, `cedar`, `marin` o `verse`. El selector también admite ElevenLabs y la voz del navegador; en esos modos Realtime devuelve texto y WebScreen lo entrega al TTS elegido. ElevenLabs usa `eleven_v3` y transmite `MP3 44,1 kHz / 128 kbps`, la máxima calidad de salida del plan Free, directamente hacia el elemento de audio de Chrome: ya no espera un MP3 completo codificado en Base64. Cambiar la salida guarda el ajuste y crea una sesión WebRTC nueva.
 3. Solo Chrome activa la conversación al reconocer la palabra exacta `ATLAS`, en cualquier posición y también en resultados provisionales. No se exige silencio previo, posición inicial, puntuación acústica ni confirmación de Realtime. En el A1 y en navegadores remotos la petición recogida por Chrome se envía como texto a Realtime; su transcripción de audio alternativa se descarta por identificador de turno para que no la sustituya ni duplique. Se mantiene el bloqueo del micrófono del A1 durante reproducción y los 200 ms posteriores. Una transcripción auxiliar fallida no debe perder una petición que Chrome ya ha reconocido.
-4. Cada respuesta abre diez segundos de continuación sin repetir la wake word, contados desde el final de reproducción real, termine o no en pregunta. Chrome captura también la continuación, ignorando resultados anteriores. Los navegadores remotos conservan sus interrupciones naturales. En el A1 las interrupciones están temporalmente desactivadas durante la voz: se cierran el micrófono y el detector local y se reabren 200 ms después de finalizar la reproducción.
+4. Al finalizar la reproducción se vuelve a esperar ATLAS. Cada nueva petición hablada exige una wake word local nueva; no existe la continuación automática de diez segundos. Decir solo ATLAS todavía deja tiempo para terminar esa misma petición. Los navegadores remotos conservan sus interrupciones naturales. En el A1 las interrupciones están temporalmente desactivadas durante la voz: se cierran el micrófono y el detector local y se reabren 200 ms después de finalizar la reproducción.
 5. OpenAI Realtime responde directamente. Usa `atlas_shell` para consultar archivos, red y estado real o ejecutar acciones, y `atlas_web_search` para información externa o reciente. La segunda herramienta lee en tiempo de ejecución la clave privada del plugin Tavily de OpenClaw y la usa solo en el backend; no la copia al repositorio, al navegador, al contexto ni a los logs. Las búsquedas normales usan profundidad `basic` y hasta cinco fuentes para priorizar latencia y consumo. El backend rechaza de forma permanente cualquier `rm` que combine borrado recursivo y forzado, además de `--no-preserve-root`, con independencia de lo que solicite o genere el modelo. En esta etapa no deriva el turno a Luna.
    Si la sesión WebRTC falla, WebScreen reintenta Realtime con espera progresiva; nunca cambia automáticamente al pipeline legacy de OpenClaw ni reactiva sus preámbulos.
 6. La sesión recibe `REALTIME_INSTRUCTIONS.md`, todos los Markdown del workspace salvo los episodios de `memory/`, los reportes actuales de dispositivos en `.atlas/adb/devices/` y el contexto conversacional Realtime compartido con las sesiones normales de `atlas-chat`. `AGENTS.md` sigue siendo el mapa para localizar contexto adicional y `NOTES.md` funciona como cuaderno operativo compacto.
@@ -157,6 +178,15 @@ Tras actualizar WebScreen hay que recargar las pestañas antiguas.
 
 Una pérdida breve de heartbeat conserva el audio y la sesión dentro de esos ocho segundos. Un `401` invalida el token incluso si falla la lectura del cuerpo HTTP y vuelve a registrar la página; un `423` retira el control inmediatamente. Las respuestas antiguas y la vuelta desde la caché de navegación no pueden resucitar permisos caducados.
 
+Las respuestas correctas de APIs protegidas también confirman el acceso local:
+el servidor ya renueva el permiso al autorizarlas. Esto evita que un heartbeat
+aislado bloqueado corte una sesión que sigue recibiendo tráfico autorizado.
+Solo cuenta la misma generación/credencial mientras conserva control, tomando
+la hora de inicio de la petición, no su respuesta tardía. No revive permisos
+caducados/revocados ni peticiones abortadas. Consultar salud, archivos públicos
+o rutas de acceso no prueba propiedad; tampoco una petición fallida. Los
+límites de ocho segundos locales y veinte del servidor no se amplían.
+
 Cada petición de acceso tiene un límite total de cuatro segundos, incluida la
 lectura del JSON. Un transporte bloqueado o una excepción de la interfaz no
 detienen los siguientes intentos. Volver a primer plano o recuperar Internet
@@ -170,16 +200,53 @@ Si la Pi responde pero el kiosco sigue «Sin conexión», revisar también Chrom
 físico usa composición por software para contener el agotamiento de buffers
 gráficos observado. No se borra memoria compartida ni se desactiva el audio.
 
+The physical kiosk also runs `atlas-screen-browser-watchdog.cjs`. Its private
+Chrome pipe checks JavaScript/DOM readiness, not just HTTP or a running process.
+Two failed probes trigger a reload of the selected `/` or `/new/` target;
+unresponsive recovery escalates only to Chrome with bounded backoff. It keeps
+X11 and the black hide overlay alive and exposes no debugging TCP port.
+Restart `atlas-screen-kiosk.service` once after installing this helper.
+
 ### Recuperación de conexiones
 
-- Una interrupción ICE transitoria dispone de ocho segundos para recuperar el mismo peer; un fallo definitivo se reconecta con espera progresiva.
+- Una interrupción ICE transitoria dispone de ocho segundos para recuperar el mismo peer y conservar el turno admitido. Pasar de `disconnected` a `connecting` mantiene el plazo original: solo `connected` confirma la recuperación. Un transporte `failed` o `closed` se recupera sin esperar indefinidamente.
+- Un aviso del canal de datos que sigue `open` se registra como `session.channel_warning`, sin cortar inmediatamente la reproducción o recrear la sesión. No desactiva los plazos ICE, de apertura o de respuesta, ni oculta errores de autenticación del proveedor o el cierre del canal.
+- Los avisos duplicados del fallo al abrir se agrupan en un solo reintento y una sola actualización de pantalla. La espera progresa por 1, 2, 4 y como máximo 8 segundos; su historial solo se reinicia tras al menos 20 segundos estables en `ready`, no por una recuperación fugaz. Un fallo antiguo no perturba una sesión nueva ya preparada, y perder control o cambiar de vista impide iniciar el reintento pendiente.
 - La apertura completa tiene un límite de 25 s; un permiso de micrófono concedido tarde no reactiva una sesión antigua.
 - Se detecta una petición sin confirmación en 12 s o una respuesta sin progreso en 30 s. Una herramienta activa conserva su propio plazo. La recuperación nunca reenvía automáticamente una acción cuyo resultado sea incierto.
 - Las sesiones libres se renuevan a los 50 minutos, antes de alcanzar el máximo de duración del proveedor.
 - El backend HTTP sigue accesible mientras vuelve el Gateway; las peticiones pendientes reciben un error explícito. El bridge recupera sus suscripciones sin dejar promesas rechazadas sin manejar.
 - Los cierres normales de pestañas y sockets HTTP ociosos no se presentan como fallos del sistema. Los errores reales sí siguen en logs.
 
-Despliegue acotado sobre una instalación existente: `sudo bash system/install-webscreen-resilience.sh --restart` desde el repositorio. Guarda respaldo de los ocho archivos cambiados; no sustituye ajustes, OAuth ni Markdown privados. Después hay que recargar las pestañas. Para audio y ADB existe un instalador independiente: [guía de conexiones](../../openclaw/workspace/ATLAS-CONNECTIONS.md), [audio](../../openclaw/workspace/atlas-commands/ATLAS-AUDIO.md) y [ADB](../../openclaw/workspace/ADB.md). No reiniciar toda la red o todos los servicios de audio como primer intento.
+Regresión JavaScript conjunta verificada, incluido el consumo de
+respuestas HTTP: **217 pruebas (204 WebScreen y 13 del watchdog)**, sin consumir
+llamadas a modelos. Desde la raíz del repo:
+
+```bash
+node --test .atlas/webscreen/test_*.cjs system/test_kiosk_watchdog.cjs
+```
+
+Son refuerzos comprobados frente a fallos simulados y pruebas de navegador,
+no una garantía de eliminar todos los microcortes físicos.
+
+Una prueba A/B posterior en Chrome de la Pi sí reprodujo crecimiento de memoria
+al ignorar el cuerpo de respuestas JSON: 40 POST pasaron de **16,05 a 96,05 MiB**
+de memoria compartida del renderer, **2 MiB por petición**. Otros 40 POST
+equivalentes consumiendo cada cuerpo con `response.text()` dejaron el uso plano
+en **96,05 MiB**. Se identificó ese patrón en los POST de logs/eventos lanzados
+sin esperar ni consumir la respuesta. El build `2026-09-07-connection-4` ya
+libera esas respuestas, también en errores y cancelaciones, con un plazo total
+de cuatro segundos y un máximo de 64 peticiones de telemetría pendientes, sin
+cola ni reenvío. Cancelar una operación no depende de ese máximo. En ocho
+muestras durante **5 min 15 s**, el mismo renderer pasa de **10,058 a 0,026 MiB**,
+sin bloques de 2 MiB retenidos, con 74 eventos del nuevo build acumulados
+(63 durante la ventana), 209 HTTP 200 y ninguna reconexión inesperada. Esto identifica
+una causa reproducible de crecimiento en esta configuración, no demuestra que
+todos los cortes audibles tengan ese origen. La prueba aislada sin audio no
+reprodujo la fuga con el parpadeo anterior. Véase
+[evidencia y límites de verificación](NEW_DESIGN.md).
+
+Despliegue acotado sobre una instalación existente: `sudo bash system/install-webscreen-resilience.sh --restart` desde el repositorio. Guarda respaldo de los archivos actualizados, incluidos los assets públicos de `static/new/`; no sustituye ajustes, OAuth ni Markdown privados. Después hay que recargar las pestañas. Para audio y ADB existe un instalador independiente: [guía de conexiones](../../openclaw/workspace/ATLAS-CONNECTIONS.md), [audio](../../openclaw/workspace/atlas-commands/ATLAS-AUDIO.md) y [ADB](../../openclaw/workspace/ADB.md). No reiniciar toda la red o todos los servicios de audio como primer intento.
 
 El backend exige `X-Atlas-Client` para las operaciones de voz, texto, preámbulos,
 cancelación, ajustes, eventos y consulta de cuota. No basta con ocultar botones.

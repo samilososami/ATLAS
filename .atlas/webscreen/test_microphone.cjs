@@ -263,7 +263,7 @@ test('remote Chrome wake delivers the full request instead of depending on auxil
   assert.equal(p.wakeRequests.at(-1).text, 'dime la hora');
 });
 
-test('follow-up ignores old result revisions and accepts a fresh Chrome result without wake', async () => {
+test('a fresh Chrome result after an answer still requires ATLAS', async () => {
   const p = page({ realtime: true });
   p.acquire(); await p.initialize(); await tick(); p.flushTimers();
   p.recognize('Atlas hola', true);
@@ -275,7 +275,14 @@ test('follow-up ignores old result revisions and accepts a fresh Chrome result w
     { 0: { transcript: 'Atlas hola' }, isFinal: true },
     { 0: { transcript: 'y qué hora es' }, isFinal: true },
   ] });
-  assert.equal(p.wakeRequests.at(-1).text, 'y qué hora es');
+  assert.equal(p.wakeRequests.length, before);
+  p.realtimeMock.awaitingWakeRequest = false;
+  p.recognizers[0].onresult({ resultIndex: 2, results: [
+    { 0: { transcript: 'Atlas hola' }, isFinal: true },
+    { 0: { transcript: 'y qué hora es' }, isFinal: true },
+    { 0: { transcript: 'Atlas qué hora es' }, isFinal: true },
+  ] });
+  assert.equal(p.wakeRequests.at(-1).text, 'qué hora es');
 });
 
 test('reasoning selector cannot interrupt an active answer or tool', async () => {

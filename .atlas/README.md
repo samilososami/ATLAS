@@ -5,6 +5,9 @@ live here; OpenClaw keeps your identity and memory in its own workspace.
 
 - `webscreen/`: voice UI, HTTP backend, Gateway bridge, runtime plugin,
   instructions and regression tests. Its README explains the voice pipeline.
+  `webscreen/static/new/` contains the minimal animated face presentation at
+  `/new/`; [its design guide](webscreen/NEW_DESIGN.md) maps the visual/audio
+  states. `atlas-screen --atlas-new` selects it without replacing the debug UI.
   `starter/` keeps the dedicated starter workspace and `workspace/` holds
   projects requested through the voice interface.
 - `chat/`: text-only terminal client for the same `gpt-realtime-2.1`, OAuth,

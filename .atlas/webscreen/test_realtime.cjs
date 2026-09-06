@@ -530,8 +530,7 @@ fallback.stop(false);
   process.exitCode = 1;
 });
 
-// Both statements and questions keep a ten-second continuation window after
-// playback. Punctuation must never close a perfectly natural follow-up.
+// Both statements and questions require another ATLAS after playback.
 const statementScreens = [];
 const statement = window.AtlasRealtime.create({ fetch: async () => ({ ok: true }),
   callbacks: { setScreen: (...args) => statementScreens.push(args) } });
@@ -541,8 +540,8 @@ statement.conversationActive = true;
 statement.responseFinalized = true;
 statement.currentAssistantText = 'La temperatura es de 48 grados.';
 statement.settleAfterResponse();
-assert.equal(statement.conversationActive, true);
-assert.equal(statementScreens.at(-1)[1], 'Puedes seguir hablando');
+assert.equal(statement.conversationActive, false);
+assert.equal(statementScreens.at(-1)[1], 'Esperando a ATLAS');
 statement.stop(false);
 
 const questionScreens = [];
@@ -554,8 +553,8 @@ question.conversationActive = true;
 question.responseFinalized = true;
 question.currentAssistantText = 'He encontrado tres opciones. ¿Quieres que abra alguna?';
 question.settleAfterResponse();
-assert.equal(question.conversationActive, true);
-assert.equal(questionScreens.at(-1)[1], 'Puedes seguir hablando');
+assert.equal(question.conversationActive, false);
+assert.equal(questionScreens.at(-1)[1], 'Esperando a ATLAS');
 question.stop(false);
 
 const toolRaceSent = [];

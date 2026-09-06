@@ -24,6 +24,7 @@ Use `enable` or `disable` to change it; ordinary power and mode changes leave it
 
 ```bash
 atlas-screen enable --atlas
+atlas-screen enable --atlas-new
 atlas-screen enable --desktop
 atlas-screen enable --terminal
 atlas-screen enable --rafas
@@ -67,12 +68,49 @@ atlas-screen --atlas
 
 This opens `http://localhost:5000/?kiosk=1` in fullscreen Google Chrome on the physical screen. No desktop is hiding underneath. Google Chrome runs as `sami`, with its sandbox enabled and its own private profile under `/home/atlas/.atlas/screen/chrome-profile`.
 
+For the minimal final-style face instead of the debug interface:
+
+```bash
+atlas-screen --atlas-new
+```
+
+This selects `http://localhost:5000/new/?kiosk=1`. `--atlas` keeps the existing
+debug design. Both share the same backend, Realtime controller, microphone,
+tools, context, ownership and wake behaviour; this is not a second brain.
+The visible choice is saved in `/home/atlas/.atlas/screen/web-design`. Switching
+between the two navigates the same kiosk tab within the next five-second check;
+it does not restart X11 or the audio services. Navigation starts a fresh browser
+voice session, so do not switch designs midway through a requested action.
+`--atlas-hide` preserves the current design behind its black cover, including
+after browser recovery or a hidden-mode boot. Returning with `--atlas-new`
+shows the new design; returning with `--atlas` deliberately selects debug.
+
 The kiosk uses software compositing (`--disable-gpu --disable-gpu-compositing`)
 instead of forcing GLES. This contains the observed renderer shared-buffer
 exhaustion/`TransferBuffer::Initialize` loop; it does not disable WebRTC or audio.
 If a healthy HTTP backend appears offline on the physical page, check the kiosk
 journal, Chrome CPU and `/dev/shm` usage too. Deleted-but-open Chrome buffers
 are released by stopping that kiosk, not by deleting unrelated shared files.
+
+The Node.js helper `/usr/local/libexec/atlas-screen-browser-watchdog.cjs` checks
+the actual page's JavaScript and DOM every five seconds via Chrome's private
+inherited DevTools pipes. No debug TCP port is opened. A surviving window,
+HTTP 200 or Chrome process is not enough: a crashed renderer can display
+`Aw, Snap!` while all three remain alive. Two failed probes trigger a bounded
+navigation of only the dedicated kiosk tab, with a 30-second startup/reload
+grace period. If that cannot recover it, the helper restarts only that Chrome
+instance; repeated browser deaths back off, with a minute cooldown after three
+within five minutes. It never repeats a user request or tool command.
+
+The `ready` marker is written only after a successful renderer probe and is
+removed when the document fails. The watchdog runs as `sami`, keeps Chrome's
+sandbox and private profile, and leaves X11, Gateway, Bluetooth, audio and the
+independent black overlay in place during browser-only recovery. Look for
+`[atlas-kiosk-watchdog]` in `journalctl -u atlas-screen-kiosk.service`.
+Install Node.js on a fresh image (`apt install nodejs`); the scoped installer
+`system/install-webscreen-resilience.sh` installs this helper and both launch
+commands alongside the public static assets, with backups. A one-time kiosk
+restart is needed when upgrading from the old launcher.
 
 To keep ATLAS listening and speaking while hiding the physical image, use:
 
@@ -91,7 +129,7 @@ The black surface uses `python3-tk` and `xdotool`; install them on a fresh image
 with `apt install python3-tk xdotool`. `ddcutil` is optional and is used only to
 wake a panel left in DDC standby by an older ATLAS installation.
 
-Use the official `google-chrome-stable` ARM64 package. The launcher calls that binary directly; the system policy lives at `/etc/opt/chrome/policies/managed/atlas-webscreen.json`. Keep the profile private and out of the public repository. Your browser luggage is not release material.
+Use the official `google-chrome-stable` ARM64 package. The launcher invokes that binary through the private-pipe watchdog; the system policy lives at `/etc/opt/chrome/policies/managed/atlas-webscreen.json`. Keep the profile private and out of the public repository. Your browser luggage is not release material.
 
 A mode on its own switches immediately and wakes the display if needed.
 Mode and power can still be combined in either order: `--desktop on`,

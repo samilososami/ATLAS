@@ -120,8 +120,11 @@ atlas-screen on
 atlas-screen off
 atlas-screen --desktop
 atlas-screen --atlas
+atlas-screen --atlas-new
+atlas-screen --atlas-hide
 atlas-screen --rafas
 atlas-screen enable --atlas
+atlas-screen enable --atlas-new
 atlas-screen enable --last
 atlas-screen disable
 ```
@@ -131,6 +134,15 @@ El modo terminal abre una shell root Zsh con autocompletado, highlighting, zoom 
 El modo `--rafas` abre la consola nativa de recuperación, blanca y sin entorno gráfico, como root en `/home/atlas`. También se activa manteniendo Ctrl y pulsando W, O, W en un teclado USB. Está disponible incluso con la pantalla apagada, pero sigue necesitando un kernel y hardware funcionales. Esta versión no pide contraseña local. [Funcionamiento y límites](../misc/rafas/README.md).
 
 El modo `--atlas` abre WebScreen en Google Chrome kiosko sobre `localhost:5000`, como usuario normal y con sandbox. El cursor solo aparece cuando hay un ratón USB/Bluetooth conectado. Cada modo cambia la pantalla inmediatamente; `on` abre el último seleccionado y `off` apaga la salida. Se pueden combinar, por ejemplo `--atlas on`; ya no se usan `--on` ni `--off`. El kiosko no sustituye la autenticación ni protege contra acceso físico al equipo.
+
+`--atlas-new` selects the minimal face at `/new/?kiosk=1`, using the same voice
+engine and settings; `--atlas` keeps the debugging view at `/`. Both can be
+selected as the boot mode. `--atlas-hide` covers the current design in black
+at minimum brightness without stopping its microphone, audio or HDMI link.
+The saved `screen/web-design` selects which visible presentation to restore.
+The private-pipe browser watchdog checks the rendered document, reloads a
+failed tab and restarts only Chrome if necessary, with bounded backoff.
+See the [new presentation guide](../.atlas/webscreen/NEW_DESIGN.md).
 
 `enable --atlas`, `--desktop`, `--terminal` o `--rafas` configura un modo fijo de arranque. `enable --last` usa el último modo seleccionado antes de apagar el sistema. `enable` sin modo recupera la elección guardada y `disable` vuelve al arranque con pantalla apagada. Activar o desactivar esta política no interrumpe la pantalla actual.
 

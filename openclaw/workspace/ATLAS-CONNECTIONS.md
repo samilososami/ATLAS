@@ -16,6 +16,7 @@ Source paths below are relative to the repository. Live voice files are under
 | HTTP service and provider readiness | `.atlas/webscreen/server.py`, `.atlas/webscreen/gateway_bridge.mjs`, `system/systemd/atlas-webscreen.service` | [WebScreen](atlas-commands/ATLAS-WEBSCREEN.md), [runtime source guide](../../.atlas/webscreen/README.md) |
 | One active browser | `.atlas/webscreen/access_control.py`, `.atlas/webscreen/static/access.js` | [WebScreen ownership](atlas-commands/ATLAS-WEBSCREEN.md#one-screen-at-the-wheel) |
 | Wake, turns, playback and recovery | `.atlas/webscreen/static/app.js`, `.atlas/webscreen/static/realtime.js`, `.atlas/webscreen/REALTIME_INSTRUCTIONS.md` | [WebScreen voice](atlas-commands/ATLAS-WEBSCREEN.md#voice-follow-up-and-recovery) |
+| Minimal face, waveform and mouth | `.atlas/webscreen/static/new/`, shared `app.js` / `realtime.js` hooks | [New design](../../.atlas/webscreen/NEW_DESIGN.md), `atlas-screen --atlas-new` |
 | Same model without voice | `.atlas/chat/atlas_chat.py`, `.atlas/chat/TERMINAL_INSTRUCTIONS.md` | [atlas-chat](atlas-commands/ATLAS-CHAT.md), [chat runtime](../../.atlas/chat/README.md) |
 | Shared conversational memory | `.atlas/webscreen/server.py`, `system/libexec/atlas-contextctl`, `atlas-commands/atlas-context` | [Context](atlas-commands/ATLAS-CONTEXT.md) |
 | Physical output and Bluetooth | `atlas-commands/atlas-audio`, `system/config/wireplumber/51-atlas-headless-bluetooth.conf` | [Audio](atlas-commands/ATLAS-AUDIO.md) |
@@ -46,9 +47,9 @@ ADB authorisation are three independent relationships.
 - Realtime has **25 s startup**, **12 s response acknowledgement**, and **30 s
   no-progress** bounds. Running tools use their own deadline and are exempt from
   the model no-progress timer. Brief WebRTC disconnections have **8 s** grace.
-- Renew the Realtime session after **50 min**, deferred until idle. A completed
-  answer opens **10 s** of follow-up without another wake word once playback
-  settles; both statements and questions qualify.
+- Renew the Realtime session after **50 min**, deferred until idle. After a
+  completed answer, require a fresh local **ATLAS**. There is no automatic
+  follow-up window; a bare wake word still allows completing that same request.
 - Reconnection restores transport, **not permission to replay an action**.
   A timeout or missing response does not prove the command failed to execute.
   Check the requested result, report uncertainty and require a deliberate new
@@ -71,6 +72,9 @@ to the Internet or put lease tokens in URLs, logs or public files.
    If HTTP replies are fast but the physical kiosk times out, inspect
    `journalctl -u atlas-screen-kiosk.service`, Chrome CPU and `df -h /dev/shm`.
    Repeated GPU allocation failures can stall the browser without losing Wi-Fi.
+   The private-pipe kiosk watchdog probes the actual rendered DOM, recovers a
+   sad-tab at the selected `/` or `/new/` URL and escalates only to Chrome with
+   bounded backoff. A live browser process or an HTTP 200 alone is not readiness.
 4. For wake failures, check browser microphone permission, detector state and
    duplicate partial/final events. For silence, distinguish first model text,
    browser playback start, default sink/mute and actual physical output.
@@ -98,10 +102,14 @@ smallest repair supported by the observed fault and verify its result.
   fragment with one WirePlumber restart during maintenance, not mid-turn.
 - `sudo bash system/install-companion.sh`: companion service; read its
   [manual](atlas-commands/ATLAS-APP.md) before changing pairing/relay state.
-- `sudo bash system/install-webscreen-resilience.sh`: the eight WebScreen files
+- `sudo bash system/install-webscreen-resilience.sh`: the shared WebScreen files
   `server.py`, `access_control.py`, `gateway_bridge.mjs`, `static/access.js`,
   `static/app.js`, `static/index.html`, `static/realtime.js` and
-  `static/styles.css`. It backs up those exact files, preserves private
+  `static/styles.css`, plus the new presentation assets in `static/new/`.
+  It also installs `atlas-screen`, the kiosk session launcher and its private-pipe
+  browser watchdog. Restart `atlas-screen-kiosk.service` once to activate the
+  helper; later visible-design changes can reuse the running browser.
+  It backs up changed files, preserves private
   configuration/OAuth/context and does not restart anything by default.
   `--restart` restarts only `atlas-webscreen.service`; reload browser tabs after
   deployment. See the [runtime guide](../../.atlas/webscreen/README.md).
@@ -124,7 +132,7 @@ Keep sample count, selected output mode, cold/warm status and limitations with
 results. Use `atlas-chat --ephemeral -p "..."` for isolated logical/read-only
 tests; it does not validate wake detection, speech synthesis or room acoustics.
 
-Check a warm wake request, a follow-up without ATLAS, cancellation, lost control,
+Check a warm wake request, rejection of speech without a new ATLAS, cancellation, lost control,
 transient reconnect and the requested read-only device operation. Test physical
 audio only at a conservative volume without increasing the user's setting;
 restore any temporary default-route changes afterwards. Do not claim untested

@@ -29,7 +29,7 @@ class RealtimeInstructionTests(unittest.TestCase):
         self.assertIn("Do not append offers", self.instructions)
         self.assertIn("speculative troubleshooting", self.instructions)
         self.assertIn('phrases such as "si quieres", "si no se oye"', self.instructions)
-        self.assertIn("The user can ask for the next thing", self.instructions)
+        self.assertIn("The user can say ATLAS again when they want the next thing", self.instructions)
 
     def test_brevity_never_hides_failure_or_fakes_success(self):
         self.assertIn("Wait for evidence of the requested outcome", self.instructions)

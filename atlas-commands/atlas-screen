@@ -14,6 +14,7 @@ XAUTHORITY_FILE="/home/atlas/.Xauthority"
 MODE_DIR="/home/atlas/.atlas/screen"
 MODE_FILE="$MODE_DIR/mode"
 BOOT_MODE_FILE="$MODE_DIR/boot-mode"
+WEB_DESIGN_FILE="$MODE_DIR/web-design"
 
 if [[ "${EUID}" -ne 0 && "${BASH_SOURCE[0]}" == "$0" ]]; then
   exec sudo -n "$0" "$@"
@@ -38,6 +39,7 @@ Usage:
   atlas-screen --desktop
   atlas-screen --terminal
   atlas-screen --atlas
+  atlas-screen --atlas-new
   atlas-screen --atlas-hide
   atlas-screen --rafas
   atlas-screen --atlas off
@@ -45,6 +47,7 @@ Usage:
   atlas-screen enable --desktop
   atlas-screen enable --terminal
   atlas-screen enable --atlas
+  atlas-screen enable --atlas-new
   atlas-screen enable --atlas-hide
   atlas-screen enable --rafas
   atlas-screen enable --last
@@ -69,7 +72,7 @@ selected_mode() {
   ensure_mode_store
   mode="$(tr -d '[:space:]' < "$MODE_FILE")"
   case "$mode" in
-    desktop|terminal|atlas|atlas-hide|rafas) printf '%s\n' "$mode" ;;
+    desktop|terminal|atlas|atlas-new|atlas-hide|rafas) printf '%s\n' "$mode" ;;
     *) printf 'desktop\n' ;;
   esac
 }
@@ -83,6 +86,15 @@ save_mode() {
   chown root:sami "$temporary"
   chmod 644 "$temporary"
   mv -f "$temporary" "$MODE_FILE"
+  # Hiding/unhiding must not silently replace the currently selected design.
+  # Persist the explicit visible choice for a later hidden-mode boot/recovery.
+  if [[ "$mode" == atlas || "$mode" == atlas-new ]]; then
+    temporary="$(mktemp "$MODE_DIR/.web-design.XXXXXX")"
+    printf '%s\n' "$mode" > "$temporary"
+    chown root:sami "$temporary"
+    chmod 644 "$temporary"
+    mv -f "$temporary" "$WEB_DESIGN_FILE"
+  fi
 }
 
 selected_boot_mode() {
@@ -94,7 +106,7 @@ selected_boot_mode() {
   fi
   mode="$(tr -d '[:space:]' < "$BOOT_MODE_FILE")"
   case "$mode" in
-    desktop|terminal|atlas|atlas-hide|rafas|last) printf '%s\n' "$mode" ;;
+    desktop|terminal|atlas|atlas-new|atlas-hide|rafas|last) printf '%s\n' "$mode" ;;
     *) printf 'last\n' ;;
   esac
 }
@@ -319,14 +331,14 @@ screen_on() {
   set_framebuffer_blank 0
   ensure_monitor_power_on
 
-  if [ "$mode" != atlas ] && [ "$mode" != atlas-hide ]; then
+  if [ "$mode" != atlas ] && [ "$mode" != atlas-new ] && [ "$mode" != atlas-hide ]; then
     systemctl stop "$OVERLAY_SERVICE" >/dev/null 2>&1 || true
   fi
 
   case "$mode" in
     desktop) start_desktop ;;
     terminal) start_terminal ;;
-    atlas) start_atlas ;;
+    atlas|atlas-new) start_atlas ;;
     atlas-hide) start_atlas_hidden ;;
     rafas) start_rafas ;;
   esac
@@ -399,6 +411,8 @@ print_status() {
   elif systemctl is-active --quiet "$KIOSK_SERVICE"; then
     if [ "$mode" = atlas-hide ]; then
       active_surface="atlas-hide"
+    elif [ "$mode" = atlas-new ]; then
+      active_surface="atlas-new"
     else
       active_surface="atlas"
     fi
@@ -422,7 +436,7 @@ main() {
   # Validate the complete request before changing files, services or HDMI.
   for argument in "$@"; do
     case "$argument" in
-      --desktop|--terminal|--atlas|--atlas-hide|--rafas)
+      --desktop|--terminal|--atlas|--atlas-new|--atlas-hide|--rafas)
         value="${argument#--}"
         [ -z "$mode" ] || [ "$mode" = "$value" ] || usage
         mode="$value"

@@ -94,7 +94,7 @@ test('a correction near VAD end gets its own short stability window', async () =
   await p.advance(1); assert.deepEqual(p.requests(), ['cuánta memoria RAM queda libre']);
 });
 
-test('bare ATLAS does not submit or cancel the follow-up listening timer', async () => {
+test('bare ATLAS does not submit or cancel the same-request completion timer', async () => {
   const p = setup(); p.c.authorizeLocalWake('ATLAS');
   const timer = p.c.followUpTimer; p.c.queueLocalWakeRequest('', true);
   assert.equal(p.c.followUpTimer, timer); await p.advance(10000);

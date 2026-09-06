@@ -6,6 +6,7 @@ from __future__ import annotations
 import base64
 import difflib
 import hashlib
+import io
 import json
 import os
 import queue
@@ -37,6 +38,21 @@ HOST = os.environ.get("ATLAS_WEBSCREEN_HOST", "0.0.0.0")
 PORT = int(os.environ.get("ATLAS_WEBSCREEN_PORT", "5000"))
 ROOT_DIR = Path(__file__).resolve().parent
 STATIC_DIR = ROOT_DIR / "static"
+NEW_DESIGN_BUILD = "2026-09-06-face-1"
+
+
+def render_new_design_shell(source: str) -> bytes:
+    """Reuse the complete debug DOM and controller; add presentation only."""
+    source = source.replace('<body>', '<body data-design="new">', 1)
+    source = source.replace('</head>',
+        f'<link rel="stylesheet" href="/new/face.css?v={NEW_DESIGN_BUILD}" />\n  </head>', 1)
+    source = source.replace('    <script src="/access.js',
+        f'    <script src="/new/face.js?v={NEW_DESIGN_BUILD}"></script>\n'
+        f'    <script src="/new/audio.js?v={NEW_DESIGN_BUILD}"></script>\n'
+        '    <script src="/access.js', 1)
+    return source.encode('utf-8')
+
+
 RUNTIME_DIR = ROOT_DIR / ".runtime"
 MODEL_DIR = ROOT_DIR / ".models"
 LOG_DIR = ROOT_DIR / "logs"
@@ -2505,6 +2521,23 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
         line = json.dumps({"type": event_type, **data}, ensure_ascii=False, separators=(",", ":"))
         self.wfile.write((line + "\n").encode())
         self.wfile.flush()
+
+    def send_head(self):
+        # GET and HEAD share the same shell, auth boundary and security headers.
+        # / and /index.html remain the untouched diagnostic presentation.
+        if urllib.parse.urlparse(self.path).path in {"/new", "/new/"}:
+            try:
+                source = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+            except OSError:
+                self.send_error(503, "WebScreen interface unavailable")
+                return None
+            payload = render_new_design_shell(source)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            return io.BytesIO(payload)
+        return super().send_head()
 
     def do_GET(self) -> None:
         parsed = urllib.parse.urlparse(self.path)

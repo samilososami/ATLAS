@@ -1,15 +1,40 @@
 const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
-const CLIENT_BUILD = "2026-09-06-recovery-2";
+const CLIENT_BUILD = "2026-09-07-connection-4";
 const REALTIME_PRIMARY = Boolean(window.AtlasRealtime);
 const PHYSICAL_ATLAS_A1 = /(?:^|[?&])kiosk=1(?:&|$)/u.test(String(window.location?.search || ""));
 const accessFetch = (url, options) => window.atlasAccess.fetch(url, options);
 const hasControl = () => window.atlasAccess.hasControl();
+
+function sendBrowserAcknowledgement(url, options = {}) {
+  if (typeof window.AtlasRealtime?.sendAcknowledgement === "function") {
+    return window.AtlasRealtime.sendAcknowledgement(accessFetch, url, options);
+  }
+  // Legacy or partially cached bundles still need bounded, explicit body
+  // cleanup. Never retry this POST if the shared controller is unavailable.
+  return new Promise((resolve) => {
+    const controller = new AbortController();
+    let finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      window.clearTimeout(timer);
+      controller.abort();
+      resolve();
+    };
+    const timer = window.setTimeout(finish, 4000);
+    try {
+      Promise.resolve(accessFetch(url, { ...options, signal: controller.signal }))
+        // Cancel even a late/failed acknowledgement; no body is useful here.
+        .then(response => response?.body?.cancel?.()).catch(() => {}).finally(finish);
+    } catch { finish(); }
+  });
+}
+
 const LANGUAGE = "es-ES";
 const SILENCE_MS = 700;
 const ADAPTIVE_FINAL_SILENCE_MS = 700;
 const NO_SPEECH_MS = 8000;
 const FOLLOW_UP_NO_SPEECH_MS = 4000;
-const FOLLOW_UP_ECHO_SETTLE_MS = 900;
 const FOLLOW_UP_ECHO_REJECT_WINDOW_MS = 1800;
 const MAX_RECORDING_MS = 60000;
 const SPECULATIVE_STABLE_MS = 250;
@@ -165,6 +190,8 @@ let realtimeFallbackActive = false;
 let realtimeExternalSpeechRun = 0;
 let realtimeReconnectTimer = 0;
 let realtimeReconnectAttempts = 0;
+let realtimeReadyAt = null;
+const REALTIME_RECONNECT_STABLE_MS = 20000;
 let healthRequest = null;
 let healthRetryTimer = 0;
 let healthGeneration = 0;
@@ -512,10 +539,11 @@ function addLog(message, duration = null, kind = "normal") {
 }
 
 function setScreen(phase, title, detail, state = "working") {
-  phaseLabel.textContent = phase;
-  mainStatus.textContent = title;
-  statusDetail.textContent = detail;
-  stateMark.dataset.state = state;
+  if (phaseLabel.textContent !== phase) phaseLabel.textContent = phase;
+  if (mainStatus.textContent !== title) mainStatus.textContent = title;
+  if (statusDetail.textContent !== detail) statusDetail.textContent = detail;
+  if (stateMark.dataset.state !== state) stateMark.dataset.state = state;
+  window.AtlasFaceBridge?.update({ phase, title, detail, state });
 }
 
 function setWaiting() {
@@ -586,6 +614,7 @@ function sampleVoiceActivity() {
   voiceLastRms = rms;
   voiceLastPeak = peak;
   voiceLastThreshold = threshold;
+  window.AtlasFaceBridge?.inputLevel({ rms, peak });
   if (!voiceActive) {
     if (!looksLikeNearbySpeech) {
       // Los sonidos continuos y moderados alimentan el suelo de ruido en vez
@@ -632,6 +661,7 @@ function stopVoiceActivityGate() {
   voiceLastRms = 0;
   voiceLastPeak = 0;
   voiceLastThreshold = VOICE_MIN_RMS;
+  window.AtlasFaceBridge?.inputLevel({ rms: 0, peak: 0 });
 }
 
 function startVoiceActivityGate(stream) {
@@ -728,6 +758,7 @@ function setA1PlaybackMicrophoneSuppressed(suppressed, options = {}) {
 
 function setMicrophoneMuted(muted) {
   microphoneMuted = Boolean(muted);
+  window.AtlasFaceBridge?.microphoneMuted(microphoneMuted);
   microphoneStream?.getAudioTracks().forEach((track) => {
     track.enabled = !microphoneMuted && !a1PlaybackMicrophoneSuppressed;
   });
@@ -1111,6 +1142,7 @@ function configureRecognition() {
       const liveTranscript = `${finalTranscript} ${interimTranscript}`.trim();
       transcriptElement.textContent = liveTranscript || "Escuchando…";
       transcriptElement.classList.toggle?.("placeholder", !liveTranscript);
+      window.AtlasFaceBridge?.transcript(liveTranscript);
       scheduleSpeculativeStarter(liveTranscript);
       return;
     }
@@ -1184,20 +1216,8 @@ function configureRecognition() {
       });
       return;
     }
-    if (realtimeWakeMode && !interactionActive && realtimeFollowUpResultFloor >= 0
-        && !a1PlaybackMicrophoneSuppressed && !realtimeController?.isOutputActive()) {
-      const fresh = evaluationResults.find(result => result.index >= realtimeFollowUpResultFloor);
-      const normalized = normalizeSpeechText(fresh?.text || "");
-      const previousAnswer = normalizeSpeechText(responseElement.textContent || "");
-      // Late speaker echoes must not manufacture a new conversational turn.
-      if (!fresh || (normalized.length >= 12 && previousAnswer.includes(normalized))) return;
-      if (!realtimeController?.beginLocalFollowUp?.()) return;
-      realtimeWakeCapturedText = "";
-      realtimeWakePrefix = "";
-      realtimeWakeResultStart = fresh.index;
-      realtimeWakeCaptureUntil = performance.now() + 10000;
-      captureChromeWakeSnapshot(event.results);
-    }
+    // A completed answer does not authorize another voice turn. Only the
+    // explicit local ATLAS branch above may start a new request.
   };
 }
 
@@ -1241,6 +1261,7 @@ async function startRecording(mode = "wake", parentId = "", options = {}) {
   interruptMonitoring = false;
   if (!preserveRecognition) stopRecognition();
   transcriptElement.textContent = initialTranscript || "Escuchando…";
+  window.AtlasFaceBridge?.transcript(initialTranscript);
   if (!(["followup", "interrupt"].includes(mode))) {
     responseElement.textContent = "Esperando la respuesta de ATLAS…";
   }
@@ -1313,6 +1334,7 @@ async function stopRecordingAndSend(reason, silenceThresholdMs = 0) {
   }
   transcriptElement.textContent = transcript;
   transcriptElement.classList.remove("placeholder");
+  window.AtlasFaceBridge?.transcript(transcript);
   setScreen("PROCESANDO", "ATLAS lo está procesando", "Enviando la transcripción nativa a OpenClaw.", "working");
   startInterruptMonitoring();
   const token = interactionToken;
@@ -1401,6 +1423,7 @@ async function handleServerEvent(event, token) {
   } else if (event.type === "transcript") {
     transcriptElement.textContent = event.text;
     transcriptElement.classList.remove("placeholder");
+    window.AtlasFaceBridge?.transcript(event.text);
     addLog(`Transcripción: ${event.text}`);
   } else if (event.type === "dismissed") {
     addLog(event.reason === "deferred"
@@ -1480,7 +1503,7 @@ async function handleServerEvent(event, token) {
     const completedId = currentRequestId;
     const shouldFollowUp = replyExpected;
     if (shouldFollowUp) {
-      addLog("ATLAS espera respuesta; abriré el micrófono tras apagar el eco de los altavoces");
+      addLog("ATLAS ha terminado; di ATLAS para continuar");
     }
     finishInteraction({ waitForReply: shouldFollowUp, completedId });
   } else if (event.type === "cancelled") {
@@ -1493,7 +1516,7 @@ async function handleServerEvent(event, token) {
 
 function reportBrowserEventFor(interactionId, stage, message, durationMs = null, error = null) {
   if (!interactionId) return Promise.resolve();
-  return accessFetch("/api/client-event", {
+  return sendBrowserAcknowledgement("/api/client-event", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -1505,7 +1528,7 @@ function reportBrowserEventFor(interactionId, stage, message, durationMs = null,
       clientBuild: CLIENT_BUILD,
     }),
     cache: "no-store",
-  }).catch(() => {});
+  });
 }
 
 function reportBrowserEvent(stage, message, durationMs = null, error = null) {
@@ -1541,6 +1564,7 @@ async function speakBrowserSegment(text, voice, onStart) {
   utterance.rate = 1.02;
   utterance.pitch = 1;
   if (voice) utterance.voice = voice;
+  const stopVisualSpeech = window.AtlasFaceBridge?.watchUtterance(utterance);
   await new Promise((resolve, reject) => {
     utterance.addEventListener("start", () => onStart?.({
       source: "speechSynthesis.start", voice: voice?.name || "browser-default",
@@ -1554,7 +1578,7 @@ async function speakBrowserSegment(text, voice, onStart) {
       reject(new Error(`La voz del navegador falló: ${event.error || "error desconocido"}`));
     }, { once: true });
     window.speechSynthesis.speak(utterance);
-  });
+  }).finally(() => stopVisualSpeech?.());
 }
 
 async function playBrowserSpeech(text, onStart) {
@@ -1652,6 +1676,7 @@ async function playElevenLabsSpeech(encodedAudio, text = "") {
   const audioUrl = URL.createObjectURL(new Blob([bytes], { type: "audio/mpeg" }));
   const audio = new Audio(audioUrl);
   currentAudio = audio;
+  const stopVisualAudio = window.AtlasFaceBridge?.watchAudio(audio);
   const wakePositions = [];
   const normalizedText = normalizeSpeechText(text);
   for (const match of normalizedText.matchAll(/\S*atlas\S*/g)) {
@@ -1675,6 +1700,7 @@ async function playElevenLabsSpeech(encodedAudio, text = "") {
     await audio.play();
     await finished;
   } finally {
+    stopVisualAudio?.();
     if (currentAudioStop === stopPlayback) currentAudioStop = null;
     currentAudio = null;
     URL.revokeObjectURL(audioUrl);
@@ -1685,6 +1711,7 @@ async function playElevenLabsStream(streamUrl, text = "", onStart) {
   if (!streamUrl) throw new Error("ElevenLabs no devolvió un flujo de audio");
   const audio = new Audio(streamUrl);
   currentAudio = audio;
+  const stopVisualAudio = window.AtlasFaceBridge?.watchAudio(audio);
   audio.addEventListener("playing", () => onStart?.({ source: "audio.playing", voice: "elevenlabs" }), { once: true });
   const wakePositions = [];
   const normalizedText = normalizeSpeechText(text);
@@ -1709,6 +1736,7 @@ async function playElevenLabsStream(streamUrl, text = "", onStart) {
     await audio.play();
     await finished;
   } finally {
+    stopVisualAudio?.();
     if (currentAudioStop === stopPlayback) currentAudioStop = null;
     currentAudio = null;
   }
@@ -1740,6 +1768,7 @@ async function playSpeech(text, encodedAudio, provider = "browser", role = "fina
 }
 
 function stopCurrentPlayback() {
+  window.AtlasFaceBridge?.stopExternal();
   browserSpeechRun += 1;
   if (currentAudio) currentAudio.pause();
   currentAudioStop?.();
@@ -1817,40 +1846,16 @@ function resetInteractionState() {
 
 function scheduleFollowUpRecording(completedId, spokenText = "") {
   window.clearTimeout(followUpStartTimer);
-  followUpEchoReference = normalizeSpeechText(spokenText || responseElement.textContent || "");
-  const expectedToken = interactionToken;
-  recognitionMutedUntil = Math.max(
-    recognitionMutedUntil,
-    performance.now() + FOLLOW_UP_ECHO_SETTLE_MS,
-  );
-  stopRecognition();
-  setScreen(
-    "CONTINUACIÓN",
-    "Un instante",
-    "Apagando el eco de los altavoces antes de volver a escucharte.",
-    "listening",
-  );
-  followUpStartTimer = window.setTimeout(() => {
-    followUpStartTimer = 0;
-    if (expectedToken !== interactionToken || interactionActive || activeView !== "atlas") return;
-    void startRecording("followup", completedId).then(() => reportBrowserEventFor(
-      completedId,
-      "conversation.followup.listen.started",
-      "Escucha automática de continuación iniciada tras la guarda antieco",
-      FOLLOW_UP_ECHO_SETTLE_MS,
-    ));
-  }, FOLLOW_UP_ECHO_SETTLE_MS);
+  followUpStartTimer = 0;
+  followUpEchoReference = "";
+  setWaiting();
 }
 
 function finishInteraction({ waitForReply = false, completedId = "" } = {}) {
-  const spokenText = responseElement.textContent || "";
   resetInteractionState();
-  if (waitForReply) {
-    scheduleFollowUpRecording(completedId, spokenText);
-  } else {
-    followUpEchoReference = "";
-    setWaiting();
-  }
+  // Legacy expectsReply markers must not reopen the microphone automatically.
+  followUpEchoReference = "";
+  setWaiting();
 }
 
 function failInteraction(message) {
@@ -1868,10 +1873,10 @@ function failInteraction(message) {
 
 function requestServerCancellation(requestId) {
   if (!requestId) return Promise.resolve();
-  return accessFetch("/api/cancel", {
+  return sendBrowserAcknowledgement("/api/cancel", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ requestId }), keepalive: true,
-  }).catch(() => {});
+  });
 }
 
 async function endSilentFollowUp() {
@@ -2081,12 +2086,14 @@ function checkHealth() {
           ? `${health.realtime.model} · WebRTC · ${health.realtime.voice}`
           : "OpenAI Realtime no disponible")
         : "Backend incompleto";
+      window.AtlasFaceBridge?.connection({ healthy: Boolean(health.ready && health.realtime?.ready), label: healthLabel.textContent });
       addLog(health.ready ? "Backend preparado" : "Backend degradado", null, health.ready ? "normal" : "error");
       if (!health.ready) scheduleHealthRetry();
     } catch {
       if (!isCurrent()) return;
       healthDot.className = "error";
       healthLabel.textContent = "Sin conexión con la Pi";
+      window.AtlasFaceBridge?.connection({ healthy: false, label: healthLabel.textContent });
       addLog("No se pudo consultar el backend", null, "error");
       scheduleHealthRetry();
     } finally {
@@ -2110,9 +2117,15 @@ async function activatePrimaryMicrophone() {
 }
 
 function scheduleRealtimeReconnect(error) {
-  window.clearTimeout(realtimeReconnectTimer);
   realtimeFallbackActive = false;
   if (!REALTIME_PRIMARY || !hasControl() || activeView !== "atlas") return;
+  // start() may both notify onFallback and reject its caller. Coalesce them
+  // into one retry, and ignore a late failure after a replacement is ready.
+  if (realtimeReconnectTimer || (!realtimeController?.closed && realtimeController?.state === "ready")) return;
+  if (realtimeReadyAt !== null && performance.now() - realtimeReadyAt >= REALTIME_RECONNECT_STABLE_MS) {
+    realtimeReconnectAttempts = 0;
+  }
+  realtimeReadyAt = null;
   const delay = Math.min(8000, 1000 * (2 ** Math.min(realtimeReconnectAttempts, 3)));
   realtimeReconnectAttempts += 1;
   setScreen("GPT LIVE", "Reconectando con ATLAS",
@@ -2133,6 +2146,7 @@ realtimeController = window.AtlasRealtime?.create({
     setTranscript(text) {
       transcriptElement.textContent = text;
       transcriptElement.classList.remove("placeholder");
+      window.AtlasFaceBridge?.transcript(text);
     },
     setResponse(text) {
       responseElement.textContent = text || "ATLAS está preparando la respuesta.";
@@ -2140,7 +2154,9 @@ realtimeController = window.AtlasRealtime?.create({
     },
     onReady({ model, voice, output, reasoningEffort = "default" }) {
       realtimeFallbackActive = false;
-      realtimeReconnectAttempts = 0;
+      // A briefly ready/flapping connection is not stable recovery. Reset the
+      // retry budget only after it has stayed ready for twenty seconds.
+      realtimeReadyAt = performance.now();
       window.clearTimeout(realtimeReconnectTimer);
       realtimeReconnectTimer = 0;
       recordButton.hidden = true;
@@ -2153,6 +2169,7 @@ realtimeController = window.AtlasRealtime?.create({
       reasoningEffortSelect.dataset.activeEffort = reasoningEffort;
       healthDot.className = "ready";
       healthLabel.textContent = `${model} · WebRTC · ${output === "native" ? voice : voiceProviderLabel(output)}`;
+      window.AtlasFaceBridge?.connection({ healthy: true, label: healthLabel.textContent });
     },
     onContextStats(stats) {
       window.dispatchEvent(new CustomEvent("atlas-context-stats", { detail: stats || {} }));
@@ -2166,9 +2183,8 @@ realtimeController = window.AtlasRealtime?.create({
       recordButton.hidden = true;
     },
     onFollowUp() {
-      // Existing results belong to the previous user turn or speaker playback.
-      // A recognizer recreated after A1's half-duplex guard resets this to zero.
-      realtimeFollowUpResultFloor = lastRecognitionResultCount;
+      // Ignore a follow-up request from an older cached Realtime controller.
+      realtimeFollowUpResultFloor = -1;
       realtimeWakeCaptureUntil = 0;
       realtimeWakeCapturedText = "";
       realtimeWakeResultStart = -1;
@@ -2181,6 +2197,9 @@ realtimeController = window.AtlasRealtime?.create({
       recordButton.hidden = true;
     },
     onInputStream: attachRealtimeWakeInput,
+    onOutputStream: (stream, audio) => window.AtlasFaceBridge?.outputStream(stream, audio),
+    onOutputPlayback: active => window.AtlasFaceBridge?.outputPlayback(active),
+    onOutputEnabled: enabled => window.AtlasFaceBridge?.outputEnabled(enabled),
     getVoiceActivity: () => ({
       active: voiceActive,
       rms: voiceLastRms,
@@ -2337,6 +2356,7 @@ window.atlasAccess.bind({
     && !currentAudio && !streamedSpeechActive && !dictationRunning
     && !dictationShouldRestart && !ttsLabBusy && !settingsSubmit.disabled),
   suspend() {
+    window.AtlasFaceBridge?.suspend();
     suspendHealthCheck();
     window.clearTimeout(realtimeReconnectTimer);
     realtimeReconnectTimer = 0;
@@ -2366,6 +2386,7 @@ window.atlasAccess.bind({
     cancelButton.hidden = true;
   },
   acquired() {
+    window.AtlasFaceBridge?.resume();
     healthSuspended = false;
     switchView("atlas");
     setScreen("MICRÓFONO", "Preparando ATLAS", "Solicitando acceso al micrófono…", "listening");

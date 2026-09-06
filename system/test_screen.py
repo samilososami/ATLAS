@@ -3,6 +3,7 @@ import importlib.machinery
 import importlib.util
 from pathlib import Path
 import subprocess
+import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,7 +30,7 @@ main "$@"
         return subprocess.run(['bash', '-c', script, 'test', str(ROOT / 'atlas-commands/atlas-screen'), *args], capture_output=True, text=True)
 
     def test_all_modes_and_both_orders(self):
-        for mode in ('atlas', 'atlas-hide', 'terminal', 'desktop', 'rafas'):
+        for mode in ('atlas', 'atlas-new', 'atlas-hide', 'terminal', 'desktop', 'rafas'):
             for args in ((f'--{mode}', 'on'), ('on', f'--{mode}')):
                 with self.subTest(args=args):
                     result = self.call(*args)
@@ -38,16 +39,37 @@ main "$@"
                     self.assertTrue(result.stdout.endswith('ON\n'))
 
     def test_mode_alone_switches_immediately(self):
-        for mode in ('atlas', 'atlas-hide', 'rafas', 'desktop', 'terminal'):
+        for mode in ('atlas', 'atlas-new', 'atlas-hide', 'rafas', 'desktop', 'terminal'):
             self.assertEqual(self.call('--' + mode).stdout, 'SAVE:' + mode + '\nON\n')
         self.assertEqual(self.call('--RAFAS').stdout, 'SAVE:rafas\nON\n')
+
+    def test_new_design_selection_persists_while_hidden_mode_leaves_it_alone(self):
+        script = '''source "$1"
+MODE_DIR="$2"
+MODE_FILE="$MODE_DIR/mode"
+WEB_DESIGN_FILE="$MODE_DIR/web-design"
+ensure_mode_store() { mkdir -p "$MODE_DIR"; }
+chown() { :; }
+save_mode atlas-new
+cat "$WEB_DESIGN_FILE"
+save_mode atlas-hide
+cat "$WEB_DESIGN_FILE"
+save_mode atlas
+cat "$WEB_DESIGN_FILE"
+'''
+        with tempfile.TemporaryDirectory(prefix='atlas-mode-test-') as temp:
+            result = subprocess.run(['bash', '-c', script, 'test',
+                                     str(ROOT / 'atlas-commands/atlas-screen'), temp],
+                                    capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout, 'atlas-new\natlas-new\natlas\n')
 
     def test_power_and_status(self):
         for args, expected in (((), 'STATUS\n'), (('off',), 'OFF\n'), (('on',), 'ON\n')):
             self.assertEqual(self.call(*args).stdout, expected)
 
     def test_enable_fixed_mode_does_not_switch_current_surface(self):
-        for mode in ('atlas', 'atlas-hide', 'rafas', 'desktop', 'terminal', 'last'):
+        for mode in ('atlas', 'atlas-new', 'atlas-hide', 'rafas', 'desktop', 'terminal', 'last'):
             for args in (('enable', '--' + mode), ('--' + mode, 'enable')):
                 result = self.call(*args)
                 self.assertEqual(result.returncode, 0, result.stderr)
@@ -64,7 +86,7 @@ main "$@"
         self.assertEqual(self.call('--atlas', 'off').stdout, 'SAVE:atlas\nOFF\n')
 
     def test_invalid_requests_do_nothing(self):
-        for args in (('--atlas', '--terminal'), ('--atlas', '--rafas'),
+        for args in (('--atlas', '--terminal'), ('--atlas', '--atlas-new'), ('--atlas', '--rafas'),
                      ('--rafas', '--RAFAS', '--atlas'), ('--desktop', 'on', 'off'),
                      ('on', 'surprise'), ('--on',), ('--off',),
                      ('enable', '--last', '--atlas'), ('enable', 'disable'),
@@ -162,7 +184,7 @@ boot_screen_on
         return subprocess.run(['bash', '-c', script, 'test', str(ROOT / 'atlas-commands/atlas-screen'), policy, last_mode], capture_output=True, text=True)
 
     def test_last_tracks_the_runtime_mode(self):
-        for mode in ('atlas', 'atlas-hide', 'rafas', 'desktop', 'terminal'):
+        for mode in ('atlas', 'atlas-new', 'atlas-hide', 'rafas', 'desktop', 'terminal'):
             self.assertEqual(self.call('last', mode).stdout, 'ON:' + mode + '\n')
 
     def test_fixed_boot_mode_is_independent_of_last_runtime_mode(self):
