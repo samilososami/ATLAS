@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
-import readline
+import re
 import signal
 import sys
 import time
@@ -18,6 +18,15 @@ from uuid import uuid4
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
+from rich.markdown import Markdown
+from rich.live import Live
+from rich import box
+from prompt_toolkit import PromptSession
+from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+from prompt_toolkit.completion import Completer, Completion
+from prompt_toolkit.history import FileHistory
+from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.styles import Style
 from websockets.exceptions import ConnectionClosed
 from websockets.sync.client import ClientConnection, connect
 
@@ -30,7 +39,163 @@ CHAT_DIR = Path(os.environ.get("ATLAS_CHAT_DIR", ATLAS_HOME / ".atlas" / "chat")
 TERMINAL_INSTRUCTIONS_FILE = CHAT_DIR / "TERMINAL_INSTRUCTIONS.md"
 HISTORY_FILE = CHAT_DIR / "history"
 LOG_DIR = CHAT_DIR / "logs"
-VERSION = "1.0.1"
+VERSION = "1.1.0"
+
+COMMANDS = {
+    "/help": "Ver comandos y atajos",
+    "/new": "Reconectar y recargar contexto (conserva memoria)",
+    "/clear": "Limpiar la pantalla",
+    "/context": "Contexto y fuentes cargadas",
+    "/model": "Modelo y razonamiento configurados",
+    "/logs": "Ruta del registro privado",
+    "/files": "Carpeta de referencias @",
+    "/expand": "Ver completas las herramientas del último turno",
+    "/compact": "Alternar vista compacta de herramientas",
+    "/quit": "Salir de ATLAS",
+}
+WORKSPACE = ATLAS_HOME / ".openclaw/workspace"
+MENTION = re.compile(r'(?<!\S)@(?:"([^"\n]*)"|([^\s]+))')
+
+
+def terminal_text(value: str) -> str:
+    """Remove terminal control sequences while preserving ordinary text."""
+    value = re.sub(r'\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)', '', value)
+    value = re.sub(r'\x1b\[[0-?]*[ -/]*[@-~]', '', value)
+    return ''.join(c for c in value if c in '\n\t' or (ord(c) >= 32 and not 127 <= ord(c) < 160))
+
+
+def compact_text(value: str, width: int, rows: int) -> tuple[str, bool]:
+    """Bound only the presentation, never the actual tool request/result."""
+    lines = terminal_text(value).expandtabs(4).splitlines() or ['(sin salida)']
+    width = max(12, width)
+    clipped = len(lines) > rows or any(Text(line).cell_len > width for line in lines)
+    visible = []
+    for line in lines[:rows]:
+        text = Text(line)
+        text.truncate(width, overflow='ellipsis')
+        visible.append(text.plain)
+    return '\n'.join(visible), clipped
+
+
+class AtlasCompleter(Completer):
+    def __init__(self, workspace: Path = WORKSPACE):
+        self.workspace = workspace
+
+    def get_completions(self, document, complete_event):
+        before = document.text_before_cursor
+        if before.startswith('/') and not any(c.isspace() for c in before):
+            for name, description in COMMANDS.items():
+                if name.startswith(before.lower()):
+                    yield Completion(name, start_position=-len(before), display_meta=description)
+            return
+        match = re.search(r'(?<!\S)@("[^"\n]*|[^\s"]*)$', before)
+        if not match:
+            return
+        fragment = match.group(1).lstrip('"')
+        path = Path(fragment).expanduser()
+        base = path if fragment.endswith('/') else path.parent
+        prefix = '' if fragment.endswith('/') else path.name
+        folder = base if base.is_absolute() else self.workspace / base
+        try:
+            # One directory per keystroke; never crawl the filesystem.
+            candidates = sorted(folder.iterdir(), key=lambda p: p.name.casefold())[:500]
+        except OSError:
+            return
+        for candidate in candidates:
+            if not candidate.name.casefold().startswith(prefix.casefold()):
+                continue
+            if candidate.name.startswith('.') and not prefix.startswith('.'):
+                continue
+            label = str(base / candidate.name)
+            if candidate.is_dir():
+                label += '/'
+            if ' ' in label:
+                label = '"' + label + ('"' if not candidate.is_dir() else '')
+            yield Completion('@' + label, start_position=-len(match.group(0)),
+                             display=candidate.name + ('/' if candidate.is_dir() else ''),
+                             display_meta='carpeta' if candidate.is_dir() else 'archivo local')
+
+
+def resolve_mentions(prompt: str, workspace: Path = WORKSPACE) -> str:
+    """Resolve explicit references; content is read only through model tools."""
+    def replace(match):
+        raw = match.group(1) or match.group(2)
+        path = Path(raw).expanduser()
+        path = path if path.is_absolute() else workspace / path
+        if path.exists():
+            return '@' + json.dumps(str(path.resolve()), ensure_ascii=False)
+        return match.group(0)
+    return MENTION.sub(replace, prompt)
+
+
+def input_session(chat):
+    HISTORY_FILE.touch(mode=0o600, exist_ok=True)
+    HISTORY_FILE.chmod(0o600)
+    bindings = KeyBindings()
+
+    @bindings.add('enter')
+    def submit(event):
+        buffer = event.current_buffer
+        if buffer.complete_state and buffer.complete_state.current_completion:
+            buffer.apply_completion(buffer.complete_state.current_completion)
+        else:
+            buffer.validate_and_handle()
+
+    @bindings.add('escape', 'enter')
+    @bindings.add('c-j')
+    def newline(event):
+        event.current_buffer.insert_text('\n')
+
+    return PromptSession(
+        message=[('class:user', 'sami'), ('class:prompt', ' › ')],
+        multiline=True, prompt_continuation=lambda width, line, wrap: [('class:muted', '  · ')],
+        history=FileHistory(str(HISTORY_FILE)), auto_suggest=AutoSuggestFromHistory(),
+        completer=AtlasCompleter(), complete_while_typing=True,
+        complete_in_thread=True, reserve_space_for_menu=6,
+        key_bindings=bindings,
+        bottom_toolbar=lambda: [('class:muted',
+            f'  / comandos   @ archivos   Tab completar   Alt+Enter nueva línea   Ctrl+D salir  ·  {"aislado" if not chat.persist else "memoria compartida"}')],
+        style=Style.from_dict({
+            'user': '#61b9ff bold', 'prompt': '#61b9ff', 'muted': '#7d8998',
+            'completion-menu.completion': 'bg:#101d2b #e4ebf3',
+            'completion-menu.completion.current': 'bg:#174a72 #ffffff bold',
+            'completion-menu.meta.completion': 'bg:#101d2b #93a7bc',
+            'completion-menu.meta.completion.current': 'bg:#174a72 #d6eaff',
+            'auto-suggestion': '#697582', 'bottom-toolbar': 'bg:default',
+        }),
+    )
+
+
+class AnswerView:
+    """Render at most twelve frames per second; retain normal terminal scrollback."""
+    def __init__(self, console: Console):
+        self.console = console
+        self.parts: list[str] = []
+        self.live = None
+        self.last_frame = 0.0
+
+    def append(self, delta: str):
+        if not self.parts:
+            self.console.print('\n[bright_blue]●[/] [bold white]ATLAS[/]')
+        self.parts.append(terminal_text(delta))
+        if not self.console.is_terminal:
+            self.console.print(terminal_text(delta), end='', markup=False, style='white')
+            return
+        if self.live is None:
+            self.live = Live(console=self.console, auto_refresh=False, vertical_overflow='ellipsis')
+            self.live.start()
+        if time.monotonic() - self.last_frame >= 0.08:
+            self.live.update(Markdown(''.join(self.parts), code_theme='monokai', style='white'), refresh=True)
+            self.last_frame = time.monotonic()
+
+    def finish(self):
+        if self.live:
+            self.live.update(Markdown(''.join(self.parts), code_theme='monokai', style='white'))
+            self.live.stop()
+            self.live = None
+        elif self.parts:
+            self.console.print()
+        self.parts = []
 
 REALTIME_TOOLS: list[dict[str, Any]] = [
     {
@@ -127,6 +292,8 @@ class AtlasChat:
         self.session_key = f"agent:main:atlas-chat:{uuid4().hex}"
         self.tool_buffers: dict[str, dict[str, str]] = {}
         self._interrupted = False
+        self.compact = True
+        self.tool_details: list[tuple[str, str]] = []
         self._prepare_storage()
 
     def _prepare_storage(self) -> None:
@@ -278,12 +445,16 @@ class AtlasChat:
         else:
             title = name or "TOOL"
             body = json.dumps(args, ensure_ascii=False)
+        self.tool_details.append((title, body))
+        preview, clipped = compact_text(body, self.console.width - 8, 3)
         self.console.print(
             Panel(
-                Text(body or "(sin argumentos)", style="grey66"),
+                Text(preview if self.compact else terminal_text(body), style="grey66"),
                 title=f"[grey58]{title}[/]",
+                subtitle='[grey50]/expand · ver completo[/]' if clipped and self.compact else None,
                 title_align="left",
                 border_style="grey35",
+                box=box.ROUNDED,
                 padding=(0, 1),
             )
         )
@@ -302,12 +473,16 @@ class AtlasChat:
         status = "OK" if result.get("ok", True) else "ERROR"
         duration = result.get("durationMs")
         suffix = f" · {float(duration) / 1000:.2f} s" if isinstance(duration, (int, float)) else ""
+        self.tool_details.append((status + suffix, output))
+        preview, clipped = compact_text(output, self.console.width - 8, 8)
         self.console.print(
             Panel(
-                Text(output, style="grey58"),
+                Text(preview if self.compact else terminal_text(output), style="grey58"),
                 title=f"[grey50]{status}{suffix}[/]",
+                subtitle='[grey50]/expand · ver completo[/]' if clipped and self.compact else None,
                 title_align="left",
                 border_style="grey27",
+                box=box.ROUNDED,
                 padding=(0, 1),
             )
         )
@@ -343,6 +518,9 @@ class AtlasChat:
         prompt = prompt.strip()
         if not prompt:
             return ""
+        self._interrupted = False
+        self.tool_buffers.clear()
+        self.tool_details.clear()
         if self.ws is None:
             self.connect()
         interaction_id = uuid4().hex
@@ -352,7 +530,7 @@ class AtlasChat:
         text_items_with_delta: set[str] = set()
         tool_count = 0
         pending_continuation = False
-        printed_label = False
+        answer_view = AnswerView(self.console)
         spinner = self.console.status("[dim]ATLAS está pensando…[/]", spinner="dots")
         spinner.start()
         self.log("turn.started", interactionId=interaction_id, prompt=prompt)
@@ -384,6 +562,7 @@ class AtlasChat:
 
                 if event_type == "response.function_call_arguments.done":
                     spinner.stop()
+                    answer_view.finish()
                     key = str(event.get("item_id") or event.get("call_id") or "unknown")
                     buffered = self.tool_buffers.pop(key, {})
                     name = str(buffered.get("name") or event.get("name") or "")
@@ -417,10 +596,7 @@ class AtlasChat:
                     if first_output_ms is None:
                         first_output_ms = (time.perf_counter() - started) * 1000
                     spinner.stop()
-                    if not printed_label:
-                        self.console.print("\n[bold bright_blue]ATLAS[/] [grey50]›[/] ", end="")
-                        printed_label = True
-                    self.console.print(delta, style="white", end="", markup=False, highlight=False)
+                    answer_view.append(delta)
                     assistant_parts.append(delta)
                     continue
 
@@ -432,15 +608,11 @@ class AtlasChat:
                     item_id = str(event.get("item_id") or "default")
                     completed_text = str(event.get("transcript") or event.get("text") or "")
                     if completed_text and item_id not in text_items_with_delta:
+                        text_items_with_delta.add(item_id)
                         if first_output_ms is None:
                             first_output_ms = (time.perf_counter() - started) * 1000
                         spinner.stop()
-                        if not printed_label:
-                            self.console.print("\n[bold bright_blue]ATLAS[/] [grey50]›[/] ", end="")
-                            printed_label = True
-                        self.console.print(
-                            completed_text, style="white", end="", markup=False, highlight=False,
-                        )
+                        answer_view.append(completed_text)
                         assistant_parts.append(completed_text)
                     continue
 
@@ -459,9 +631,8 @@ class AtlasChat:
                     usage = event.get("response", {}).get("usage") or {}
                     break
             spinner.stop()
+            answer_view.finish()
             answer = "".join(assistant_parts).strip()
-            if printed_label:
-                self.console.print()
             total_ms = (time.perf_counter() - started) * 1000
             timing = f"{total_ms / 1000:.2f} s"
             if first_output_ms is not None:
@@ -497,6 +668,7 @@ class AtlasChat:
             return answer
         except KeyboardInterrupt:
             spinner.stop()
+            answer_view.finish()
             self._interrupted = True
             try:
                 self._send({"type": "response.cancel"})
@@ -508,11 +680,16 @@ class AtlasChat:
             return ""
         except ConnectionClosed as error:
             spinner.stop()
+            answer_view.finish()
             self.close()
             raise AtlasChatError(f"Realtime cerró la conexión: {error}") from error
-        except Exception:
+        except Exception as error:
             spinner.stop()
-            raise
+            answer_view.finish()
+            self.close()
+            if isinstance(error, AtlasChatError):
+                raise
+            raise AtlasChatError(str(error)) from error
 
     def close(self) -> None:
         if self.ws is not None:
@@ -535,45 +712,28 @@ def banner(console: Console, chat: AtlasChat) -> None:
     tokens = stats.get("estimatedTokens")
     token_label = f"{float(tokens) / 1000:.1f}k tokens" if isinstance(tokens, (int, float)) else "contexto privado"
     sources = len(stats.get("sources", []))
-    subtitle = f"gpt-realtime-2.1  ·  {token_label}  ·  {sources} fuentes  ·  shell + web"
+    subtitle = f"gpt-realtime-2.1  ·  {token_label}  ·  {sources} fuentes"
     title = Text()
-    title.append("  ◢  ", style="bold bright_blue")
-    title.append("ATLAS CHAT", style="bold white")
-    title.append("\n  ")
+    title.append("  ▰  ATLAS", style="bold bright_blue")
+    title.append("  /  CHAT", style="bold white")
+    title.append(f"   v{VERSION}\n\n  ", style="grey50")
     title.append(subtitle, style="grey58")
-    console.print(Panel(title, border_style="blue", padding=(1, 2)))
-    console.print("[grey50]Escribe un mensaje. /help muestra los atajos. Ctrl+C interrumpe; Ctrl+D sale.[/]\n")
+    title.append('\n  ' + ('Sesión aislada' if not chat.persist else 'Memoria compartida con WebScreen'), style='grey58')
+    console.print(Panel(title, border_style="#258ddd", padding=(1, 1), box=box.ROUNDED))
+    console.print('[grey58]  ¿Qué hacemos?  Escribe [white]/[/white] para comandos o [white]@[/white] para archivos.[/]\n')
 
 
 def print_help(console: Console) -> None:
-    console.print(Panel(
-        "[white]/new[/]      sesión Realtime nueva\n"
-        "[white]/clear[/]    limpiar la terminal\n"
-        "[white]/context[/]  contexto Markdown cargado\n"
-        "[white]/model[/]    modelo y razonamiento efectivos\n"
-        "[white]/logs[/]     ruta del registro local\n"
-        "[white]/quit[/]     salir",
-        title="[bright_blue]ATLAS CHAT[/]",
-        title_align="left",
-        border_style="grey35",
-    ))
-
-
-def setup_readline() -> None:
-    CHAT_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
-    try:
-        readline.read_history_file(HISTORY_FILE)
-    except OSError:
-        pass
-    readline.set_history_length(500)
-
-
-def save_readline() -> None:
-    try:
-        readline.write_history_file(HISTORY_FILE)
-        os.chmod(HISTORY_FILE, 0o600)
-    except OSError:
-        pass
+    body = Text()
+    for name, description in COMMANDS.items():
+        body.append(f'{name:12}', style='bright_blue')
+        body.append(description + '\n', style='white')
+    body.append('\nTab / flechas: sugerencias · Enter: aceptar / enviar\n'
+                'Alt+Enter o Ctrl+J: nueva línea · Ctrl+C: limpiar / cancelar\n'
+                'Ctrl+D: salir con entrada vacía · ↑/↓: historial\n'
+                '@archivo: referencia local; admite @"ruta con espacios"', style='grey58')
+    console.print(Panel(body, title='[bright_blue]Comandos y atajos[/]',
+                        border_style='grey35', box=box.ROUNDED))
 
 
 def raise_system_exit() -> None:
@@ -599,21 +759,21 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = parse_args(argv or sys.argv[1:])
+    args = parse_args(sys.argv[1:] if argv is None else argv)
     console = Console(highlight=False, soft_wrap=False)
     chat: AtlasChat | None = None
     try:
         chat = AtlasChat(console=console, verbose=args.verbose, persist=not args.ephemeral)
         chat.connect()
         if args.prompt is not None:
-            answer = chat.ask(args.prompt)
-            return 0 if answer or chat._interrupted else 1
+            answer = chat.ask(resolve_mentions(args.prompt))
+            return 130 if chat._interrupted else (0 if answer else 1)
 
-        setup_readline()
         banner(console, chat)
+        editor = input_session(chat) if sys.stdin.isatty() and sys.stdout.isatty() else None
         while True:
             try:
-                prompt = console.input("[bold bright_blue]sami[/] [grey50]›[/] ").strip()
+                prompt = (editor.prompt() if editor else input('sami › ')).strip()
             except EOFError:
                 console.print()
                 break
@@ -633,8 +793,11 @@ def main(argv: list[str] | None = None) -> int:
                 banner(console, chat)
                 continue
             if command == "/new":
-                chat.connect()
-                console.print("[grey50]Sesión Realtime renovada.[/]")
+                try:
+                    chat.connect()
+                    console.print("[grey50]Sesión Realtime renovada.[/]")
+                except AtlasChatError as error:
+                    console.print(Text(f'No se pudo reconectar: {error}', style='red'))
                 continue
             if command == "/context":
                 stats = chat.context_stats
@@ -653,18 +816,37 @@ def main(argv: list[str] | None = None) -> int:
             if command == "/logs":
                 console.print(f"[grey58]{LOG_DIR}[/]")
                 continue
+            if command == '/files':
+                console.print(Text(f'Referencias @ relativas a {WORKSPACE}\n'
+                                   'También puedes usar una ruta absoluta. Se envía la ruta, no se adjunta su contenido.', style='grey70'))
+                continue
+            if command == '/compact':
+                chat.compact = not chat.compact
+                console.print('[grey58]Herramientas: ' + ('compactas · /expand para detalles' if chat.compact else 'completas') + '[/]')
+                continue
+            if command == '/expand':
+                if not chat.tool_details:
+                    console.print('[grey58]El último turno no contiene herramientas.[/]')
+                for title, body in chat.tool_details:
+                    console.print(Panel(Text(terminal_text(body), style='grey70'), title=Text(title), box=box.ROUNDED, border_style='grey35'))
+                continue
+            if command.startswith('/'):
+                console.print('[grey58]Comando desconocido. Escribe /help para ver los disponibles.[/]')
+                continue
             try:
-                chat.ask(prompt)
+                chat.ask(resolve_mentions(prompt))
             except AtlasChatError as error:
                 chat.log("session.error", error=str(error))
-                console.print(f"[red]Error: {error}[/]")
+                console.print(Text(f'Error: {error}', style='red'))
                 console.print("[grey50]Usa /new para reconectar la sesión.[/]")
         return 0
+    except KeyboardInterrupt:
+        console.print('\n[grey50]Interrumpido.[/]')
+        return 130
     except AtlasChatError as error:
-        console.print(f"[red]atlas-chat: {error}[/]", stderr=True)
+        Console(stderr=True).print(Text(f'atlas-chat: {error}', style='red'))
         return 1
     finally:
-        save_readline()
         if chat is not None:
             chat.shutdown()
 

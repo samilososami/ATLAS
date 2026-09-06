@@ -15,7 +15,8 @@ atlas-chat --version
 ```
 
 - `-p` o `--prompt` envía un único turno y termina.
-- `--ephemeral` no carga el historial conversacional y tampoco guarda el turno.
+- `--ephemeral` no carga ni modifica la memoria conversacional compartida;
+  el historial local de entrada y los logs privados sí se conservan.
 - `--verbose` añade a los logs los tipos de evento del proveedor para depurar,
   sin registrar el secreto OAuth ni los payloads completos.
 - `--help` muestra las opciones y `--version` imprime la versión del cliente.
@@ -25,15 +26,31 @@ En la sesión interactiva:
 - `/help` muestra los comandos internos.
 - `/new` renueva la conexión Realtime.
 - `/context` muestra cuánto contexto privado se ha cargado.
-- `/model` muestra el modelo y razonamiento efectivos.
+- `/model` muestra el modelo y razonamiento configurados.
 - `/logs` muestra la ruta de los registros locales.
 - `/clear` limpia la pantalla y `/quit` termina.
+- `/files` muestra la carpeta base para referencias `@`.
+- `/expand` muestra completas las herramientas del último turno.
+- `/compact` alterna el detalle visual de herramientas; no compacta memoria.
 - `Ctrl+C` interrumpe la respuesta actual y `Ctrl+D` sale desde el prompt.
+
+Escribe `/h` para sugerencias de comandos o `@` para sugerencias de archivos.
+Tab y flechas permiten elegir; Enter acepta la sugerencia seleccionada o envía.
+Alt+Enter o Ctrl+J añade una línea. El prefijo `sami ›` se conserva al borrar,
+pegar varias líneas y redimensionar la terminal. Las sugerencias de historial
+aparecen en gris y se aceptan con flecha derecha.
+
+`@AGENTS.md` y `@atlas-commands/` parten del workspace de OpenClaw; también se
+admiten rutas absolutas y `@"ruta con espacios.md"`. Se envía la ruta resuelta,
+sin adjuntar contenido automáticamente ni recorrer carpetas recursivamente.
 
 Las respuestas y comentarios de ATLAS aparecen en blanco. Las llamadas a tools,
 los comandos reales y sus salidas aparecen en gris. Cada turno muestra el tiempo
 hasta el primer texto, el tiempo total y el número de tools. El historial y los
 diagnósticos JSONL son privados y se guardan en `/home/atlas/.atlas/chat/`.
+Las respuestas renderizan Markdown progresivo. La vista compacta limita los
+comandos a tres líneas y las salidas a ocho, con elipsis para líneas largas.
+La ejecución y el resultado entregado al modelo conservan el contenido completo.
 Las sesiones normales leen y escriben la memoria conversacional compartida con
 WebScreen. `--ephemeral` permite medir o diagnosticar sin leerla ni añadir ese
 turno. La capa `TERMINAL_INSTRUCTIONS.md` conserva identidad, herramientas y

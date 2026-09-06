@@ -24,6 +24,7 @@ total timing. Private history and JSONL diagnostics stay under
 
 Normal turns read and write the persistent conversation shared with WebScreen.
 `--ephemeral` neither reads that history nor writes the diagnostic turn back.
+Local input history and private diagnostic logs are still retained.
 `-p` sends one prompt and exits. In an interactive session, `/help` lists all
 shortcuts; `/new`, `/context`, `/model`, `/logs`, `/clear` and `/quit` manage the
 client without becoming model prompts. Ctrl+C cancels the active response and
@@ -42,3 +43,24 @@ sudo bash system/install-chat.sh
 The installer makes dated backups, installs the command for the normal user and
 root, reuses WebScreen's virtual environment, installs only missing Python
 dependencies, and safely adds missing cross-references to the live workspace.
+
+## Terminal interface · 1.1
+
+The input editor owns the `sami ›` prefix, deletion, wrapping and terminal
+resizing. Type `/h` for command suggestions, or `@` to browse workspace files.
+Tab/arrows navigate; Enter accepts a selected completion or sends the message.
+Alt+Enter or Ctrl+J inserts a newline, including after a pasted paragraph.
+History suggestions appear in grey; the right arrow accepts them.
+
+`@AGENTS.md`, `@atlas-commands/` and `@"path with spaces.md"` resolve against
+the OpenClaw workspace. Absolute paths also work. References send the resolved
+path, not the contents; ATLAS can read it with its ordinary tools when needed.
+`/files` shows the reference root. No recursive background indexing is used.
+
+Responses render streaming Markdown; tool previews show three command lines
+and eight output lines, with long lines ellipsized to terminal width. This is
+display-only: execution, results returned to the model and private logs retain
+the original values. `/expand` displays all tool details from the last turn;
+`/compact` toggles full tool output for future turns (it does not compact memory).
+Ctrl+C clears input or cancels the active response; Ctrl+D exits with empty
+input. Non-interactive pipes and `-p` retain plain streaming output.

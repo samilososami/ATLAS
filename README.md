@@ -72,6 +72,8 @@ Una sola pestaña controla WebScreen a la vez. Las demás muestran **Tomar contr
   Las sesiones normales comparten la conversación persistente de WebScreen;
   `--ephemeral` no la lee ni la modifica. Una capa final adapta únicamente la
   presentación al terminal, permitiendo Markdown, rutas, cifras y unidades.
+  Incluye sugerencias de comandos `/`, referencias a archivos `@`, entrada
+  multilínea y herramientas compactas con `/expand` para consultar el detalle.
 - Chrome detecta la palabra exacta `Atlas`, también dentro de una frase, sin silencio previo ni veto semántico. En el A1, la petición inicial de Chrome se envía como texto a Realtime; el portátil también utiliza audio Realtime. `gpt-4o-mini-transcribe` aporta una transcripción auxiliar de los turnos de audio, no el razonamiento.
 - Solo en A1, el micrófono y el detector se bloquean durante la reproducción y 200 ms después. El resto de dispositivos conserva sus interrupciones naturales. La continuación cuando Atlas hace una pregunta es de cuatro segundos.
 - Se pueden elegir voces nativas de OpenAI, navegador o ElevenLabs, y esfuerzo Default, Minimal, Low, Medium, High y Xhigh, según admita el proveedor. Default omite el ajuste. Los resultados provisionales de Chrome se sustituyen al corregirse y el texto idéntico no reinicia la espera.

@@ -94,6 +94,9 @@ de servicio para no crear estado privado con propietario incorrecto.
 Las sesiones normales leen y escriben la conversación persistente compartida
 con WebScreen; `--ephemeral` no la lee ni la modifica. Dentro del chat están
 disponibles `/help`, `/new`, `/context`, `/model`, `/logs`, `/clear` y `/quit`.
+El editor ofrece sugerencias `/` y referencias locales `@`, historial y entrada
+multilínea. `/files` muestra su carpeta base, `/expand` despliega herramientas
+truncadas y `/compact` alterna su detalle visual sin alterar la memoria.
 
 ## `atlas-say`
 

@@ -48,6 +48,17 @@ def add_if_missing(path: Path, needle: str, body: str) -> bool:
 def main() -> int:
     references = (
         (
+            WORKSPACE / "atlas-commands" / "README.md",
+            "atlas-chat terminal interface 1.1",
+            """## atlas-chat terminal interface 1.1
+
+`atlas-chat` provides slash-command suggestions, @file references, multiline
+input and streaming Markdown. `/files`, `/expand` and `/compact` are local
+display commands; full instructions live in `ATLAS-CHAT.md`. Truncation is
+visual only and never changes executed commands or model tool results.
+""",
+        ),
+        (
             WORKSPACE / "AGENTS.md",
             "ATLAS-CHAT.md",
             """## ATLAS terminal chat
