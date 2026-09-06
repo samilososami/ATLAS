@@ -5,6 +5,12 @@ REAL_ADB=/usr/bin/adb
 INVENTORY=/usr/local/libexec/atlas-adb-inventory
 MONITOR=/usr/local/libexec/atlas-adb-monitor
 
+# Use the same authorised keys and daemon for root commands and the A1 user.
+# Do not kill the shared server or silently create a second identity under root.
+if [ "$(id -u)" -eq 0 ] && id sami >/dev/null 2>&1; then
+  exec runuser -u sami -- env HOME=/home/atlas "$0" "$@"
+fi
+
 if [ ! -x "$REAL_ADB" ]; then
   echo "adb: /usr/bin/adb is not installed" >&2
   exit 127
@@ -16,7 +22,9 @@ status=$?
 if [ "$status" -eq 0 ] && [ -x "$INVENTORY" ]; then
   case "${1:-}" in
     connect)
-      if [ -n "${2:-}" ]; then
+      # adb connect can print a failure yet exit zero. Inventory only a transport
+      # that actually reports device, never an offline/unauthorised target.
+      if [ -n "${2:-}" ] && [ "$(timeout 3 "$REAL_ADB" -s "$2" get-state 2>/dev/null)" = device ]; then
         nohup "$INVENTORY" "${2}" >/dev/null 2>&1 &
       fi
       ;;

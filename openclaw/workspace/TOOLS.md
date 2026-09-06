@@ -2,6 +2,25 @@
 
 ## Connected services
 
+### ATLAS runtime interfaces
+
+Use [`ATLAS-CONNECTIONS.md`](ATLAS-CONNECTIONS.md) as the connection and
+diagnostics map. It links the current implementations and maintenance paths;
+keep installation-specific device identities in private records, not here.
+
+- [`ATLAS-WEBSCREEN.md`](atlas-commands/ATLAS-WEBSCREEN.md): browser ownership,
+  local HTTP health, direct Realtime voice and bounded session recovery.
+- [`ATLAS-CHAT.md`](atlas-commands/ATLAS-CHAT.md): the same model/context/tools
+  from a text terminal. Good for logical checks, not an audio latency test.
+- [`ATLAS-AUDIO.md`](atlas-commands/ATLAS-AUDIO.md): physical playback routing,
+  bounded Bluetooth connection and the headless WirePlumber configuration.
+- [`ADB.md`](ADB.md): authorised Android transports, shared user/root identity,
+  private read-only inventories and per-device notes.
+- [`ATLAS-APP.md`](atlas-commands/ATLAS-APP.md): paired Android companion and
+  relay state. Companion pairing is not Bluetooth audio pairing or ADB approval.
+- [`ATLAS-RAFAS.md`](atlas-commands/ATLAS-RAFAS.md): broader Pi health and
+  interactive recovery when the fault is below the browser/model layer.
+
 When the direct Gmail app is configured through Codex, use `codex_apps.gmail.*`.
 Do not mistake Composio's connection state for Gmail's direct connection: those
 are different front doors. Verify the actual tool before claiming access is

@@ -286,4 +286,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    if os.geteuid() == 0 and owner_ids() is not None:
+        os.execvp("runuser", ["runuser", "-u", "sami", "--", "env",
+                             "HOME=/home/atlas", sys.argv[0], *sys.argv[1:]])
     raise SystemExit(main())

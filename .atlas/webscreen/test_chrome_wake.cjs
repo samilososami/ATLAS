@@ -101,7 +101,8 @@ test('bare Chrome wake opens listening immediately; a repeated identical request
     p.event('input_audio_buffer.speech_stopped', { item_id: id });
     p.event('input_audio_buffer.committed', { item_id: id });
     await p.advance(650);
-    p.c.responseActive = false;
+    p.event('response.created', { response: { id } });
+    p.event('response.done', { response: { id, status: 'completed' } });
   }
   assert.deepEqual(p.requests(), ['qué hora es', 'qué hora es']);
   assert.equal(p.responses().length, 2);

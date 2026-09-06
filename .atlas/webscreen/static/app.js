@@ -1,5 +1,5 @@
 const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
-const CLIENT_BUILD = "2026-09-02-reasoning-1";
+const CLIENT_BUILD = "2026-09-06-resilience-1";
 const REALTIME_PRIMARY = Boolean(window.AtlasRealtime);
 const PHYSICAL_ATLAS_A1 = /(?:^|[?&])kiosk=1(?:&|$)/u.test(String(window.location?.search || ""));
 const accessFetch = (url, options) => window.atlasAccess.fetch(url, options);
@@ -98,6 +98,7 @@ let realtimeWakeCaptureUntil = 0;
 let realtimeWakeCapturedText = "";
 let realtimeWakeResultStart = -1;
 let realtimeWakePrefix = "";
+let realtimeFollowUpResultFloor = -1;
 let voiceNoiseFloor = 0.008;
 let voiceLastRms = 0;
 let voiceLastPeak = 0;
@@ -1007,6 +1008,7 @@ function configureRecognition() {
       realtimeController?.setLocalWakeDetectorReady(true);
     }
     lastRecognitionResultCount = 0;
+    if (realtimeFollowUpResultFloor >= 0) realtimeFollowUpResultFloor = 0;
     wakeContextResultIndex = 0;
     ignoredWakeResultIndex = -1;
     acceptedWakeResultIndex = -1;
@@ -1115,7 +1117,7 @@ function configureRecognition() {
     const evaluationResults = changedResults;
     const recognizedText = evaluationResults.map(result => result.text).join(" ");
     const realtimeWakeMode = REALTIME_PRIMARY && !realtimeFallbackActive;
-    if (PHYSICAL_ATLAS_A1 && realtimeWakeMode && !interactionActive
+    if (realtimeWakeMode && !interactionActive
         && realtimeController?.awaitingWakeRequest && realtimeWakeResultStart >= 0
         && (realtimeController?.localWakeRequestPending || performance.now() <= realtimeWakeCaptureUntil)) {
       captureChromeWakeSnapshot(event.results);
@@ -1160,13 +1162,11 @@ function configureRecognition() {
             ? "Interrupción “ATLAS” validada por el detector local"
             : "Wake word “ATLAS” validada por el detector local");
         }
-        if (PHYSICAL_ATLAS_A1) {
-          realtimeWakeCapturedText = "";
-          realtimeWakePrefix = "";
-          realtimeWakeResultStart = wakeResult.index;
-          realtimeWakeCaptureUntil = performance.now() + FOLLOW_UP_NO_SPEECH_MS;
-          captureChromeWakeSnapshot(event.results);
-        }
+        realtimeWakeCapturedText = "";
+        realtimeWakePrefix = "";
+        realtimeWakeResultStart = wakeResult.index;
+        realtimeWakeCaptureUntil = performance.now() + FOLLOW_UP_NO_SPEECH_MS;
+        captureChromeWakeSnapshot(event.results);
         return;
       }
       addLog(initialRequest
@@ -1176,6 +1176,21 @@ function configureRecognition() {
         initialTranscriptFinal: initialRequestFinal,
         wakePendingResultIndex: wakeResult.isFinal ? -1 : wakeResult.index,
       });
+      return;
+    }
+    if (realtimeWakeMode && !interactionActive && realtimeFollowUpResultFloor >= 0
+        && !a1PlaybackMicrophoneSuppressed && !realtimeController?.isOutputActive()) {
+      const fresh = evaluationResults.find(result => result.index >= realtimeFollowUpResultFloor);
+      const normalized = normalizeSpeechText(fresh?.text || "");
+      const previousAnswer = normalizeSpeechText(responseElement.textContent || "");
+      // Late speaker echoes must not manufacture a new conversational turn.
+      if (!fresh || (normalized.length >= 12 && previousAnswer.includes(normalized))) return;
+      if (!realtimeController?.beginLocalFollowUp?.()) return;
+      realtimeWakeCapturedText = "";
+      realtimeWakePrefix = "";
+      realtimeWakeResultStart = fresh.index;
+      realtimeWakeCaptureUntil = performance.now() + 10000;
+      captureChromeWakeSnapshot(event.results);
     }
   };
 }
@@ -2005,7 +2020,8 @@ async function restoreMicrophone() {
 
 async function checkHealth() {
   try {
-    const response = await accessFetch("/api/health", { cache: "no-store" });
+    const response = await accessFetch("/api/health", { cache: "no-store", signal: AbortSignal.timeout(8000) });
+    if (!response.ok) throw new Error(`Backend HTTP ${response.status}`);
     const health = await response.json();
     healthDot.className = health.ready ? "ready" : "error";
     healthLabel.textContent = health.ready
@@ -2015,6 +2031,7 @@ async function checkHealth() {
       : "Backend incompleto";
     addLog(health.ready ? "Backend preparado" : "Backend degradado", null, health.ready ? "normal" : "error");
   } catch {
+    if (!hasControl()) return;
     healthDot.className = "error";
     healthLabel.textContent = "Sin conexión con la Pi";
     addLog("No se pudo consultar el backend", null, "error");
@@ -2083,9 +2100,19 @@ realtimeController = window.AtlasRealtime?.create({
     onWaiting() {
       realtimeWakeCaptureUntil = 0;
       realtimeWakeCapturedText = "";
+      realtimeFollowUpResultFloor = -1;
       timer.textContent = "00:00.0";
       cancelButton.hidden = false;
       recordButton.hidden = true;
+    },
+    onFollowUp() {
+      // Existing results belong to the previous user turn or speaker playback.
+      // A recognizer recreated after A1's half-duplex guard resets this to zero.
+      realtimeFollowUpResultFloor = lastRecognitionResultCount;
+      realtimeWakeCaptureUntil = 0;
+      realtimeWakeCapturedText = "";
+      realtimeWakeResultStart = -1;
+      realtimeWakePrefix = "";
     },
     onFallback(error) {
       scheduleRealtimeReconnect(error);

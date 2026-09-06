@@ -1,7 +1,9 @@
 import importlib.machinery
 import importlib.util
 import tempfile
+import subprocess
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -19,6 +21,43 @@ def load_script(name: str, module_name: str):
 
 
 inventory = load_script("atlas-adb-inventory", "atlas_adb_inventory")
+monitor = load_script("atlas-adb-monitor", "atlas_adb_monitor")
+
+
+class AdbMonitorTests(unittest.TestCase):
+    def test_only_ready_transports_enter_inventory(self):
+        result = SimpleNamespace(returncode=0, stdout='List of devices attached\nready\tdevice\nwaiting\tunauthorized\ngone\toffline\n')
+        with patch.object(monitor.subprocess, 'run', return_value=result):
+            self.assertEqual(monitor.connected_devices(), {'ready'})
+
+    def test_server_error_preserves_state(self):
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(monitor, 'ROOT', Path(directory)), \
+             patch.object(monitor, 'connected_devices', side_effect=RuntimeError('offline')), \
+             patch.object(monitor, 'save_state') as save:
+            self.assertEqual(monitor.main(), 1)
+            save.assert_not_called()
+
+    def test_failed_inventory_is_retried_instead_of_recorded(self):
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(monitor, 'ROOT', Path(directory)), \
+             patch.object(monitor, 'connected_devices', return_value={'ok', 'fail', 'old'}), \
+             patch.object(monitor, 'previous_devices', return_value={'old'}), \
+             patch.object(monitor, 'save_state') as save, \
+             patch.object(monitor.subprocess, 'run') as run:
+            run.side_effect = lambda args, **kw: SimpleNamespace(returncode=1 if args[-1] == 'fail' else 0)
+            self.assertEqual(monitor.main(), 1)
+            save.assert_called_once_with({'old', 'ok'})
+
+    def test_inventory_timeout_keeps_other_transports(self):
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(monitor, 'ROOT', Path(directory)), \
+             patch.object(monitor, 'connected_devices', return_value={'new', 'old'}), \
+             patch.object(monitor, 'previous_devices', return_value={'old'}), \
+             patch.object(monitor, 'save_state') as save, \
+             patch.object(monitor.subprocess, 'run', side_effect=subprocess.TimeoutExpired('inventory', 90)):
+            self.assertEqual(monitor.main(), 1)
+            save.assert_called_once_with({'old'})
 
 
 class AdbInventoryTests(unittest.TestCase):

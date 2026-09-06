@@ -1,11 +1,18 @@
 (() => {
   "use strict";
 
-  const INPUT_SETTLE_MS = 400;
+  // Server VAD already waited 500 ms before speech_stopped. Only a short
+  // continuation guard is needed after that; never add a second full pause.
+  const INPUT_SETTLE_MS = 180;
   const TRANSCRIPT_SETTLE_FLOOR_MS = 80;
   const CHROME_FINAL_SETTLE_MS = 100;
   const CHROME_INTERIM_SETTLE_MS = 180;
-  const FOLLOW_UP_IDLE_MS = 4000;
+  const FOLLOW_UP_IDLE_MS = 10000;
+  const PEER_DISCONNECT_GRACE_MS = 8000;
+  const RESPONSE_ACK_TIMEOUT_MS = 12000;
+  const STARTUP_TIMEOUT_MS = 25000;
+  const RESPONSE_STALL_TIMEOUT_MS = 30000;
+  const SESSION_RENEW_AFTER_MS = 50 * 60 * 1000;
   const A1_PLAYBACK_MIC_TAIL_MS = 200;
   const MODEL = "gpt-realtime-2.1";
   const DEFAULT_VOICE = "marin";
@@ -170,6 +177,15 @@
     } };
   }
 
+  function abortable(promise, signal) {
+    return new Promise((resolve, reject) => {
+      const aborted = () => reject(new Error("Inicio Realtime cancelado"));
+      if (signal.aborted) aborted();
+      else signal.addEventListener("abort", aborted, { once: true });
+      Promise.resolve(promise).then(resolve, reject).finally(() => signal.removeEventListener("abort", aborted));
+    });
+  }
+
   class RealtimeController {
     constructor(options) {
       this.fetch = options.fetch;
@@ -257,6 +273,23 @@
       this.currentSpeechItemId = "";
       this.lastLocalWakeRequest = "";
       this.lastLocalWakeRequestAt = 0;
+      this.lifecycle = 0;
+      this.startAbortController = null;
+      this.disconnectTimer = 0;
+      this.startupTimer = 0;
+      this.sessionRenewTimer = 0;
+      this.responseAckTimer = 0;
+      this.responseActivityTimer = 0;
+      this.responseCreatePending = false;
+      this.cancelledResponseCreatePending = false;
+      this.cancelledResponseIdAwaitingDone = "";
+      this.queuedResponseAfterCancel = null;
+      this.toolGeneration = 0;
+      this.currentResponseId = "";
+      this.ignoredResponseIds = new Set();
+      this.finishedResponseIds = new Set();
+      this.completedTranscriptItems = new Set();
+      this.stoppedSpeechItems = new Set();
     }
 
     isIdle() {
@@ -264,7 +297,7 @@
         && !this.responseActive && !this.externalPlaybackActive && !this.toolActive
         && !this.nativePlaybackActive && !this.turnInputPending && !this.speechInputActive
         && !this.pendingTranscripts && !this.responseAfterInput
-        && !this.responseCreateTimer && !this.pendingToolResponse;
+        && !this.responseCreateTimer && !this.responseCreatePending && !this.pendingToolResponse;
     }
 
     async start() {
@@ -280,37 +313,54 @@
         throw new Error("OpenAI Realtime necesita WebRTC y permiso de micrófono");
       }
       this.stop(false);
+      const lifecycle = this.lifecycle;
+      const controller = new AbortController();
+      this.startAbortController = controller;
+      const current = () => !this.closed && this.lifecycle === lifecycle;
+      const assertCurrent = () => {
+        if (!current()) throw new Error("Inicio Realtime cancelado");
+      };
       this.closed = false;
       this.state = "connecting";
       this.callbacks.setScreen?.("GPT LIVE", "Conectando con ATLAS", "Preparando audio bidireccional…", "listening");
       this.callbacks.addLog?.("Abriendo sesión directa de OpenAI Realtime");
       const started = performance.now();
       this.connectionStartedAt = started;
+      this.startupTimer = window.setTimeout(() => {
+        if (current()) this.fail(new Error("La preparación de Realtime superó los 25 segundos; se intentará una conexión nueva"));
+      }, STARTUP_TIMEOUT_MS);
       try {
-        const reservationResponse = await this.fetch("/api/realtime/session", {
+        const reservationResponse = await abortable(this.fetch("/api/realtime/session", {
           method: "POST", cache: "no-store",
+          signal: controller.signal,
           headers: { "Content-Type": "application/json" },
           // The backend owns the persisted voice selection. A Realtime voice
           // cannot be changed after audio has been generated, so app.js creates
           // a fresh session whenever the selector changes.
           body: JSON.stringify({}),
-        });
-        const reservation = await reservationResponse.json();
+        }), controller.signal);
+        const reservation = await abortable(reservationResponse.json(), controller.signal);
+        assertCurrent();
         if (!reservationResponse.ok) throw new Error(reservation.error || "OpenAI Realtime no está disponible");
         const session = reservation.session;
         if (!session?.clientSecret || session.transport !== "webrtc") {
           throw new Error("El backend no devolvió una sesión WebRTC válida");
         }
         this.session = session;
-        this.peer = new RTCPeerConnection();
-        this.peer.addEventListener("track", (event) => this.attachRemoteAudio(event));
-        this.peer.addEventListener("connectionstatechange", () => {
-          if (this.closed) return;
-          if (["failed", "closed", "disconnected"].includes(this.peer?.connectionState)) {
-            this.fail(new Error(`Conexión Realtime ${this.peer?.connectionState || "cerrada"}`));
-          }
+        const peer = new RTCPeerConnection();
+        this.peer = peer;
+        peer.addEventListener("track", (event) => { if (current()) this.attachRemoteAudio(event); });
+        peer.addEventListener("connectionstatechange", () => {
+          if (current()) this.handlePeerConnectionState(peer);
         });
-        this.media = await navigator.mediaDevices.getUserMedia(captureConstraints());
+        const capture = navigator.mediaDevices.getUserMedia(captureConstraints()).then((media) => {
+          // getUserMedia itself is not abortable. Retire a late permission
+          // grant without leaking its microphone even after the wait timed out.
+          if (!current()) { media.getTracks().forEach((track) => track.stop()); assertCurrent(); }
+          return media;
+        });
+        const media = await abortable(capture, controller.signal);
+        this.media = media;
         const inputTrack = this.media.getAudioTracks()[0];
         this.inputTrack = inputTrack || null;
         const inputSettings = inputTrack?.getSettings?.() || {};
@@ -325,12 +375,14 @@
         });
         this.callbacks.onInputStream?.(this.media);
         for (const track of this.media.getAudioTracks()) {
-          const sender = this.peer.addTrack(track, this.media);
+          assertCurrent();
+          const sender = peer.addTrack(track, this.media);
           if (track === this.inputTrack) await this.gateRealtimeInputUntilReady(sender, track);
         }
-        this.channel = this.peer.createDataChannel("oai-events");
+        assertCurrent();
+        this.channel = peer.createDataChannel("oai-events");
         this.channel.addEventListener("open", () => {
-          if (this.closed) return;
+          if (!current()) return;
           this.state = "configuring";
           const channelInstructions = String(session.atlasInstructions || "").trim();
           const workspaceContext = String(session.atlasContext || "").trim();
@@ -377,32 +429,70 @@
           delete this.session.atlasInstructions;
           delete this.session.atlasContext;
           this.configurationTimer = window.setTimeout(() => {
-            this.fail(new Error("OpenAI Realtime no confirmó el control manual de turnos"));
-          }, 4000);
+            if (current()) this.fail(new Error("OpenAI Realtime no confirmó el control manual de turnos"));
+          }, 12000);
         });
-        this.channel.addEventListener("message", (event) => this.handleEvent(event.data));
-        const offer = await this.peer.createOffer();
-        await this.peer.setLocalDescription(offer);
-        const answerResponse = await fetch(session.offerUrl || "https://api.openai.com/v1/realtime/calls", {
+        this.channel.addEventListener("message", (event) => { if (current()) this.handleEvent(event.data); });
+        this.channel.addEventListener("close", () => {
+          if (current()) this.fail(new Error("Se cerró el canal de eventos Realtime"));
+        });
+        this.channel.addEventListener("error", () => {
+          if (current()) this.fail(new Error("Falló el canal de eventos Realtime"));
+        });
+        const offer = await peer.createOffer();
+        assertCurrent();
+        await peer.setLocalDescription(offer);
+        assertCurrent();
+        const answerResponse = await abortable(fetch(session.offerUrl || "https://api.openai.com/v1/realtime/calls", {
           method: "POST", body: offer.sdp,
+          signal: controller.signal,
           headers: {
             ...(session.offerHeaders || {}),
             Authorization: `Bearer ${session.clientSecret}`,
             "Content-Type": "application/sdp",
           },
-        });
-        const answerSdp = await answerResponse.text();
+        }), controller.signal);
+        const answerSdp = await abortable(answerResponse.text(), controller.signal);
+        assertCurrent();
         if (!answerResponse.ok) {
           const detail = answerSdp.replace(/\s+/gu, " ").trim().slice(0, 400);
           throw new Error(`OpenAI rechazó WebRTC con HTTP ${answerResponse.status}${detail ? `: ${detail}` : ""}`);
         }
-        await this.peer.setRemoteDescription({ type: "answer", sdp: answerSdp });
+        await peer.setRemoteDescription({ type: "answer", sdp: answerSdp });
+        assertCurrent();
         // The reservation is one-use. Do not retain it any longer than negotiation needs.
         this.session.clientSecret = "";
         return true;
       } catch (error) {
-        this.stop(false);
+        // An old permission/fetch completion must not stop its replacement.
+        if (this.lifecycle === lifecycle) this.stop(false);
         throw error;
+      }
+    }
+
+    handlePeerConnectionState(peer = this.peer) {
+      if (this.closed || peer !== this.peer) return;
+      const state = peer?.connectionState;
+      if (state === "connected") {
+        if (this.disconnectTimer) {
+          this.callbacks.addLog?.("La red Realtime se ha recuperado sin reiniciar la conversación");
+          this.postEvent("session.transport_recovered", "WebRTC recuperó la conexión existente");
+        }
+        window.clearTimeout(this.disconnectTimer);
+        this.disconnectTimer = 0;
+      } else if (state === "disconnected") {
+        // ICE disconnected is provisional (Wi-Fi roam, sleep or route change),
+        // unlike failed. Give Chrome a bounded chance to recover the peer.
+        if (this.disconnectTimer) return;
+        this.postEvent("session.transport_interrupted", "WebRTC espera la recuperación de red");
+        this.disconnectTimer = window.setTimeout(() => {
+          this.disconnectTimer = 0;
+          if (!this.closed && peer === this.peer && peer.connectionState === "disconnected") {
+            this.fail(new Error("La red Realtime no se recuperó tras ocho segundos"));
+          }
+        }, PEER_DISCONNECT_GRACE_MS);
+      } else if (["failed", "closed"].includes(state)) {
+        this.fail(new Error(`Conexión Realtime ${state}`));
       }
     }
 
@@ -557,6 +647,8 @@
       if (this.closed || this.state !== "configuring") return;
       window.clearTimeout(this.configurationTimer);
       this.configurationTimer = 0;
+      window.clearTimeout(this.startupTimer);
+      this.startupTimer = 0;
       this.state = "ready";
       const model = this.session?.model || MODEL;
       const voice = this.session?.atlasSelection || this.session?.voice || DEFAULT_VOICE;
@@ -585,10 +677,63 @@
         }, 200);
       }
       this.postEvent("session.ready", "Sesión OpenAI Realtime preparada", { model, voice, durationMs });
+      window.clearTimeout(this.sessionRenewTimer);
+      this.sessionRenewTimer = window.setTimeout(() => {
+        void this.restartForContext("Renovación preventiva de Realtime antes de su límite de sesión", { whenIdle: true })
+          .catch((error) => this.callbacks.onFallback?.(error));
+      }, SESSION_RENEW_AFTER_MS);
     }
 
     send(payload) {
-      if (this.channel?.readyState === "open") this.channel.send(JSON.stringify(payload));
+      if (this.channel?.readyState !== "open") return false;
+      this.channel.send(JSON.stringify(payload));
+      return true;
+    }
+
+    createResponse(response) {
+      if (this.closed || this.responseActive) return false;
+      if (this.responseCreatePending) {
+        if (!this.cancelledResponseCreatePending) return false;
+        // A new, explicit request may wait for the cancelled creation's ID.
+        // Do not send it before that response can be cancelled precisely.
+        this.queuedResponseAfterCancel = { response };
+        return true;
+      }
+      if (!this.send({ type: "response.create", ...(response ? { response } : {}) })) return false;
+      this.cancelledResponseCreatePending = false;
+      this.responseCreatePending = true;
+      window.clearTimeout(this.responseAckTimer);
+      this.responseAckTimer = window.setTimeout(() => {
+        this.responseAckTimer = 0;
+        if (!this.responseCreatePending || this.closed) return;
+        // Never retry the prompt/tool automatically: its action may already
+        // have run. Recover transport, then ask for a deliberate new request.
+        this.fail(new Error("Realtime no confirmó la respuesta; vuelve a pedirla tras reconectar"));
+      }, RESPONSE_ACK_TIMEOUT_MS);
+      this.postEvent("response.requested", "La petición se envió al modelo Realtime");
+      return true;
+    }
+
+    clearResponseAcknowledgement() {
+      this.responseCreatePending = false;
+      this.cancelledResponseCreatePending = false;
+      this.cancelledResponseIdAwaitingDone = "";
+      window.clearTimeout(this.responseAckTimer);
+      this.responseAckTimer = 0;
+    }
+
+    refreshResponseActivity() {
+      window.clearTimeout(this.responseActivityTimer);
+      this.responseActivityTimer = 0;
+      if (this.closed || !this.responseActive) return;
+      this.responseActivityTimer = window.setTimeout(() => {
+        this.responseActivityTimer = 0;
+        if (this.closed || !this.responseActive) return;
+        // Tool calls have their own bounded backend deadline. A quiet model
+        // while a real tool is running is not a lost response.
+        if (this.toolActive) { this.refreshResponseActivity(); return; }
+        this.fail(new Error("Realtime lleva 30 segundos sin producir ningún fragmento; vuelve a pedirlo tras reconectar"));
+      }, RESPONSE_STALL_TIMEOUT_MS);
     }
 
     setLocalWakeDetectorReady(ready) {
@@ -658,7 +803,7 @@
         this.localWakeSpeechStoppedAt = !this.speechInputActive && this.lastSpeechEndedAt > this.lastLocalWakeRequestAt
           && performance.now() - this.lastSpeechEndedAt < 1500 ? this.lastSpeechEndedAt : null;
       }
-      this.localWakeRequestPending = this.physicalAtlasA1;
+      this.localWakeRequestPending = true;
       if (this.localWakeRequestPending && this.currentSpeechItemId) {
         this.localWakeAudioItems.add(this.currentSpeechItemId);
       }
@@ -704,6 +849,26 @@
         this.resumeRealtimeInput("local-wake-authorized");
         this.scheduleFollowUp();
       }
+      return true;
+    }
+
+    beginLocalFollowUp() {
+      // app.js calls this only for a fresh Chrome result in the listening
+      // window, never a replayed result captured during speaker playback.
+      if (this.closed || this.state !== "ready" || !this.conversationActive
+          || this.isA1MicrophoneBlocked() || this.isOutputActive() || this.responseCreatePending) return false;
+      if (this.localWakeRequestPending) return true;
+      this.localWakeRequestPending = true;
+      this.awaitingWakeRequest = true;
+      this.localWakeFallbackText = "";
+      this.localWakeTextFinal = false;
+      this.localWakeSpeechStoppedAt = !this.speechInputActive && this.lastSpeechEndedAt > 0
+        && performance.now() - this.lastSpeechEndedAt < 1500 ? this.lastSpeechEndedAt : null;
+      if (this.currentSpeechItemId) this.localWakeAudioItems.add(this.currentSpeechItemId);
+      this.clearResponseCreateTimer();
+      this.responseAfterInput = false;
+      window.clearTimeout(this.followUpTimer);
+      this.postEvent("input.chrome_followup", "Chrome recibe la continuación sin repetir ATLAS");
       return true;
     }
 
@@ -785,7 +950,7 @@
           content: [{ type: "input_text", text }],
         },
       });
-      this.send({ type: "response.create" });
+      this.createResponse();
       this.callbacks.addLog?.("Petición inicial reconocida por Chrome enviada a Realtime");
       this.postEvent("wake.local_request_submitted", "Chrome entregó la petición inicial sin una segunda transcripción",
         { role: "user", text });
@@ -801,8 +966,9 @@
         if (!this.localWakeDeletedItems.has(id)) {
           this.deleteAudioItem(id);
         }
-        this.completePendingTranscript();
         if (transcription) {
+          if (!this.claimTranscript(id)) return true;
+          this.completePendingTranscript();
           this.postEvent("input.alternate_ignored", "Se conserva la petición reconocida por Chrome",
             { text: event.transcript || "", source: "realtime-audio" });
           if (this.localWakeRequestPending && !this.localWakeFallbackText) this.scheduleFollowUp();
@@ -838,6 +1004,24 @@
       if (this.closed) return;
       let event;
       try { event = JSON.parse(String(raw)); } catch { return; }
+      const responseId = event.response_id || event.response?.id;
+      if (event.type === "response.done" && responseId
+          && responseId === this.cancelledResponseIdAwaitingDone) {
+        const queued = this.queuedResponseAfterCancel;
+        this.queuedResponseAfterCancel = null;
+        this.clearResponseAcknowledgement();
+        // The provider has retired the exact cancelled response. Only now may
+        // a newer explicit request run without response-already-active races.
+        if (queued) this.createResponse(queued.response);
+        return;
+      }
+      if (responseId && (event.type?.startsWith("response.") || event.type?.startsWith("output_audio_buffer."))) {
+        if (this.ignoredResponseIds.has(responseId)
+            || (event.type?.startsWith("response.") && this.finishedResponseIds.has(responseId))) return;
+        if (this.currentResponseId && responseId !== this.currentResponseId && event.type !== "response.created") return;
+      }
+      if (this.responseActive && event.type?.startsWith("response.")
+          && !["response.done", "response.cancelled"].includes(event.type)) this.refreshResponseActivity();
       if ((event.type?.startsWith("input_audio_buffer.")
           || event.type?.startsWith("conversation.item.input_audio_transcription."))
           && this.discardA1PlaybackInput(event)) return;
@@ -855,13 +1039,16 @@
           this.beginSpeech();
           return;
         case "input_audio_buffer.speech_stopped":
-          this.endSpeech();
+          this.endSpeech(event);
           return;
         case "output_audio_buffer.started":
           this.nativePlaybackEventsSeen = true;
           this.nativePlaybackActive = true;
           this.setPhysicalPlaybackActive("native", true);
-          this.postEvent("audio.playback_started", "Comenzó la reproducción del búfer WebRTC");
+          this.postEvent("audio.playback_started", "Comenzó la reproducción del búfer WebRTC", {
+            durationMs: this.lastSpeechEndedAt ? performance.now() - this.lastSpeechEndedAt : undefined,
+            measurement: "webrtc-output-buffer-started",
+          });
           return;
         case "output_audio_buffer.stopped":
         case "output_audio_buffer.cleared":
@@ -895,6 +1082,22 @@
           void this.handleTool(event);
           return;
         case "response.created":
+          if (this.cancelledResponseCreatePending) {
+            const cancelledId = event.response?.id;
+            if (!cancelledId) {
+              this.fail(new Error("Realtime confirmó una respuesta cancelada sin identificador; vuelve a pedirla tras reconectar"));
+              return;
+            }
+            // Cancel before any text, audio or tool event can be handled.
+            this.ignoredResponseIds.add(cancelledId);
+            while (this.ignoredResponseIds.size > 128) this.ignoredResponseIds.delete(this.ignoredResponseIds.values().next().value);
+            this.cancelledResponseIdAwaitingDone = cancelledId;
+            this.send({ type: "response.cancel", response_id: cancelledId });
+            this.send({ type: "output_audio_buffer.clear" });
+            this.postEvent("response.cancelled_before_ack", "Se descartó una respuesta confirmada después de cancelarla", { cancelledResponseId: cancelledId });
+            return;
+          }
+          this.clearResponseAcknowledgement();
           this.externalSpeechOffset = 0;
           this.externalSpeechFinal = false;
           this.externalSpeechCancelled = false;
@@ -904,6 +1107,7 @@
           this.clearResponseCreateTimer();
           this.responseAfterInput = false;
           this.responseActive = true;
+          this.refreshResponseActivity();
           this.responseFinalized = false;
           this.toolContinuationAwaitingResponse = false;
           this.externalPlaybackText = "";
@@ -938,6 +1142,7 @@
             return;
           }
           if (/active response in progress/iu.test(String(event.error?.message || ""))) {
+            this.clearResponseAcknowledgement();
             this.clearResponseCreateTimer();
             this.responseAfterInput = false;
             this.callbacks.addLog?.("Respuesta duplicada evitada; se conserva el turno Realtime activo");
@@ -1026,8 +1231,13 @@
       });
     }
 
-    endSpeech() {
+    endSpeech(event = {}) {
       if (this.isA1MicrophoneBlocked()) return;
+      if (event.item_id) {
+        if (this.stoppedSpeechItems.has(event.item_id)) return;
+        this.stoppedSpeechItems.add(event.item_id);
+        while (this.stoppedSpeechItems.size > 256) this.stoppedSpeechItems.delete(this.stoppedSpeechItems.values().next().value);
+      }
       this.lastSpeechEndedAt = performance.now();
       this.speechInputActive = false;
       if (this.localWakeRequestPending) {
@@ -1041,6 +1251,11 @@
         this.speechInputActive = false;
         this.pendingTranscripts = 0;
         this.turnInputPending = false;
+        this.postEvent("input.transcription_timeout", "Terminó la espera limitada de transcripción");
+        if (this.localWakeRequestPending && this.localWakeFallbackText) {
+          this.scheduleLocalWakeRequest();
+          return;
+        }
         if (this.responseAfterInput) this.scheduleResponseAfterInput();
         else this.scheduleFollowUp();
       }, 4000);
@@ -1052,15 +1267,30 @@
     }
 
     handleTranscriptionFailure(event) {
+      if (!this.claimTranscript(event.item_id)) return;
       this.completePendingTranscript();
       const reason = event.error?.message || event.error?.code || "transcripción no disponible";
       this.callbacks.addLog?.(`No se pudo transcribir la entrada: ${reason}`, null, "error");
       this.postEvent("input.transcription_failed", "OpenAI Realtime no pudo transcribir la entrada",
         { status: reason });
       this.consumeOutputSpeechSegment();
+      if (this.localWakeRequestPending && this.localWakeFallbackText) {
+        this.scheduleLocalWakeRequest();
+        return;
+      }
       if (this.responseAfterInput) this.scheduleResponseAfterInput();
       else if (this.conversationActive) this.scheduleFollowUp();
       else this.showWaiting();
+    }
+
+    claimTranscript(itemId) {
+      if (!itemId) return true;
+      if (this.completedTranscriptItems.has(itemId)) return false;
+      this.completedTranscriptItems.add(itemId);
+      while (this.completedTranscriptItems.size > 256) {
+        this.completedTranscriptItems.delete(this.completedTranscriptItems.values().next().value);
+      }
+      return true;
     }
 
     completePendingTranscript() {
@@ -1093,16 +1323,22 @@
           || this.pendingTranscripts > 0 || this.responseActive || this.toolActive) return;
       this.responseAfterInput = false;
       this.turnInputPending = false;
-      this.send({ type: "response.create" });
+      this.createResponse();
     }
 
     handleUserTranscript(event) {
       if (this.discardA1PlaybackInput(event)) return;
       if (this.discardLocalWakeAudio({ ...event, type: "conversation.item.input_audio_transcription.completed" })) return;
+      if (!this.claimTranscript(event.item_id)) return;
       const text = String(event.transcript || "").trim();
       this.completePendingTranscript();
       const speechDuringOutput = this.consumeOutputSpeechSegment();
-      if (!text) return;
+      if (!text) {
+        if (this.responseAfterInput) this.scheduleResponseAfterInput();
+        else if (this.conversationActive) this.scheduleFollowUp();
+        else this.showWaiting();
+        return;
+      }
       window.clearTimeout(this.followUpTimer);
       this.currentInputItemId = event.item_id || "";
       this.postEvent("input.transcript", "OpenAI Realtime completó la transcripción", { role: "user", text });
@@ -1342,34 +1578,44 @@
       this.postEvent("shell.started", "OpenAI Realtime ejecuta una orden en la shell",
         { text: String(args.command || "") });
       this.consultController = new AbortController();
+      const controller = this.consultController;
+      const generation = this.toolGeneration;
+      const lifecycle = this.lifecycle;
+      const current = () => !this.closed && this.lifecycle === lifecycle
+        && this.toolGeneration === generation && !controller.signal.aborted;
       const started = performance.now();
       try {
         const response = await this.fetch("/api/realtime/shell", {
-          method: "POST", cache: "no-store", signal: this.consultController.signal,
+          method: "POST", cache: "no-store", signal: controller.signal,
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             args, requestId: this.currentRequestId || requestId(),
             interactionId: this.currentInteractionId || requestId(),
           }),
         });
+        if (!current()) return;
         if (!response.ok) {
           const payload = await response.json().catch(() => ({}));
           throw new Error(payload.error || `La shell respondió con HTTP ${response.status}`);
         }
         const result = await response.json();
+        if (!current()) return;
         this.callbacks.addLog?.(`Realtime ejecutó ${displayCommand}`, performance.now() - started);
         this.postEvent("shell.completed", "La shell devolvió su resultado",
           { durationMs: performance.now() - started, text: String(result.output || "") });
         this.submitToolResult(callId, result);
       } catch (error) {
+        if (!current()) return;
         const aborted = error?.name === "AbortError";
         this.submitToolResult(callId, aborted
           ? { status: "cancelled", message: "La persona interrumpió el trabajo." }
           : { error: error.message || String(error) });
         if (!aborted) this.callbacks.addLog?.(`Shell fallida: ${error.message}`, null, "error");
       } finally {
-        this.toolActive = false;
-        this.consultController = null;
+        if (this.consultController === controller) {
+          this.toolActive = false;
+          this.consultController = null;
+        }
       }
     }
 
@@ -1380,10 +1626,15 @@
       this.callbacks.setScreen?.("WEB", "ATLAS está buscando", displayQuery || "Consultando Tavily", "working");
       this.postEvent("web_search.started", "OpenAI Realtime consulta Tavily", { text: query });
       this.consultController = new AbortController();
+      const controller = this.consultController;
+      const generation = this.toolGeneration;
+      const lifecycle = this.lifecycle;
+      const current = () => !this.closed && this.lifecycle === lifecycle
+        && this.toolGeneration === generation && !controller.signal.aborted;
       const started = performance.now();
       try {
         const response = await this.fetch("/api/realtime/web-search", {
-          method: "POST", cache: "no-store", signal: this.consultController.signal,
+          method: "POST", cache: "no-store", signal: controller.signal,
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             args,
@@ -1391,11 +1642,13 @@
             interactionId: this.currentInteractionId || requestId(),
           }),
         });
+        if (!current()) return;
         if (!response.ok) {
           const payload = await response.json().catch(() => ({}));
           throw new Error(payload.error || `Tavily respondió con HTTP ${response.status}`);
         }
         const result = await response.json();
+        if (!current()) return;
         this.callbacks.addLog?.(`Realtime buscó ${displayQuery || "en la web"}`, performance.now() - started);
         this.postEvent("web_search.completed", "Tavily devolvió resultados", {
           durationMs: performance.now() - started,
@@ -1403,14 +1656,17 @@
         });
         this.submitToolResult(callId, result);
       } catch (error) {
+        if (!current()) return;
         const aborted = error?.name === "AbortError";
         this.submitToolResult(callId, aborted
           ? { status: "cancelled", message: "La persona interrumpió la búsqueda." }
           : { error: error.message || String(error) });
         if (!aborted) this.callbacks.addLog?.(`Búsqueda web fallida: ${error.message}`, null, "error");
       } finally {
-        this.toolActive = false;
-        this.consultController = null;
+        if (this.consultController === controller) {
+          this.toolActive = false;
+          this.consultController = null;
+        }
       }
     }
 
@@ -1424,22 +1680,22 @@
 
     requestToolContinuation() {
       if (this.closed || this.turnInputPending) return;
-      if (this.responseActive || this.externalPlaybackActive || this.nativePlaybackActive) {
+      if (this.responseActive || this.responseCreatePending || this.externalPlaybackActive || this.nativePlaybackActive) {
         this.pendingToolResponse = true;
         this.callbacks.addLog?.("La respuesta final espera al final real del audio");
         this.postEvent("tool.continuation_wait", "La respuesta final espera al final real del búfer de audio");
         return;
       }
       this.toolContinuationAwaitingResponse = true;
-      this.send({ type: "response.create" });
+      this.createResponse();
     }
 
     flushPendingToolResponse() {
       if (!this.pendingToolResponse || this.closed || this.turnInputPending
-          || this.responseActive || this.externalPlaybackActive || this.nativePlaybackActive) return false;
+          || this.responseActive || this.responseCreatePending || this.externalPlaybackActive || this.nativePlaybackActive) return false;
       this.pendingToolResponse = false;
       this.toolContinuationAwaitingResponse = true;
-      this.send({ type: "response.create" });
+      this.createResponse();
       return true;
     }
 
@@ -1448,13 +1704,36 @@
     }
 
     finishResponse(event) {
+      const responseId = event.response?.id;
+      if (responseId) {
+        if (this.currentResponseId && responseId !== this.currentResponseId) return;
+        if (this.finishedResponseIds.has(responseId) || this.ignoredResponseIds.has(responseId)) return;
+        this.finishedResponseIds.add(responseId);
+        while (this.finishedResponseIds.size > 128) this.finishedResponseIds.delete(this.finishedResponseIds.values().next().value);
+      }
+      this.clearResponseAcknowledgement();
       this.responseActive = false;
+      this.refreshResponseActivity();
       this.responseFinalized = true;
       const status = event.response?.status || (event.type === "response.cancelled" ? "cancelled" : "completed");
       this.postEvent("response.done", "OpenAI Realtime cerró el turno", { status,
         durationMs: this.responseStartedAt ? performance.now() - this.responseStartedAt : undefined });
       if (this.contextCompacting) {
         void this.completeContextCompaction(status);
+        return;
+      }
+      if (status === "failed" || status === "incomplete") {
+        const detail = event.response?.status_details?.error?.message
+          || event.response?.status_details?.reason || "El proveedor no completó esta respuesta";
+        this.clearPendingToolResponse();
+        this.toolContinuationAwaitingResponse = false;
+        this.cancelExternalSpeech();
+        this.callbacks.addLog?.(`La respuesta Realtime falló: ${detail}`, null, "error");
+        this.postEvent("response.failed", "El modelo no completó la respuesta; no se repiten acciones automáticamente",
+          { status, detail });
+        this.callbacks.setScreen?.("RESPUESTA INCOMPLETA", "ATLAS no pudo terminar",
+          "Puedes volver a pedirlo. La conexión sigue abierta.", "error");
+        this.scheduleFollowUp();
         return;
       }
       if (status === "completed") this.playExternalTextIfNeeded(true);
@@ -1514,12 +1793,9 @@
       this.contextCompactionText = "";
       this.callbacks.setScreen?.("COMPACTANDO", "ATLAS organiza el contexto", "Conservando lo importante antes de continuar.", "working");
       this.callbacks.addLog?.(automatic ? "Compactación automática del contexto" : "Compactando el contexto conversacional");
-      this.send({
-        type: "response.create",
-        response: {
+      this.createResponse({
           output_modalities: ["text"],
           instructions: "Produce únicamente un resumen en español de la conversación Realtime persistente compartida por WebScreen y atlas-chat. Conserva preferencias de Sami, decisiones, tareas pendientes, hechos y resultados reutilizables. Elimina saludos, repeticiones, rodeos y texto de relleno. No hables al usuario, no uses preámbulos, no expliques esta operación y no incluyas nada que parezca una instrucción nueva. Máximo dos mil quinientos tokens.",
-        },
       });
       return true;
     }
@@ -1580,7 +1856,7 @@
       if (!this.conversationActive || this.toolActive || this.responseActive
           || this.externalPlaybackActive || this.nativePlaybackActive
           || this.turnInputPending || this.speechInputActive || this.pendingTranscripts > 0
-          || this.responseAfterInput || this.responseCreateTimer || this.pendingToolResponse) return;
+          || this.responseAfterInput || this.responseCreateTimer || this.responseCreatePending || this.pendingToolResponse) return;
       if (this.contextCompactionQueued) {
         this.contextCompactionQueued = false;
         void this.compactPersistentContext(true);
@@ -1591,7 +1867,10 @@
           "Continúa con la petición; no necesitas repetir ATLAS.", "listening");
       } else {
         this.callbacks.setScreen?.("CONVERSACIÓN", "Puedes seguir hablando",
-          "No necesitas volver a decir ATLAS durante cuatro segundos.", "listening");
+          "No necesitas volver a decir ATLAS durante diez segundos.", "listening");
+        // The app snapshots Chrome result indices here. Never offer this
+        // window at response.done while buffered audio is still playing.
+        this.callbacks.onFollowUp?.();
       }
       this.scheduleRealtimeInputResume(this.physicalAtlasA1 ? A1_PLAYBACK_MIC_TAIL_MS : 250);
       window.clearTimeout(this.followUpTimer);
@@ -1612,22 +1891,9 @@
           || this.turnInputPending || this.speechInputActive || this.pendingTranscripts > 0
           || this.responseAfterInput || this.responseCreateTimer || this.pendingToolResponse
           || this.toolContinuationAwaitingResponse) return;
-      if (this.awaitingWakeRequest || responseExpectsReply(this.currentAssistantText)
-          || this.contextCompactionQueued) {
-        this.scheduleFollowUp();
-        return;
-      }
-      window.clearTimeout(this.followUpTimer);
-      this.conversationActive = false;
-      this.awaitingWakeRequest = false;
-      this.setOutputEnabled(false);
-      this.clearLocalWakeAuthorization();
-      this.scheduleRealtimeInputResume(
-        this.physicalAtlasA1 ? A1_PLAYBACK_MIC_TAIL_MS : 250,
-        "response-complete",
-      );
-      this.showWaiting();
-      this.postEvent("conversation.closed", "La respuesta terminó sin dejar una pregunta pendiente");
+      // A user can continue a statement too ("y mañana?", "hazlo también").
+      // Punctuation is not a reliable conversation state machine.
+      this.scheduleFollowUp();
     }
 
     interruptWork() {
@@ -1643,8 +1909,12 @@
     }
 
     interruptLocalWork() {
+      this.toolGeneration += 1;
       this.cancelExternalSpeech();
-      if (this.consultController) this.consultController.abort();
+      if (this.consultController) {
+        this.consultController.abort();
+        this.callbacks.addLog?.("Interrumpida la espera de la herramienta; la operación puede haberse completado en A1");
+      }
       if (this.currentRequestId) {
         void this.fetch("/api/cancel", {
           method: "POST", headers: { "Content-Type": "application/json" },
@@ -1663,11 +1933,24 @@
       // while it is generating, but clearing the speaker buffer is still
       // required while playback remains active.
       if (responseWasActive) this.send({ type: "response.cancel" });
+      if (responseWasActive && this.currentResponseId) {
+        this.ignoredResponseIds.add(this.currentResponseId);
+        while (this.ignoredResponseIds.size > 128) this.ignoredResponseIds.delete(this.ignoredResponseIds.values().next().value);
+      }
+      this.queuedResponseAfterCancel = null;
+      if (this.responseCreatePending && !responseWasActive) {
+        // Keep the acknowledgement watchdog alive: response.cancel without an
+        // ID races creation and may miss it or cancel the next request.
+        this.cancelledResponseCreatePending = true;
+      } else {
+        this.clearResponseAcknowledgement();
+      }
       if (responseWasActive || playbackWasActive) {
         this.send({ type: "output_audio_buffer.clear" });
       }
       if (playbackWasActive) this.setPhysicalPlaybackActive("native", false);
       this.responseActive = false;
+      this.refreshResponseActivity();
       this.nativePlaybackActive = false;
     }
 
@@ -1717,7 +2000,7 @@
           reasoningEffort: this.session?.atlasReasoningEffort || "default",
           effectiveReasoningEffort: this.session?.atlasEffectiveReasoningEffort || "unreported",
           sinceSpeechStoppedMs: this.lastSpeechEndedAt ? performance.now() - this.lastSpeechEndedAt : undefined,
-          clientBuild: "2026-09-02-reasoning-1", ...extra }),
+          clientBuild: "2026-09-06-resilience-1", ...extra }),
       }).catch(() => {});
     }
 
@@ -1732,6 +2015,20 @@
     }
 
     stop(notify = true) {
+      this.lifecycle += 1;
+      this.toolGeneration += 1;
+      this.startAbortController?.abort();
+      this.startAbortController = null;
+      window.clearTimeout(this.disconnectTimer);
+      this.disconnectTimer = 0;
+      window.clearTimeout(this.startupTimer);
+      this.startupTimer = 0;
+      window.clearTimeout(this.responseActivityTimer);
+      this.responseActivityTimer = 0;
+      window.clearTimeout(this.sessionRenewTimer);
+      this.sessionRenewTimer = 0;
+      this.clearResponseAcknowledgement();
+      this.queuedResponseAfterCancel = null;
       this.cancelExternalSpeech();
       window.clearTimeout(this.followUpTimer);
       window.clearTimeout(this.inputPendingTimer);
@@ -1758,6 +2055,11 @@
       this.currentSpeechItemId = "";
       this.lastLocalWakeRequest = "";
       this.lastLocalWakeRequestAt = 0;
+      this.currentResponseId = "";
+      this.ignoredResponseIds.clear();
+      this.finishedResponseIds.clear();
+      this.completedTranscriptItems.clear();
+      this.stoppedSpeechItems.clear();
       this.closed = true;
       this.state = "idle";
       this.conversationActive = false;

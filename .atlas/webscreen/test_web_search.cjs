@@ -44,7 +44,7 @@ test('Tavily tool calls the dedicated backend and returns evidence to Realtime',
   }, callbacks: {} });
   controller.closed = false;
   controller.state = 'ready';
-  controller.channel = { readyState: 'open', send: value => sent.push(JSON.parse(value)) };
+  controller.channel = { readyState: 'open', send: value => sent.push(JSON.parse(value)), close() {} };
   await controller.handleTool({
     name: 'atlas_web_search', call_id: 'call-web-1',
     arguments: JSON.stringify({ query: 'actualidad de OpenAI', max_results: 3 }),
@@ -56,4 +56,5 @@ test('Tavily tool calls the dedicated backend and returns evidence to Realtime',
   assert.equal(output.item.type, 'function_call_output');
   assert.equal(JSON.parse(output.item.output).provider, 'tavily');
   assert.equal(sent.at(-1).type, 'response.create');
+  controller.stop(false);
 });

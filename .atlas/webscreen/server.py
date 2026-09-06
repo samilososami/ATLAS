@@ -280,13 +280,16 @@ class PersistentGatewayBridge:
                 ).start()
         if not self.ready.wait(timeout):
             detail = self.last_error or "el Gateway no confirmó la conexión"
-            self.stop()
+            self.stop(expected_process=process)
             raise RuntimeError(f"No se pudo iniciar el bridge persistente: {detail}")
 
     def _reader(self, process: subprocess.Popen[str]) -> None:
         assert process.stdout is not None
         try:
             for raw_line in process.stdout:
+                with self.lock:
+                    if self.process is not process:
+                        break
                 try:
                     event = json.loads(raw_line)
                 except json.JSONDecodeError:
@@ -303,19 +306,28 @@ class PersistentGatewayBridge:
                     self.ready.set()
                 elif event.get("type") in {"bridge_error", "bridge_status"}:
                     self.last_error = str(event.get("message") or event.get("state") or "")
+                    if event.get("state") in {"disconnected", "connect_error", "reconnect_paused"}:
+                        self.ready.clear()
         finally:
             if process.poll() is None:
-                process.wait(timeout=2)
+                try:
+                    process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    pass
             failure = {
                 "type": "error",
                 "message": self.last_error or "El bridge persistente de OpenClaw se ha detenido",
             }
             with self.lock:
-                targets = list(self.pending.values())
-                self.pending.clear()
                 if self.process is process:
+                    targets = list(self.pending.values())
+                    self.pending.clear()
                     self.process = None
-                self.ready.clear()
+                    self.ready.clear()
+                else:
+                    # An old reader may finish after a replacement is ready.
+                    # Never clear the replacement's readiness or pending work.
+                    targets = []
             for target in targets:
                 target.put(failure)
 
@@ -325,8 +337,12 @@ class PersistentGatewayBridge:
             process = self.process
             if process is None or process.poll() is not None or process.stdin is None:
                 raise RuntimeError("El bridge persistente no está disponible")
-            process.stdin.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n")
-            process.stdin.flush()
+            try:
+                process.stdin.write(json.dumps(payload, ensure_ascii=False, separators=(",", ":")) + "\n")
+                process.stdin.flush()
+            except (BrokenPipeError, OSError) as error:
+                self.ready.clear()
+                raise RuntimeError("El bridge se desconectó al enviar la solicitud") from error
 
     def run(self, request: dict[str, Any], cancel_event: threading.Event) -> Any:
         bridge_request_id = uuid4().hex
@@ -436,11 +452,19 @@ class PersistentGatewayBridge:
                 "error": self.last_error or None,
             }
 
-    def stop(self) -> None:
+    def stop(self, expected_process: subprocess.Popen[str] | None = None) -> None:
         with self.lock:
+            if expected_process is not None and self.process is not expected_process:
+                return
             process = self.process
             self.process = None
             self.ready.clear()
+            pending = list(self.pending.values())
+            self.pending.clear()
+            stderr_file = self.stderr_file
+            self.stderr_file = None
+        for target in pending:
+            target.put({"type": "error", "message": "El bridge persistente se ha detenido"})
         if process is not None and process.poll() is None:
             try:
                 process.terminate()
@@ -450,12 +474,11 @@ class PersistentGatewayBridge:
                     process.kill()
                 except ProcessLookupError:
                     pass
-        if self.stderr_file is not None:
+        if stderr_file is not None:
             try:
-                self.stderr_file.close()
+                stderr_file.close()
             except OSError:
                 pass
-            self.stderr_file = None
 
 
 class SpeculativeStarter:
@@ -2422,8 +2445,29 @@ ACCESS = AccessControl(busy=access_backend_busy)
 
 
 class AtlasScreenHandler(SimpleHTTPRequestHandler):
-    server_version = "AtlasWebScreen/3.2"
+    server_version = "AtlasWebScreen/3.3"
     protocol_version = "HTTP/1.1"
+
+    def setup(self) -> None:
+        super().setup()
+        # HTTP/1.1 idle sockets must not keep a thread forever. This is a
+        # request-read timeout, not an execution deadline for Realtime tools.
+        self.connection.settimeout(15)
+
+    def handle(self) -> None:
+        try:
+            super().handle()
+        except (BrokenPipeError, ConnectionResetError):
+            # Closing a tab/network socket is not a backend exception.
+            self.close_connection = True
+
+    def handle_one_request(self) -> None:
+        self._request_active = False
+        super().handle_one_request()
+
+    def parse_request(self) -> bool:
+        self._request_active = True
+        return super().parse_request()
 
     def end_headers(self) -> None:
         self.send_header("Cache-Control", "no-store")
@@ -2438,6 +2482,8 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
         super().end_headers()
 
     def log_message(self, message_format: str, *args: object) -> None:
+        if message_format.startswith("Request timed out:") and not getattr(self, "_request_active", False):
+            return  # Normal idle keep-alive expiry, not an interrupted request.
         if getattr(self, "path", "") == "/api/access/heartbeat" and len(args) > 1 and str(args[1]) == "200":
             return
         print(f"[atlas-webscreen] {self.address_string()} - {message_format % args}")
@@ -2447,6 +2493,8 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(payload)))
+        if getattr(self, "close_connection", False):
+            self.send_header("Connection", "close")
         self.end_headers()
         try:
             self.wfile.write(payload)
@@ -2614,6 +2662,7 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
 
     def handle_controlled_post(self) -> None:
         if not LEGACY_PIPELINE_ENABLED and self.path in LEGACY_AGENT_API_PATHS:
+            self.close_connection = True  # The rejected request body is unread.
             self.send_json(410, {
                 "error": "El pipeline legacy de OpenClaw está desactivado; usa OpenAI Realtime",
                 "realtimeOnly": True,
@@ -2664,11 +2713,17 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
         try:
             content_length = int(self.headers.get("Content-Length", "0"))
         except ValueError as error:
+            self.close_connection = True
             raise ValueError("Longitud inválida") from error
         if content_length <= 0 or content_length > maximum:
+            self.close_connection = True
             raise ValueError("Solicitud vacía o demasiado grande")
         try:
-            payload = json.loads(self.rfile.read(content_length).decode("utf-8"))
+            raw = self.rfile.read(content_length)
+            if len(raw) != content_length:
+                self.close_connection = True
+                raise ValueError("Solicitud incompleta")
+            payload = json.loads(raw.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError) as error:
             raise ValueError("JSON inválido") from error
         if not isinstance(payload, dict):
@@ -2852,8 +2907,9 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
     def handle_realtime_session(self) -> None:
         try:
             payload = self.read_json_payload(maximum=4096)
-        except ValueError:
-            payload = {}
+        except ValueError as error:
+            self.send_json(400, {"error": str(error)})
+            return
         session_key, _, _ = current_session()
         settings = get_webscreen_settings()
         reasoning = str(payload.get("reasoningEffort", settings.get("realtimeReasoningEffort", "default"))).strip().lower()
@@ -2921,6 +2977,11 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
         self.send_json(200, {"stats": stats, "autoCompact": auto_compact})
 
     def handle_realtime_context_empty(self) -> None:
+        try:
+            self.read_json_payload(maximum=2048)
+        except ValueError as error:
+            self.send_json(400, {"error": str(error)})
+            return
         empty_persistent_context()
         _, stats = build_realtime_context()
         self.send_json(200, {"stats": stats, "restart": True})
@@ -3741,6 +3802,8 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
     def handle_cancel(self) -> None:
         try:
             length = min(int(self.headers.get("Content-Length", "0")), 2048)
+            if int(self.headers.get("Content-Length", "0")) > 2048:
+                self.close_connection = True
         except ValueError:
             length = 0
         request_id = None
@@ -3760,6 +3823,8 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
     def handle_client_event(self) -> None:
         try:
             length = min(int(self.headers.get("Content-Length", "0")), 8192)
+            if int(self.headers.get("Content-Length", "0")) > 8192:
+                self.close_connection = True
         except ValueError:
             length = 0
         if length <= 0:
@@ -3776,18 +3841,28 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
         self.send_json(200, {"saved": True, "log": str(path.relative_to(ROOT_DIR))})
 
 
+def maintain_gateway_connection(stop_event: threading.Event) -> None:
+    """Recover a stopped bridge without making health requests wait on it."""
+    while not stop_event.is_set():
+        if not BRIDGE.health().get("ready"):
+            try:
+                BRIDGE.start()
+            except RuntimeError:
+                pass  # health exposes the reason; keep the local UI available.
+        stop_event.wait(5)
+
+
 def main() -> None:
     RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
     load_whisper_model()
-    try:
-        BRIDGE.start()
-    except RuntimeError as error:
-        raise SystemExit(f"No se pudo preparar OpenClaw: {error}") from error
     handler = partial(AtlasScreenHandler, directory=str(STATIC_DIR))
     try:
         server = ThreadingHTTPServer((HOST, PORT), handler)
     except OSError as error:
         raise SystemExit(f"No se pudo iniciar ATLAS WebScreen en {HOST}:{PORT}: {error}") from error
+    bridge_stop = threading.Event()
+    threading.Thread(target=maintain_gateway_connection, args=(bridge_stop,),
+                     name="atlas-gateway-recovery", daemon=True).start()
     if LEGACY_PIPELINE_ENABLED:
         threading.Thread(
             target=resident_starter_worker,
@@ -3802,6 +3877,7 @@ def main() -> None:
     except KeyboardInterrupt:
         print("ATLAS WebScreen detenido.", flush=True)
     finally:
+        bridge_stop.set()
         RESIDENT_STARTERS.stop()
         BRIDGE.stop()
         server.server_close()

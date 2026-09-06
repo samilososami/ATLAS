@@ -68,12 +68,39 @@ const configuredSessions = new Map();
 let subscribedGlobally = false;
 let connected = false;
 let helloProtocol = null;
-let resolveConnected;
-let rejectConnected;
-let connectedPromise = new Promise((resolve, reject) => {
-  resolveConnected = resolve;
-  rejectConnected = reject;
-});
+const connectionWaiters = new Set();
+
+function waitForConnection(timeoutMs = 10000) {
+  if (connected) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    const waiter = { resolve, reject, timer: null };
+    waiter.timer = setTimeout(() => {
+      connectionWaiters.delete(waiter);
+      reject(new Error("El Gateway todavía no está conectado"));
+    }, timeoutMs);
+    connectionWaiters.add(waiter);
+  });
+}
+
+function settleConnectionWaiters(error = null) {
+  for (const waiter of connectionWaiters) {
+    clearTimeout(waiter.timer);
+    if (error) waiter.reject(error);
+    else waiter.resolve();
+  }
+  connectionWaiters.clear();
+}
+
+function disconnected(state, message) {
+  connected = false;
+  subscribedGlobally = false;
+  subscribedSessions.clear();
+  configuredSessions.clear();
+  emit({ type: "bridge_status", state, message });
+  const error = new Error("Gateway desconectado");
+  settleConnectionWaiters(error);
+  for (const run of new Set(runsById.values())) failRun(run, error);
+}
 
 function requestEvent(state, payload) {
   emit({ bridgeRequestId: state.bridgeRequestId, ...payload });
@@ -180,21 +207,17 @@ const client = new GatewayClient({
   onHelloOk: async (hello) => {
     connected = true;
     helloProtocol = hello.protocol;
-    resolveConnected(hello);
+    settleConnectionWaiters();
     emit({ type: "bridge_ready", protocol: hello.protocol });
   },
   onConnectError: (error) => {
-    if (!connected) rejectConnected(error);
-    emit({ type: "bridge_status", state: "connect_error", message: String(error?.message || error) });
+    // There may be no request awaiting a connection. Rejecting a global idle
+    // promise here used to crash Node on a transient Gateway restart.
+    disconnected("connect_error", String(error?.message || error));
   },
+  onClose: () => disconnected("disconnected", "Gateway desconectado; reconectando"),
   onReconnectPaused: (info) => {
-    connected = false;
-    emit({ type: "bridge_status", state: "reconnect_paused", message: info?.detailCode || "gateway reconnect paused" });
-    for (const state of new Set(runsById.values())) failRun(state, new Error("Gateway desconectado"));
-    connectedPromise = new Promise((resolve, reject) => {
-      resolveConnected = resolve;
-      rejectConnected = reject;
-    });
+    disconnected("reconnect_paused", info?.detailCode || "gateway reconnect paused");
   },
 });
 
@@ -255,7 +278,7 @@ async function startRun(request) {
   if (!request.bridgeRequestId || !request.sessionKey || !request.message?.trim()) {
     throw new Error("invalid run request");
   }
-  await connectedPromise;
+  await waitForConnection();
   await ensureSession(request);
   const localRunId = randomUUID();
   const state = {
@@ -310,7 +333,7 @@ async function injectMessage(request) {
   if (!request.bridgeRequestId || !request.sessionKey || !request.message?.trim()) {
     throw new Error("invalid inject request");
   }
-  await connectedPromise;
+  await waitForConnection();
   await ensureSession(request);
   const result = await client.request("chat.inject", {
     sessionKey: request.sessionKey,
@@ -329,7 +352,7 @@ async function createTalkSession(request) {
   if (!request.bridgeRequestId || !request.params || typeof request.params !== "object") {
     throw new Error("invalid talk session request");
   }
-  await connectedPromise;
+  await waitForConnection();
   const session = await client.request("talk.client.create", request.params);
   emit({ bridgeRequestId: request.bridgeRequestId, type: "talk_session", session });
 }
@@ -340,7 +363,7 @@ async function handleCommand(request) {
     else if (request.command === "cancel") await cancelRun(request);
     else if (request.command === "inject") await injectMessage(request);
     else if (request.command === "usage") {
-      await connectedPromise;
+      await waitForConnection();
       const summary = await client.request("usage.status", {});
       emit({ bridgeRequestId: request.bridgeRequestId, type: "usage", summary });
     }
@@ -365,6 +388,7 @@ input.on("line", (line) => {
 
 async function shutdown() {
   input.close();
+  settleConnectionWaiters(new Error("Bridge detenido"));
   for (const state of new Set(runsById.values())) failRun(state, new Error("Bridge detenido"));
   try { await client.stopAndWait({ timeoutMs: 2000 }); } catch {}
   process.exit(0);

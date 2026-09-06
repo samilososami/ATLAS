@@ -17,8 +17,8 @@ micrófono, TTS ni interfaz web. Su manual operativo está en
 
 1. El backend solicita una reserva WebRTC efímera para `gpt-realtime-2.1` usando el OAuth ya configurado en la Pi. OpenClaw actúa aquí solo como broker de autenticación: ninguno de sus agentes procesa la conversación. El parámetro protocolario `brain: agent-consult` es el único perfil admitido por `talk.client.create`; no activa el agente legacy. El navegador configura después `atlas_shell` y `atlas_web_search` como herramientas del modelo. Nunca recibe el token persistente ni una API key.
 2. OpenAI Realtime recibe y transcribe el audio, decide el turno y puede generar directamente una de las voces nativas `ash`, `cedar`, `marin` o `verse`. El selector también admite ElevenLabs y la voz del navegador; en esos modos Realtime devuelve texto y WebScreen lo entrega al TTS elegido. ElevenLabs usa `eleven_v3` y transmite `MP3 44,1 kHz / 128 kbps`, la máxima calidad de salida del plan Free, directamente hacia el elemento de audio de Chrome: ya no espera un MP3 completo codificado en Base64. Cambiar la salida guarda el ajuste y crea una sesión WebRTC nueva.
-3. Solo Chrome activa la conversación al reconocer la palabra exacta `ATLAS`, en cualquier posición y también en resultados provisionales. No se exige silencio previo, posición inicial, puntuación acústica ni confirmación de Realtime. En el A1 la petición inicial recogida por Chrome se envía como texto a Realtime; su transcripción de audio alternativa se descarta por identificador de turno para que no la sustituya ni duplique. Se mantiene únicamente el bloqueo del micrófono del A1 durante reproducción y los 200 ms posteriores.
-4. Una pregunta final abre cuatro segundos de continuación sin repetir la wake word. Los navegadores remotos conservan sus interrupciones naturales. En el A1 las interrupciones están temporalmente desactivadas durante la voz: se cierran el micrófono y el detector local y se reabren 200 ms después de finalizar la reproducción.
+3. Solo Chrome activa la conversación al reconocer la palabra exacta `ATLAS`, en cualquier posición y también en resultados provisionales. No se exige silencio previo, posición inicial, puntuación acústica ni confirmación de Realtime. En el A1 y en navegadores remotos la petición recogida por Chrome se envía como texto a Realtime; su transcripción de audio alternativa se descarta por identificador de turno para que no la sustituya ni duplique. Se mantiene el bloqueo del micrófono del A1 durante reproducción y los 200 ms posteriores. Una transcripción auxiliar fallida no debe perder una petición que Chrome ya ha reconocido.
+4. Cada respuesta abre diez segundos de continuación sin repetir la wake word, contados desde el final de reproducción real, termine o no en pregunta. Chrome captura también la continuación, ignorando resultados anteriores. Los navegadores remotos conservan sus interrupciones naturales. En el A1 las interrupciones están temporalmente desactivadas durante la voz: se cierran el micrófono y el detector local y se reabren 200 ms después de finalizar la reproducción.
 5. OpenAI Realtime responde directamente. Usa `atlas_shell` para consultar archivos, red y estado real o ejecutar acciones, y `atlas_web_search` para información externa o reciente. La segunda herramienta lee en tiempo de ejecución la clave privada del plugin Tavily de OpenClaw y la usa solo en el backend; no la copia al repositorio, al navegador, al contexto ni a los logs. Las búsquedas normales usan profundidad `basic` y hasta cinco fuentes para priorizar latencia y consumo. El backend rechaza de forma permanente cualquier `rm` que combine borrado recursivo y forzado, además de `--no-preserve-root`, con independencia de lo que solicite o genere el modelo. En esta etapa no deriva el turno a Luna.
    Si la sesión WebRTC falla, WebScreen reintenta Realtime con espera progresiva; nunca cambia automáticamente al pipeline legacy de OpenClaw ni reactiva sus preámbulos.
 6. La sesión recibe `REALTIME_INSTRUCTIONS.md`, todos los Markdown del workspace salvo los episodios de `memory/`, los reportes actuales de dispositivos en `.atlas/adb/devices/` y el contexto conversacional Realtime compartido con las sesiones normales de `atlas-chat`. `AGENTS.md` sigue siendo el mapa para localizar contexto adicional y `NOTES.md` funciona como cuaderno operativo compacto.
@@ -34,9 +34,10 @@ laboratorio conservan ambos motores también para comparación y depuración.
 
 - Chrome conserva una hipótesis por índice de resultado: las correcciones sustituyen al borrador y los índices distintos conservan los fragmentos sucesivos. Los resultados idénticos no reinician la espera.
 - En el A1, el cierre aprovecha el silencio ya confirmado por VAD, sin cambiar su umbral ni sus 500 ms. Espera al menos 80 ms desde ese evento y comprueba que el texto lleve estable 100 ms si es final o 180 ms si es provisional. Sin confirmación de VAD, usa 400/700 ms respectivamente; nunca envía mientras VAD sigue indicando voz activa.
-- En clientes remotos, el tiempo que tarda la transcripción cuenta dentro del margen de continuación de 400 ms. Se conservan al menos 80 ms desde la entrega del texto y se cancela el envío si llega más voz o quedan transcripciones pendientes.
+- El margen de agrupación tras VAD es de 180 ms (antes 400 ms); no se modifica el silencio de 500 ms del detector. Se conservan al menos 80 ms desde la entrega del texto y se cancela el envío si llega más voz o quedan transcripciones pendientes.
 - Las voces externas reciben frases completas o cláusulas largas conforme llega el texto. La cola es secuencial, no vuelve a leer el mensaje al llegar el texto final y espera a terminar el audio antes de continuar tras una herramienta. En el A1 el micrófono permanece cerrado entre fragmentos y vuelve a abrirse 200 ms después del último.
 - `tts.playback_started` se registra desde `SpeechSynthesisUtterance.start` o el evento `playing` del audio de ElevenLabs, no desde la petición de síntesis. `duration_ms` mide la espera desde que se encoló la frase; `sinceSpeechStoppedMs` mide desde el último fin de voz detectado por Realtime. No es una medición acústica del altavoz ni del final físico del habla. Los eventos incluyen reloj monotónico del cliente, salida seleccionada, voz efectiva, versión de cliente y el identificador de respuesta, además de la identificación A1/remoto del servidor.
+- Para voz nativa, `audio.playback_started` se registra desde `output_audio_buffer.started`; el primer texto sigue teniendo su evento independiente. Ninguno demuestra por sí solo que el altavoz físico sea audible. El objetivo de 1–3 s requiere comparar la misma voz, red, contexto y petición; las operaciones con herramientas se miden aparte.
 
 Verificación local sin consumir cuota: `node --test test_*.cjs` y
 `python3 -m unittest discover -p 'test_*.py'`. Las cifras de mejora real se
@@ -135,18 +136,31 @@ ATLAS A1**. Mientras `localhost/?kiosk=1` siga conectado, ese botón le entrega
 el control directamente a la pantalla de la Pi. No hace falta levantarse para
 pulsar **Tomar control** en el panel táctil durante las pruebas.
 
-La pestaña anterior detecta el cambio en un máximo aproximado de medio segundo,
+La pestaña anterior detecta el cambio normalmente en el siguiente heartbeat (aproximadamente 1,5–2 s con una red sana),
 detiene micrófono, reconocimiento, audio y cualquier trabajo activo, y pasa a
 mostrar la misma pantalla negra. La nueva pestaña puede activar su micrófono;
 se mantiene la sesión de OpenClaw. No se crean cuentas ni se reinicia la memoria.
 
 `access_control.py` mantiene un permiso aleatorio por página, solo en memoria.
-`static/access.js` renueva la conexión cada medio segundo. Cerrar la pestaña
+`static/access.js` renueva la conexión cada 1,5 segundos, con reintentos acotados. Cerrar la pestaña
 libera el control; si desaparece sin avisar, su permiso caduca a los veinte
 segundos. El cliente se detiene si pasa ocho segundos sin confirmar el acceso.
 Una toma de control o una activación remota del A1 cancela el trabajo activo del propietario anterior. Una
 recarga crea un permiso nuevo y puede recuperar el control con el mismo botón.
 Tras actualizar WebScreen hay que recargar las pestañas antiguas.
+
+Una pérdida breve de heartbeat conserva el audio y la sesión dentro de esos ocho segundos. Un `401` invalida el token incluso si falla la lectura del cuerpo HTTP y vuelve a registrar la página; un `423` retira el control inmediatamente. Las respuestas antiguas y la vuelta desde la caché de navegación no pueden resucitar permisos caducados.
+
+### Recuperación de conexiones
+
+- Una interrupción ICE transitoria dispone de ocho segundos para recuperar el mismo peer; un fallo definitivo se reconecta con espera progresiva.
+- La apertura completa tiene un límite de 25 s; un permiso de micrófono concedido tarde no reactiva una sesión antigua.
+- Se detecta una petición sin confirmación en 12 s o una respuesta sin progreso en 30 s. Una herramienta activa conserva su propio plazo. La recuperación nunca reenvía automáticamente una acción cuyo resultado sea incierto.
+- Las sesiones libres se renuevan a los 50 minutos, antes de alcanzar el máximo de duración del proveedor.
+- El backend HTTP sigue accesible mientras vuelve el Gateway; las peticiones pendientes reciben un error explícito. El bridge recupera sus suscripciones sin dejar promesas rechazadas sin manejar.
+- Los cierres normales de pestañas y sockets HTTP ociosos no se presentan como fallos del sistema. Los errores reales sí siguen en logs.
+
+Despliegue acotado sobre una instalación existente: `sudo bash system/install-webscreen-resilience.sh --restart` desde el repositorio. Guarda respaldo de los ocho archivos cambiados; no sustituye ajustes, OAuth ni Markdown privados. Después hay que recargar las pestañas. Para audio y ADB existe un instalador independiente: [guía de conexiones](../../openclaw/workspace/ATLAS-CONNECTIONS.md), [audio](../../openclaw/workspace/atlas-commands/ATLAS-AUDIO.md) y [ADB](../../openclaw/workspace/ADB.md). No reiniciar toda la red o todos los servicios de audio como primer intento.
 
 El backend exige `X-Atlas-Client` para las operaciones de voz, texto, preámbulos,
 cancelación, ajustes, eventos y consulta de cuota. No basta con ocultar botones.

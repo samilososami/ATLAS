@@ -107,7 +107,7 @@ atlas-audio connect "JBL Speaker"
 
 ```bash
 atlas-audio connect "JBL Quantum910"
-atlas-audio connect 34:DF:2A:6E:01:D2
+atlas-audio connect AA:BB:CC:DD:EE:FF
 ```
 
 If the device is not paired yet, put it in pairing mode first and use:
@@ -190,12 +190,19 @@ atlas-audio restart
 
 ## Bluetooth troubleshooting
 
-`atlas-audio connect` repairs the common PulseAudio Bluetooth profile issue automatically:
+Known names resolve from BlueZ's records immediately, without a scan. Names
+must match exactly or have one unambiguous partial match. A quiet radio cannot
+hang discovery indefinitely: scans are bounded to 1–30 seconds and connections
+to 25 seconds per attempt (at most two). Pairing keeps its agent alive during
+the request and restores the previous pairable state afterwards.
 
-- installs/uses `pulseaudio-module-bluetooth` when available
-- loads `module-bluetooth-discover`
-- restarts the local audio stack when needed
-- waits for the `bluez_output...` sink before setting it as default
+`atlas-audio connect` waits for the target's `bluez_output...` sink before
+selecting it. A Bluetooth “connected” message alone is not proof of a playable
+audio route. It never restarts BlueZ, PipeWire or the browser to retry a profile
+error: those resets used to interrupt the live voice session and app pairing.
+`atlas-audio restart` remains an explicit disruptive repair, not a routine
+connection step. `disconnect` without a name affects only the current or sole
+connected audio device, not every Bluetooth device.
 
 If you see:
 
@@ -203,12 +210,32 @@ If you see:
 br-connection-profile-unavailable
 ```
 
-the Pi can see the device, but the audio profile was not available. Run:
+this can be a local missing A2DP endpoint, not a broken speaker pairing. Inspect:
 
 ```bash
-atlas-audio restart
-atlas-audio connect "device name"
+bluetoothctl show
+systemctl --user status wireplumber
+pactl list short sinks
 ```
+
+The local controller needs an **Audio Source** UUID to play to an A2DP speaker.
+On a headless A1, WirePlumber's logind seat monitor can suppress the entire
+Bluetooth monitor even when `libspa-0.2-bluetooth` is installed. The repository
+provides `system/config/wireplumber/51-atlas-headless-bluetooth.conf`, installed
+only for the A1 audio user, to disable `monitor.bluez.seat-monitoring` while
+leaving the rest of the audio policy unchanged.
+
+From the repository, install this configuration and bounded command fixes with
+`sudo system/install-device-connections.sh`. It makes a dated backup under
+`~/.atlas/backups/` and does not restart audio by default. During a maintenance
+window, `--restart-audio-manager` applies the setting with one WirePlumber
+restart; BlueZ, PipeWire and the browser stay running. It may briefly recreate
+audio devices, so do not apply it mid-conversation.
+
+After Audio Source is registered, retry only the requested saved speaker.
+If it still fails, check its selected Bluetooth input and whether another phone
+owns the speaker. Do not remove pairings or reset unrelated connections.
+Official explanation: [WirePlumber Bluetooth seat monitoring](https://pipewire.pages.freedesktop.org/wireplumber/daemon/configuration/bluetooth.html).
 
 If you see:
 
@@ -220,9 +247,11 @@ the device exists in Bluetooth history, but it is not answering. Put the speaker
 
 ```bash
 atlas-audio scan 10
-atlas-audio pair "device name"
 atlas-audio connect "device name"
 ```
+
+Re-pair only when authentication actually requires it. Device off/out of range
+or a page timeout does not imply that its saved pairing should be replaced.
 
 For the JBL Quantum headset seen on the local network, the device name is:
 

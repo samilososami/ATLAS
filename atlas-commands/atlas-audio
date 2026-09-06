@@ -39,7 +39,7 @@ Commands:
   devices [--all]                list known Bluetooth devices
   pair <name|mac>                pair, trust, and connect a Bluetooth speaker
   connect <name|mac>             connect a Bluetooth speaker and set it as default
-  disconnect [name|mac]          disconnect a Bluetooth device, default current/known speaker
+  disconnect [name|mac]          disconnect the selected/current Bluetooth audio device
   default <sink|name|mac>        set default audio output
   output-device-toggle           switch between connected Bluetooth audio and display HDMI
   volume <0-150>                 set default output volume percentage
@@ -101,7 +101,7 @@ ensure_bluetooth_audio_support() {
       echo "Installing PipeWire Bluetooth audio support..."
       sudo -n apt-get update >/dev/null
       sudo -n apt-get install -y libspa-0.2-bluetooth
-      restart_audio_stack
+      systemctl --user restart wireplumber.service
     fi
     return
   fi
@@ -109,16 +109,13 @@ ensure_bluetooth_audio_support() {
     echo "Installing PulseAudio Bluetooth audio module..."
     sudo -n apt-get update >/dev/null
     sudo -n apt-get install -y pulseaudio-module-bluetooth
-    restart_audio_stack
-    sudo -n systemctl restart bluetooth
-    sleep 1
   fi
   if ! pactl list short modules 2>/dev/null | grep -q 'module-bluetooth-discover'; then
     pactl load-module module-bluetooth-discover >/dev/null 2>&1 || true
   fi
   if ! pactl list short modules 2>/dev/null | grep -q 'module-bluez5-discover'; then
-    restart_audio_stack
-    pactl load-module module-bluetooth-discover >/dev/null 2>&1 || true
+    echo "PulseAudio Bluetooth profile is unavailable; inspect atlas-audio status before restarting audio." >&2
+    return 1
   fi
 }
 
@@ -160,62 +157,44 @@ discover_bt_for_query() {
   local seconds="${ATLAS_AUDIO_AUTODISCOVER_SECONDS:-12}"
   echo "Actively discovering \"$query\" for ${seconds}s..." >&2
   bt_power_on
-  QUERY="$query" SECONDS="$seconds" python3 - <<'PY'
+  QUERY="$query" ATLAS_AUDIO_DISCOVERY_DURATION="$seconds" python3 - <<'PY'
 import os
 import re
 import subprocess
 import sys
-import time
 
 query = " ".join(os.environ["QUERY"].strip().split()).casefold()
-seconds = int(os.environ.get("SECONDS", "12"))
+seconds = max(1, min(30, int(os.environ.get("ATLAS_AUDIO_DISCOVERY_DURATION", "12"))))
 mac_re = re.compile(r"([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}")
 query_is_mac = bool(mac_re.fullmatch(query))
 
 def norm(value):
     return " ".join(value.strip().split()).casefold()
 
-proc = subprocess.Popen(
-    ["bluetoothctl", "scan", "on"],
-    stdout=subprocess.PIPE,
-    stderr=subprocess.STDOUT,
-    text=True,
-    bufsize=1,
-)
-found = None
-deadline = time.time() + seconds
+# A blocking readline() never observes the deadline when a quiet radio stops
+# producing lines. Let bluetoothctl own its bounded scan and release only its
+# own discovery session on exit (do not globally switch scanning off).
 try:
-    while time.time() < deadline:
-        line = proc.stdout.readline() if proc.stdout else ""
-        if not line:
-            time.sleep(0.1)
-            continue
-        clean = re.sub(r"\x1b\[[0-9;]*m", "", line).strip()
-        match = re.search(r"Device\s+(([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2})\s+(.+)$", clean)
-        if not match:
-            continue
-        mac = match.group(1)
-        name = match.group(3).strip()
-        if (query_is_mac and mac.casefold() == query) or (not query_is_mac and (norm(name) == query or query in norm(name))):
-            found = mac
-            break
-finally:
-    try:
-        subprocess.run(["bluetoothctl", "scan", "off"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=3)
-    except Exception:
-        pass
-    try:
-        proc.terminate()
-        proc.wait(timeout=2)
-    except Exception:
-        try:
-            proc.kill()
-        except Exception:
-            pass
-
-if found:
-    print(found)
+    subprocess.run(["bluetoothctl", "--timeout", str(seconds), "scan", "on"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                   timeout=seconds + 2, check=False)
+    raw = subprocess.run(["bluetoothctl", "devices"], capture_output=True,
+                         text=True, timeout=4, check=False).stdout
+except (OSError, subprocess.TimeoutExpired):
+    sys.exit(1)
+rows = []
+for line in raw.splitlines():
+    parts = line.strip().split(" ", 2)
+    if len(parts) == 3 and parts[0] == "Device":
+        rows.append((parts[1], parts[2]))
+exact = [r for r in rows if (r[0].casefold() == query if query_is_mac else norm(r[1]) == query)]
+partial = [r for r in rows if not query_is_mac and query in norm(r[1])]
+matches = exact or partial
+if len(matches) == 1:
+    print(matches[0][0])
     sys.exit(0)
+if len(matches) > 1:
+    print("Ambiguous Bluetooth name; choose an exact name or MAC.", file=sys.stderr)
 sys.exit(1)
 PY
 }
@@ -357,16 +336,23 @@ PY
 resolve_bt_device() {
   local query="${1:-}"
   local allow_discover="${2:-1}"
+  local resolved="" rc=0
   [ -n "$query" ] || return 1
   if [[ "$query" =~ ^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$ ]]; then
     printf '%s\n' "$query"
     return 0
   fi
-  resolved="$(bluetoothctl devices | QUERY="$query" python3 - <<'PY'
-import os, sys
+  resolved="$(QUERY="$query" python3 - <<'PY'
+import os, subprocess, sys
 q = " ".join(os.environ["QUERY"].strip().split()).casefold()
 rows = []
-for line in sys.stdin:
+try:
+    raw = subprocess.run(["bluetoothctl", "devices"], capture_output=True,
+                         text=True, timeout=4, check=True).stdout
+except (OSError, subprocess.SubprocessError):
+    print("Cannot query the Bluetooth controller.", file=sys.stderr)
+    sys.exit(2)
+for line in raw.splitlines():
     parts = line.strip().split(" ", 2)
     if len(parts) >= 3 and parts[0] == "Device":
         mac, name = parts[1], parts[2]
@@ -381,9 +367,13 @@ if partial:
     print("ambiguous Bluetooth device name. Matches:", file=sys.stderr)
     for mac, name in partial:
         print(f"  - {mac} {name}", file=sys.stderr)
+    sys.exit(2)
 sys.exit(1)
 PY
-)" && { printf '%s\n' "$resolved"; return 0; }
+)" && { printf '%s\n' "$resolved"; return 0; } || rc=$?
+  # Ambiguity/controller errors are not permission to pick the first device
+  # that happens to advertise during another scan.
+  [ "$rc" -ne 2 ] || return 2
   if [ "$allow_discover" = "1" ]; then
     if discovered="$(discover_bt_for_query "$query")"; then
       printf '%s\n' "$discovered"
@@ -400,14 +390,14 @@ pair_bt_device() {
   local mac="$1"
   local output=""
   local rc=1
-  output="$(bluetoothctl pair "$mac" 2>&1)" && rc=0 || rc=$?
+  output="$(timeout 35 bluetoothctl --agent NoInputNoOutput pair "$mac" 2>&1)" && rc=0 || rc=$?
   printf '%s\n' "$output"
   if [ "$rc" -eq 0 ]; then
     return 0
   fi
   if printf '%s' "$output" | grep -Eqi 'not available|not found|does not exist'; then
     discover_bt_for_query "$mac" >/dev/null || true
-    output="$(bluetoothctl pair "$mac" 2>&1)" && rc=0 || rc=$?
+    output="$(timeout 35 bluetoothctl --agent NoInputNoOutput pair "$mac" 2>&1)" && rc=0 || rc=$?
     printf '%s\n' "$output"
   fi
   return "$rc"
@@ -416,7 +406,7 @@ pair_bt_device() {
 sink_for_bt_mac() {
   local mac="$1"
   local underscored="${mac//:/_}"
-  pactl list short sinks | awk -v m="$underscored" 'index($2, m) { print $2; exit }'
+  pactl list short sinks | awk -v m="$underscored" 'index(tolower($2), tolower(m)) { print $2; exit }'
 }
 
 wait_for_bt_sink() {
@@ -438,8 +428,11 @@ explain_connect_failure() {
   local mac="$2"
   if printf '%s' "$output" | grep -q 'br-connection-profile-unavailable'; then
     cat >&2 <<EOF
-The device is paired, but its A2DP audio profile is not currently available.
-Select the Bluetooth input/pairing mode on the speaker, disconnect it from any other phone, and try again:
+The A2DP audio profile is unavailable. Check the local controller's Audio Source
+UUID with bluetoothctl show and the user WirePlumber service first. On a headless
+A1, install the repository's system/install-device-connections.sh configuration.
+If the local profile exists, select Bluetooth input on the speaker and check
+whether it is connected to another phone. Then retry this same device:
   atlas-audio connect $mac
 EOF
   elif printf '%s' "$output" | grep -q 'br-connection-page-timeout'; then
@@ -463,33 +456,19 @@ connect_bt_device() {
   local mac="$1"
   local output=""
   local rc=1
-  local audio_restarted=0
   ensure_bluetooth_audio_support
   bluetoothctl trust "$mac" >/dev/null 2>&1 || true
-  for attempt in 1 2 3; do
-    output="$(bluetoothctl connect "$mac" 2>&1)" && rc=0 || rc=$?
+  for attempt in 1 2; do
+    output="$(timeout 25 bluetoothctl connect "$mac" 2>&1)" && rc=0 || rc=$?
     printf '%s\n' "$output"
     if [ "$rc" -eq 0 ]; then
-      [ "$audio_restarted" -eq 0 ] || refresh_kiosk_audio_client
       return 0
     fi
     if printf '%s' "$output" | grep -q 'br-connection-profile-unavailable'; then
-      # A paired speaker can be remembered by BlueZ while powered off, on a
-      # different input, or connected elsewhere.  Do not destroy the live
-      # Chrome audio session unless the device is actually visible now.
-      if ! discover_bt_for_query "$mac" >/dev/null; then
-        break
-      fi
-      # BlueZ publishes the device first; the user audio session must start
-      # afterwards so WirePlumber/PulseAudio can register fresh A2DP endpoints.
-      # Restarting bluetooth after the audio stack removes those endpoints and
-      # makes every immediate retry fail with profile-unavailable again.
-      sudo -n systemctl restart bluetooth
-      sleep 1
-      bt_power_on
-      restart_audio_stack
-      audio_restarted=1
-      ensure_bluetooth_audio_support
+      # Rebooting BlueZ/PipeWire here broke the unrelated live Chrome capture
+      # stream and BLE companion pairing. A profile error needs a diagnosis,
+      # not a global audio/session reset on every attempted connection.
+      break
     elif printf '%s' "$output" | grep -q 'br-connection-page-timeout'; then
       break
     elif printf '%s' "$output" | grep -Eqi 'not available|not found|does not exist'; then
@@ -498,7 +477,6 @@ connect_bt_device() {
       sleep 1
     fi
   done
-  [ "$audio_restarted" -eq 0 ] || refresh_kiosk_audio_client
   explain_connect_failure "$output" "$mac"
   return "$rc"
 }
@@ -514,12 +492,18 @@ resolve_sink() {
     sink="$(sink_for_bt_mac "$mac")"
     [ -n "$sink" ] && { printf '%s\n' "$sink"; return 0; }
   fi
-  pactl list sinks | QUERY="$query" python3 - <<'PY'
-import os, sys
+  QUERY="$query" python3 - <<'PY'
+import os, subprocess, sys
 q = " ".join(os.environ["QUERY"].strip().split()).casefold()
 items = []
 current = {"index": None, "name": None, "description": None}
-for line in sys.stdin:
+try:
+    raw = subprocess.run(["pactl", "list", "sinks"], capture_output=True,
+                         text=True, timeout=4, check=True).stdout
+except (OSError, subprocess.SubprocessError):
+    print("Cannot query audio outputs.", file=sys.stderr)
+    sys.exit(1)
+for line in raw.splitlines():
     stripped = line.strip()
     if stripped.startswith("Sink #"):
         if current["name"]:
@@ -568,6 +552,23 @@ connected_bluetooth_sinks() {
     sink="$(sink_for_bt_mac "$mac")"
     [ -n "$sink" ] && printf '%s\n' "$sink"
   done | awk '!seen[$0]++'
+}
+
+current_audio_mac() {
+  local current mac sink selected=""
+  local -a candidates=()
+  current="$(default_sink)"
+  while read -r mac; do
+    [ -n "$mac" ] || continue
+    sink="$(sink_for_bt_mac "$mac")"
+    [ -n "$sink" ] || continue
+    candidates+=("$mac")
+    [ "$sink" != "$current" ] || selected="$mac"
+  done < <(bluetoothctl devices Connected | awk '{print $2}')
+  if [ -n "$selected" ]; then printf '%s\n' "$selected"; return; fi
+  if [ "${#candidates[@]}" -eq 1 ]; then printf '%s\n' "${candidates[0]}"; return; fi
+  echo 'Select an exact audio device: atlas-audio disconnect <name|mac>' >&2
+  return 1
 }
 
 toggle_output_device() {
@@ -665,11 +666,9 @@ case "$cmd" in
     done
     bt_power_on
     echo "Scanning Bluetooth devices for ${secs}s..."
-    scan_log="$(mktemp)"
-    bluetoothctl --timeout "$secs" scan on >"$scan_log" 2>&1 || true
-    bluetoothctl scan off >/dev/null 2>&1 || true
+    (( secs >= 1 && secs <= 30 )) || { echo 'scan duration must be 1-30 seconds' >&2; exit 2; }
+    timeout "$((secs + 2))" bluetoothctl --timeout "$secs" scan on >/dev/null 2>&1 || true
     render_bt_devices "$show_all"
-    rm -f "$scan_log"
     ;;
   devices)
     show_all="0"
@@ -687,6 +686,8 @@ case "$cmd" in
     bt_power_on
     mac="$(resolve_bt_device "$*")"
     ensure_bluetooth_audio_support
+    was_pairable="$(bluetoothctl show | awk -F': ' '/Pairable:/ {print $2; exit}')"
+    trap 'if [ "${was_pairable:-yes}" = no ]; then bluetoothctl pairable off >/dev/null 2>&1 || true; fi' EXIT
     bluetoothctl pairable on >/dev/null 2>&1 || true
     pair_bt_device "$mac"
     bluetoothctl trust "$mac" >/dev/null 2>&1 || true
@@ -715,9 +716,8 @@ case "$cmd" in
       mac="$(resolve_bt_device "$*")"
       bluetoothctl disconnect "$mac"
     else
-      bluetoothctl devices Connected | awk '{print $2}' | while read -r mac; do
-        [ -n "$mac" ] && bluetoothctl disconnect "$mac" || true
-      done
+      mac="$(current_audio_mac)"
+      timeout 15 bluetoothctl disconnect "$mac"
     fi
     ;;
   default)

@@ -89,6 +89,19 @@ class AccessTests(unittest.TestCase):
         self.assertTrue(new['owner'])
         self.error(401, self.control.authorize, self.a)
 
+    def test_authorized_activity_renews_lease_without_reviving_expired_tokens(self):
+        self.now += 15
+        self.control.authorize(self.a)
+        self.now += 15
+        self.assertTrue(self.control.heartbeat(self.a)['owner'])
+        self.error(401, self.control.authorize, self.b)
+        self.now += 21
+        self.error(401, self.control.authorize, self.a)
+
+    def test_finish_cannot_make_inflight_negative(self):
+        self.control.finish()
+        self.assertEqual(self.control.inflight, 0)
+
     def test_concurrent_first_connections_have_one_owner(self):
         control = AccessControl()
         with concurrent.futures.ThreadPoolExecutor(max_workers=12) as pool:
@@ -162,6 +175,35 @@ class HTTPAccessTests(unittest.TestCase):
         self.assertEqual(self.request('/api/access/connect', extra={'X-Atlas-Access': ''})[0], 403)
         self.assertEqual(self.request('/api/resident/wait?phase=next', method='GET',
                                      extra={'Sec-Fetch-Site': 'same-origin'})[0], 403)
+
+    def test_context_empty_consumes_body_before_next_keepalive_request(self):
+        connection = http.client.HTTPConnection(*self.server.server_address, timeout=2)
+        headers = {'Content-Type': 'application/json', 'X-Atlas-Client': self.a}
+        with patch.object(app, 'empty_persistent_context') as empty, \
+             patch.object(app, 'build_realtime_context', return_value=('', {})):
+            connection.request('POST', '/api/realtime/context-empty', '{}', headers)
+            response = connection.getresponse()
+            self.assertEqual(response.status, 200)
+            response.read()
+            # Previously the unread {} prefixed this next request as {}GET.
+            connection.request('GET', '/api/settings', headers=headers)
+            response = connection.getresponse()
+            self.assertEqual(response.status, 200)
+            response.read()
+            empty.assert_called_once()
+        connection.close()
+
+    def test_oversized_json_closes_socket_without_executing(self):
+        connection = http.client.HTTPConnection(*self.server.server_address, timeout=2)
+        connection.request('POST', '/api/realtime/context-empty', 'x' * 3000,
+                           {'X-Atlas-Client': self.a})
+        with patch.object(app, 'empty_persistent_context') as empty:
+            response = connection.getresponse()
+            self.assertEqual(response.status, 400)
+            self.assertTrue(response.will_close)
+            response.read()
+            empty.assert_not_called()
+        connection.close()
 
 class WakeProfileTests(unittest.TestCase):
     def test_profile_names_are_bounded_and_safe(self):

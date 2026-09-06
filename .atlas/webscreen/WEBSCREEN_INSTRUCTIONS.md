@@ -1,5 +1,7 @@
 # ATLAS WebScreen — instrucciones del canal de voz
 
+> Archivo histórico del pipeline de OpenClaw y sus preámbulos. La conversación directa actual carga [`REALTIME_INSTRUCTIONS.md`](REALTIME_INSTRUCTIONS.md), no los contratos de delegación de este archivo. Se conservan los marcadores para el modo legacy desactivado y sus pruebas. Para conexiones y recuperación, consulta [`ATLAS-CONNECTIONS.md`](../../openclaw/workspace/ATLAS-CONNECTIONS.md).
+
 Este archivo contiene las instrucciones que WebScreen añade a cada turno de
 OpenClaw. Los comentarios `BEGIN` y `END` delimitan las secciones que lee el
 backend; no deben eliminarse. Los valores entre llaves dobles se sustituyen en

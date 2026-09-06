@@ -55,6 +55,12 @@ Narrate progress only when the request genuinely needs several stages, such as l
 
 The local `adb` wrapper behaves like the normal Android Debug Bridge, but a successful `adb connect` also launches a silent read-only inventory. A small systemd timer catches newly attached USB devices. Both paths call the same deterministic helper for generated facts; ATLAS owns only the persistent `# NOTES` section at the end of each record.
 
+Root calls use the same A1 user, keys and shared ADB server as normal calls;
+there is no separate root pairing identity. Since `adb connect` can return
+exit code zero while printing a failure, the wrapper verifies `get-state` is
+`device` before launching inventory. It never bypasses an `unauthorized`
+transport or automatically disconnects/restarts the server.
+
 Private records live in:
 
 ```text
@@ -105,5 +111,24 @@ Monitor the automatic detector with:
 systemctl status atlas-adb-monitor.timer
 journalctl -u atlas-adb-monitor.service
 ```
+
+The timer and manual checks share a nonblocking lock to avoid duplicate probes.
+ADB server errors preserve the last state; failed/timed-out inventories are
+retried on the next pass instead of being marked complete. Previously recorded
+devices remain context, not evidence of a current connection. The systemd unit
+allows only the private inventory directory and `.android` key directory to be
+written; the rest of the home directory stays read-only.
+
+Read-only triage: `adb devices -l`, followed by `adb -s SERIAL get-state` for the
+requested device. For `unauthorized`, ask for Android's approval/pairing; for
+`offline`, confirm the exact saved endpoint and reconnect only that endpoint.
+Do not run `adb kill-server`, disconnect every transport, or scan unrelated
+networks as an automatic repair. Reconnection is not proof an action succeeded:
+verify the requested device's response before saying it worked.
+
+Deploy the wrapper, inventory monitor and sandbox update from the repository
+with `sudo system/install-device-connections.sh` (dated backup, no ADB server
+restart). See `atlas-commands/ATLAS-AUDIO.md` for the companion Bluetooth audio
+fixes installed by the same helper; ADB and audio remain independent transports.
 
 Device records are private runtime state. Never commit addresses, MACs, serials or inventories to Git.

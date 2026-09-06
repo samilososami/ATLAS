@@ -25,3 +25,26 @@ Documenta aquí el entorno físico y de software de la instalación.
 - TTS:
 
 No incluyas credenciales, direcciones privadas innecesarias ni secretos.
+
+## Runtime relationships
+
+This is a public template, not a live hardware inventory. Fill the fields above
+only in the private installation and verify current state before reporting it.
+
+The current ATLAS interfaces are documented in
+[`ATLAS-CONNECTIONS.md`](ATLAS-CONNECTIONS.md). WebScreen's Python HTTP service,
+Gateway bridge, browser control lease, Realtime session and physical audio
+route have separate readiness states. `atlas-chat` shares the model, Markdown
+context and tools without using the microphone or speaker pipeline.
+
+On the A1 headless/kiosk setup, the normal audio user must retain WirePlumber
+Bluetooth endpoints even without an active graphical logind seat. The focused
+configuration and installer are covered by
+[`ATLAS-AUDIO.md`](atlas-commands/ATLAS-AUDIO.md). Do not substitute a global
+Bluetooth/PipeWire restart for that configuration. Screen-hidden mode must keep
+the voice session and audio path alive; see
+[`ATLAS-SCREEN.md`](atlas-commands/ATLAS-SCREEN.md).
+
+ADB uses the same authorised identity for normal and root entry points; the
+inventory timer is not a second agent and never automatically connects stale
+records. See [`ADB.md`](ADB.md) before testing a device.

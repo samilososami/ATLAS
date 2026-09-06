@@ -10,6 +10,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
 function client() {
   let now = 100, idle = true, suspended = 0;
   let reply = { owner: true, token: 'page-token' };
+  let replyStatus = 200, failure = null, bodyFailure = null;
   const calls = [], timers = [], events = new Map(), nodes = new Map();
   const node = id => {
     if (!nodes.has(id)) nodes.set(id, { events: {}, addEventListener(name, fn) { this.events[name] = fn; } });
@@ -21,11 +22,20 @@ function client() {
     performance: { now: () => now },
     document: { querySelector: node, addEventListener() {} },
     setInterval: (fn, delay) => timers.push({ fn, delay }),
-    fetch: async (url, options) => { calls.push({ url, options }); return { ok: true, status: 200, json: async () => reply }; },
+    fetch: async (url, options) => {
+      calls.push({ url, options });
+      if (failure) throw failure;
+      return { ok: replyStatus < 400, status: replyStatus, json: async () => {
+        if (bodyFailure) throw bodyFailure;
+        return reply;
+      } };
+    },
   });
   window.atlasAccess.bind({ isIdle: () => idle, suspend: () => suspended++, acquired() {} });
   return { window, node, calls, timers, events, get suspended() { return suspended; },
     setIdle: value => { idle = value; }, setReply: value => { reply = value; },
+    setStatus: value => { replyStatus = value; }, setFailure: value => { failure = value; },
+    setBodyFailure: value => { bodyFailure = value; },
     setTime: value => { now = value; } };
 }
 
@@ -35,6 +45,7 @@ test('loss of ownership hides controls, suspends audio/mic and rejects API calls
   await c.window.atlasAccess.fetch('/api/settings');
   assert.equal(c.calls.at(-1).options.headers.get('X-Atlas-Client'), 'page-token');
   c.setReply({ owner: false });
+  c.setTime(1700);
   c.timers.find(t => t.delay === 500).fn(); await tick();
   assert.equal(c.suspended, 1);
   assert.equal(c.node('#webscreen-content').hidden, true);
@@ -85,4 +96,39 @@ test('page close releases the lease with keepalive and no URL token', async () =
   assert.equal(c.suspended, 1);
   assert.equal(c.calls.at(-1).url, '/api/access/release');
   assert.equal(c.calls.at(-1).options.keepalive, true);
+});
+
+test('one lost heartbeat preserves ongoing audio; recovery clears stale failure', async () => {
+  const c = client(); await tick();
+  c.setTime(1700); c.setFailure(new TypeError('network lost'));
+  c.timers.find(t => t.delay === 500).fn(); await tick();
+  assert.equal(c.suspended, 0);
+  assert.equal(c.window.atlasAccess.hasControl(), true);
+  c.setTime(2500); c.setFailure(null);
+  c.timers.find(t => t.delay === 500).fn(); await tick();
+  assert.equal(c.suspended, 0);
+  assert.doesNotMatch(c.node('#access-detail').textContent, /Sin conexión/);
+});
+
+test('expired token recovers through connect even when 401 body cannot be read', async () => {
+  const c = client(); await tick();
+  c.setTime(1700); c.setStatus(401); c.setBodyFailure(new Error('broken response'));
+  c.timers.find(t => t.delay === 500).fn(); await tick();
+  assert.equal(c.suspended, 1);
+  c.setTime(2200); c.setStatus(200); c.setBodyFailure(null);
+  c.setReply({ owner: true, token: 'renewed-token' });
+  c.timers.find(t => t.delay === 500).fn(); await tick();
+  assert.equal(c.calls.at(-1).url, '/api/access/connect');
+  assert.equal(c.calls.at(-1).options.headers['X-Atlas-Client'], '');
+  assert.equal(c.window.atlasAccess.hasControl(), true);
+});
+
+test('heartbeat polling is bounded and page lifecycle reacquires instead of reusing lease', async () => {
+  const c = client(); await tick();
+  const heartbeat = c.timers.find(t => t.delay === 500).fn;
+  for (const time of [500, 1000, 1500]) { c.setTime(time); heartbeat(); await tick(); }
+  assert.equal(c.calls.length, 1);
+  c.events.get('pagehide')(); await tick();
+  c.events.get('pageshow')({ persisted: true }); await tick();
+  assert.equal(c.calls.at(-1).url, '/api/access/connect');
 });

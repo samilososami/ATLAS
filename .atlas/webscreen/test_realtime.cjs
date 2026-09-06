@@ -2,7 +2,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-const window = { setTimeout, clearTimeout };
+// Browser timers do not own the lifetime of this Node assertion harness.
+const window = { setTimeout(fn, ms) { const timer = setTimeout(fn, ms); timer.unref(); return timer; }, clearTimeout };
 let now = 0;
 const fakeAudio = {
   autoplay: false, playsInline: false, volume: 0, muted: false, paused: true,
@@ -121,7 +122,8 @@ assert.equal(strictSent.some(event => event.type === 'response.create'), false);
 strict.authorizeLocalWake('ATLAS, qué hora es');
 assert.equal(strictScreens.at(-1)[1], 'Te escucho');
 strict.handleUserTranscript({ item_id: 'real-atlas', transcript: 'ATLAS, qué hora es' });
-strict.flushResponseAfterInput();
+strict.queueLocalWakeRequest('qué hora es', true);
+strict.submitLocalWakeRequest();
 assert.equal(strictSent.filter(event => event.type === 'response.create').length, 1);
 
 // No fallback to Realtime wake detection if Chrome is unavailable. Chrome
@@ -150,6 +152,8 @@ split.state = 'ready';
 split.channel = { readyState: 'open', send: value => splitSent.push(JSON.parse(value)) };
 now = 10000;
 split.authorizeLocalWake('ATLAS');
+// Test the auxiliary VAD path independently of Chrome's preferred snapshot.
+split.clearLocalWakeFallback();
 split.beginSpeech();
 split.endSpeech();
 now = 10250;
@@ -526,8 +530,8 @@ fallback.stop(false);
   process.exitCode = 1;
 });
 
-// A statement closes the conversational window after playback; a genuine
-// question keeps the four-second follow-up available.
+// Both statements and questions keep a ten-second continuation window after
+// playback. Punctuation must never close a perfectly natural follow-up.
 const statementScreens = [];
 const statement = window.AtlasRealtime.create({ fetch: async () => ({ ok: true }),
   callbacks: { setScreen: (...args) => statementScreens.push(args) } });
@@ -537,8 +541,8 @@ statement.conversationActive = true;
 statement.responseFinalized = true;
 statement.currentAssistantText = 'La temperatura es de 48 grados.';
 statement.settleAfterResponse();
-assert.equal(statement.conversationActive, false);
-assert.equal(statementScreens.at(-1)[1], 'Esperando a ATLAS');
+assert.equal(statement.conversationActive, true);
+assert.equal(statementScreens.at(-1)[1], 'Puedes seguir hablando');
 statement.stop(false);
 
 const questionScreens = [];

@@ -54,7 +54,8 @@ The repository's `system/` directory mirrors supporting installation targets:
 - `etc/opt/chrome/` → `/etc/opt/chrome/`: managed Google Chrome policies.
 - `systemd/` → `/etc/systemd/system/`: service definitions, not automatic enablement.
 - `share/atlas/` → `/usr/local/share/atlas/`: Fastfetch/Neofetch ASCII assets and the RAFAS banner.
-- `config/` → each user's `.config/`: fetch-tool appearance.
+- `config/` → each user's `.config/`: fetch-tool appearance and the A1 audio
+  user's narrow headless WirePlumber Bluetooth policy.
 - `plymouth/atlas/` → `/usr/share/plymouth/themes/atlas/`: the native boot theme.
 
 The executable wrappers live in `atlas-commands/` and belong in
@@ -69,6 +70,14 @@ to `/usr/local/bin`, installs its runtime and terminal instruction layer under
 `/home/atlas/.atlas/chat`, reuses WebScreen's Python environment and safely
 adds any missing command-map references without replacing private workspace
 content.
+
+Install the focused Bluetooth/ADB reliability fixes with
+`sudo bash system/install-device-connections.sh`. It backs up the affected
+wrappers, inventory helpers, unit and per-user WirePlumber fragment before
+installation. It preserves device pairings/records and does not restart BlueZ,
+PipeWire, the browser or ADB. `--restart-audio-manager` optionally applies the
+new Bluetooth policy with one WirePlumber restart during maintenance; it can
+briefly recreate audio devices, so do not run it mid-conversation.
 
 The touch keyboard sources now live under `../misc/atlas-touch-type/`; install
 its two helpers into `/usr/local/libexec/` too. `../misc/rafas/` contains the
@@ -132,11 +141,15 @@ or reboot unit for at least 1.5 seconds.
 ## ADB and network inventory
 
 The `system/bin/adb` wrapper is installed as `/usr/local/bin/adb`, ahead of the
-real `/usr/bin/adb` for both `sami` and root. It forwards every argument and exit
-status unchanged. A successful network connection only adds one quiet action:
+real `/usr/bin/adb` for both `sami` and root. Root hands off to the same normal
+user and authorised keys; arguments and exit status are forwarded. A network
+connection verified as `device` only adds one quiet action:
 refreshing the matching private Markdown record through
 `atlas-adb-inventory`. `atlas-adb-monitor.timer` catches USB devices without
-requiring the agent to poll them itself.
+requiring the agent to poll them itself. A shared lock avoids duplicate passes,
+server errors preserve previous state, and failed inventories are retried rather
+than marked complete. The sandbox permits the private inventory and `.android`
+key directories, not arbitrary home-directory writes.
 
 `atlas-nmap-report.timer` refreshes `.atlas/nmap/REPORT.md` every ten
 minutes. Its automatic profile discovers hosts and checks the one hundred most
@@ -151,12 +164,24 @@ claiming the full startup sequence has been visually verified.
 
 ## WebScreen integration
 
-WebScreen uses Python and Node.js, the installed OpenClaw Gateway SDK and its
-configured model/provider. Install the local `webscreen/openclaw-plugin`
-with OpenClaw's plugin installer and enable `atlas-webscreen-runtime` for the
-hot listener. Authenticate OpenClaw locally; never copy another installation's
-OAuth session, Gateway pairing or API keys. The bridge needs the documented
-operator scopes and device approval on first connection.
+WebScreen uses Python and Node.js plus the installed OpenClaw Gateway SDK for
+the configured authentication/reservation path. The conversation itself runs
+directly on Realtime with Markdown context and explicit tools; it is not
+delegated to the OpenClaw `main` agent. `webscreen/openclaw-plugin` and the hot
+listener belong to the archived pipeline, not a service to enable as a repair.
+Authenticate OpenClaw locally; never copy another installation's OAuth session,
+Gateway pairing or API keys. The bridge needs the documented operator scopes
+and device approval on first connection.
+
+The HTTP service starts independently of Gateway readiness and exposes a
+nonblocking health snapshot while bridge recovery happens in the background.
+HTTP reachable does not mean Realtime is ready. Browser ownership is explicit;
+a transient lost heartbeat is not an immediate microphone takeover. Transport
+recovery uses bounded waits and never replays a possibly executed action.
+
+See [`webscreen/README.md`](webscreen/README.md) for implementation details and
+[`ATLAS-CONNECTIONS.md`](../openclaw/workspace/ATLAS-CONNECTIONS.md) for the
+cross-component map, exact recovery timers, diagnosis and validation boundaries.
 
 The current HTTP interface has privileged agent access and no browser login.
 Use it only on a trusted network. Do not expose port 5000 publicly. The terminal

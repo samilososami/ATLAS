@@ -16,6 +16,7 @@ Este directorio contiene la base de contexto que convierte una instalación de O
 - `HEARTBEAT.md`: template para comprobaciones periódicas.
 - `VARIABLES.md`: constantes no secretas de cada instalación.
 - `ADB.md`: reglas de conexión, inventario automático y control de dispositivos Android autorizados.
+- [`ATLAS-CONNECTIONS.md`](ATLAS-CONNECTIONS.md): mapa de diagnóstico de WebScreen, voz, permisos de página, audio Bluetooth y ADB; relaciona implementación, manuales y despliegues acotados.
 - `NMAP.md`: descubrimiento acotado de red y uso del informe privado automático.
 - `atlas-commands/`: documentación actual de cada comando para el agente,
   incluido `ATLAS-CHAT.md` para el cliente Realtime de terminal.

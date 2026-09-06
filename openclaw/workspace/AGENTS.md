@@ -145,6 +145,11 @@ preamble and direct-answer rules; edit those sections instead of hiding prompts
 in Python. The repository's main README introduces ATLAS, and
 `atlas-commands/README.md` describes the executable wrappers for humans.
 This workspace's `README.md` explains which files are public templates.
+[`ATLAS-CONNECTIONS.md`](ATLAS-CONNECTIONS.md) maps connection ownership,
+Gateway/backend health, Realtime recovery, voice timing, Bluetooth audio and
+ADB to their source files, manuals and focused installers. Read it before
+restarting services to diagnose a connection problem: a reachable Pi, a ready
+model and working speakers are three different checks.
 `SECURITY.md` and `docs/ATLAS-OS-1.0.md` at the repository root cover publication
 safety and the existing image release. They are documentation, not live memory.
 
@@ -156,7 +161,7 @@ Skills provide your tools. When you need one, check its `SKILL.md`. Keep local n
 
 **Voice Storytelling:** If you have `sag` (ElevenLabs TTS), use voice for stories, movie summaries, and "storytime" moments! Way more engaging than walls of text. Surprise people with funny voices.
 
-**Audio is part of the system:** ATLAS can listen to audio and send audio when the proper pipeline is available. Do not default to "I can't listen" or "I can't send audio." First check what is configured. For incoming audio, transcribe it with Whisper or another configured STT path. On the Raspberry Pi setup, local Whisper is available for small Spanish audio. For outgoing audio, use ElevenLabs/sag when configured. If STT or TTS is missing, name the missing piece and offer the shortest setup route instead of explaining the whole theory.
+**Audio is part of the system:** ATLAS can listen and speak when the configured pipeline is available. Do not default to "I can't listen" or "I can't send audio." WebScreen uses direct Realtime for its current conversation, with Chrome validating the local wake word and the selected native/browser/ElevenLabs output path producing speech. Do not restart an archived Whisper/starter pipeline as an automatic fallback. Separate model output, browser playback and the physical default sink when diagnosing silence. `atlas-audio` handles that sink; `atlas-say` is the separate command for requested standalone speech. If a configured capability is missing, name the missing piece and the shortest setup route.
 
 **Act before explaining:** When sami asks for an outcome, inspect available tools, credentials, services, and docs before refusing or describing possibilities. If the capability exists, use it. If it is missing, offer to wire up the smallest practical path and ask only for what truly requires sami's action, such as login, consent, an API key, or a risky external decision.
 
@@ -184,6 +189,13 @@ diagnosis. Use `atlas-chat -p "..."` for one non-interactive turn and
 `atlas-chat --ephemeral -p "..."` when a benchmark must neither read nor alter
 the persistent conversation. It is an interactive client, not a service, so it
 does not belong in `atlas-status` service health.
+
+For connection problems, follow [`ATLAS-CONNECTIONS.md`](ATLAS-CONNECTIONS.md)
+and the relevant command manual. Inspect logs before repairs; preserve private
+pairings, keys and device notes. Never replay an interrupted action automatically
+after reconnecting: it may already have executed. A successful tool exit or
+first text token is not proof of audible speech, visible UI or a completed
+physical action. Measure the corresponding surface before claiming success.
 
 **Working areas:** Keep the main OpenClaw workspace clean. It holds memory, identity, docs, and project context. Do not dump temporary files or throwaway generated projects there.
 

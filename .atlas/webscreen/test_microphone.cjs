@@ -62,6 +62,7 @@ function page({ hostname = 'localhost', search = '?kiosk=1', permission = 'grant
     isIdle: () => true, isOutputActive: () => false,
     setLocalWakeDetectorReady() {},
     queueLocalWakeRequest(text, final) { wakeRequests.push({ text, final }); },
+    beginLocalFollowUp() { this.awaitingWakeRequest = true; this.localWakeRequestPending = true; return true; },
     authorizeLocalWake(text) {
       wakeCalls.push(text);
       if (this.acceptWake) {
@@ -93,6 +94,11 @@ function page({ hostname = 'localhost', search = '?kiosk=1', permission = 'grant
   return { node, streams, recognizers, stream, realtimeMock, wakeCalls, wakeRequests,
     get requests() { return requests; }, get starts() { return starts; },
     acquire() { owner = true; adapter.acquired(); },
+    followUp() {
+      realtimeMock.awaitingWakeRequest = false;
+      realtimeMock.localWakeRequestPending = false;
+      realtimeCallbacks.onFollowUp();
+    },
     suspend() { owner = false; adapter.suspend(); },
     recognize(text, isFinal = false) {
       const result = { 0: { transcript: text }, length: 1, isFinal };
@@ -150,6 +156,28 @@ test('reasoning selector saves every level and resets the session, not the conte
   assert.equal(calls.length, 6);
   assert(calls.every(c => c.url === '/api/settings'));
   assert.equal(JSON.parse(calls.at(-1).options.body).realtimeReasoningEffort, 'default');
+});
+
+test('remote Chrome wake delivers the full request instead of depending on auxiliary transcription', async () => {
+  const p = page({ realtime: true, hostname: '192.168.1.142', search: '' });
+  p.acquire(); await p.initialize(); await tick(); p.flushTimers();
+  p.recognize('Atlas dime la hora', true);
+  assert.equal(p.wakeRequests.at(-1).text, 'dime la hora');
+});
+
+test('follow-up ignores old result revisions and accepts a fresh Chrome result without wake', async () => {
+  const p = page({ realtime: true });
+  p.acquire(); await p.initialize(); await tick(); p.flushTimers();
+  p.recognize('Atlas hola', true);
+  p.followUp();
+  const before = p.wakeRequests.length;
+  p.recognize('ruido antiguo', true);
+  assert.equal(p.wakeRequests.length, before);
+  p.recognizers[0].onresult({ resultIndex: 1, results: [
+    { 0: { transcript: 'Atlas hola' }, isFinal: true },
+    { 0: { transcript: 'y qué hora es' }, isFinal: true },
+  ] });
+  assert.equal(p.wakeRequests.at(-1).text, 'y qué hora es');
 });
 
 test('reasoning selector cannot interrupt an active answer or tool', async () => {

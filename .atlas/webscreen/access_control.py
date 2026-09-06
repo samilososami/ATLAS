@@ -115,6 +115,10 @@ class AccessControl:
             client = self._client(token)
             if self.owner != token:
                 raise AccessError(423, 'ATLAS está siendo utilizado por otro usuario.')
+            # Useful traffic is also proof of a live page. Do not expire an
+            # actively used lease just because its separate heartbeat was late.
+            # _client still rejects genuinely expired/released credentials.
+            client['seen'] = self.clock()
             if begin:
                 self.inflight += 1
                 client['idle'] = False
@@ -124,4 +128,4 @@ class AccessControl:
 
     def finish(self):
         with self.lock:
-            self.inflight -= 1
+            self.inflight = max(0, self.inflight - 1)

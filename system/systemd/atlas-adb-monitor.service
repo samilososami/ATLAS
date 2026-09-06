@@ -14,3 +14,4 @@ PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=read-only
 ReadWritePaths=/home/atlas/.atlas/adb
+ReadWritePaths=-/home/atlas/.android

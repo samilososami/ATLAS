@@ -74,14 +74,16 @@ Una sola pestaña controla WebScreen a la vez. Las demás muestran **Tomar contr
   presentación al terminal, permitiendo Markdown, rutas, cifras y unidades.
   Incluye sugerencias de comandos `/`, referencias a archivos `@`, entrada
   multilínea y herramientas compactas con `/expand` para consultar el detalle.
-- Chrome detecta la palabra exacta `Atlas`, también dentro de una frase, sin silencio previo ni veto semántico. En el A1, la petición inicial de Chrome se envía como texto a Realtime; el portátil también utiliza audio Realtime. `gpt-4o-mini-transcribe` aporta una transcripción auxiliar de los turnos de audio, no el razonamiento.
-- Solo en A1, el micrófono y el detector se bloquean durante la reproducción y 200 ms después. El resto de dispositivos conserva sus interrupciones naturales. La continuación cuando Atlas hace una pregunta es de cuatro segundos.
+- Chrome detecta la palabra exacta `Atlas`, también dentro de una frase, sin silencio previo ni veto semántico. En A1 y navegadores remotos, Chrome entrega la petición y las continuaciones como texto a Realtime, descartando duplicados de la transcripción auxiliar. `gpt-4o-mini-transcribe` aporta una transcripción auxiliar de los turnos de audio, no el razonamiento.
+- Solo en A1, el micrófono y el detector se bloquean durante la reproducción y 200 ms después. El resto de dispositivos conserva sus interrupciones naturales. Cada respuesta abre diez segundos de continuación, desde que termina la reproducción, sin obligar a repetir Atlas ni terminar en pregunta.
 - Se pueden elegir voces nativas de OpenAI, navegador o ElevenLabs, y esfuerzo Default, Minimal, Low, Medium, High y Xhigh, según admita el proveedor. Default omite el ajuste. Los resultados provisionales de Chrome se sustituyen al corregirse y el texto idéntico no reinicia la espera.
 - Las reservas WebRTC son efímeras. El OAuth persistente y las credenciales permanecen en la Raspberry Pi y no se entregan al navegador.
 - Cada interacción directa o delegada se registra en JSON Lines con tiempos, transcripción, modelo, voz, tool calls y resultado, sin incluir secretos.
 - Si Realtime o WebRTC fallan, se intenta reconectar sin cambiar silenciosamente al agente antiguo. Su código histórico está preservado en [`Backups/WebScreen/legacy-preamble-2026-08-29`](Backups/WebScreen/legacy-preamble-2026-08-29).
 
 OpenClaw sigue disponible en otros canales, pero el WebScreen actual recibe su contexto y actúa con herramientas directas de Realtime. Los ajustes experimentales de audio del A1 no se aplican al portátil.
+
+La recuperación distingue HTTP, permisos de página, Gateway, WebRTC y audio físico. Tolera pérdidas breves, renueva tokens caducados y detecta respuestas bloqueadas sin repetir acciones automáticamente. El [mapa de conexiones](openclaw/workspace/ATLAS-CONNECTIONS.md) enlaza los componentes, diagnósticos e instaladores. La [verificación de septiembre](docs/WEBSCREEN-RELIABILITY-2026-09-06.md) recoge pruebas, tiempos y límites de la validación.
 
 ### App Android · preview 0.1
 

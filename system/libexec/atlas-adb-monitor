@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import os
+import fcntl
 import pwd
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -20,6 +22,8 @@ def connected_devices() -> set[str]:
     completed = subprocess.run(
         [REAL_ADB, "devices"], check=False, capture_output=True, text=True, timeout=10
     )
+    if completed.returncode != 0 or "List of devices attached" not in completed.stdout:
+        raise RuntimeError("ADB server unavailable; preserving previous device state")
     devices: set[str] = set()
     for line in completed.stdout.replace("\r", "").splitlines()[1:]:
         serial, separator, state = line.partition("\t")
@@ -51,12 +55,45 @@ def save_state(devices: set[str]) -> None:
 
 
 def main() -> int:
-    current = connected_devices()
-    for serial in sorted(current - previous_devices()):
-        subprocess.run([INVENTORY, serial], check=False, timeout=45)
-    save_state(current)
-    return 0
+    ROOT.mkdir(parents=True, exist_ok=True)
+    # The timer and an interactive `adb devices` may arrive simultaneously.
+    # One inventory pass is enough; never multiply slow device probes.
+    with (ROOT / ".monitor.lock").open("a") as lock:
+        os.chmod(lock.name, 0o600)
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return 0
+        try:
+            current = connected_devices()
+        except (OSError, subprocess.TimeoutExpired, RuntimeError) as error:
+            print(f"ATLAS ADB monitor: {error}", file=sys.stderr)
+            return 1
+        previous = previous_devices()
+        recorded = current & previous
+        failed = False
+        for serial in sorted(current - previous):
+            try:
+                result = subprocess.run([INVENTORY, serial], check=False, timeout=90)
+                if result.returncode == 0:
+                    recorded.add(serial)
+                else:
+                    failed = True
+            except (OSError, subprocess.TimeoutExpired):
+                failed = True
+        # Failed inventories are not marked complete: retry next pass. Keep
+        # deterministic notes intact and do not auto-connect stale records.
+        save_state(recorded)
+        return 1 if failed else 0
 
 
 if __name__ == "__main__":
+    if os.geteuid() == 0:
+        try:
+            pwd.getpwnam("sami")
+        except KeyError:
+            pass
+        else:
+            os.execvp("runuser", ["runuser", "-u", "sami", "--", "env",
+                                 "HOME=/home/atlas", sys.argv[0], *sys.argv[1:]])
     raise SystemExit(main())

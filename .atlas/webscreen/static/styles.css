@@ -455,12 +455,6 @@ input { font: inherit; }
 .context-reset:not(:disabled):hover { border-color: var(--cyan); color: #fff; }
 .context-reset:disabled { cursor: wait; opacity: .56; }
 
-@media (max-width: 600px) {
-  .topbar { align-items: flex-start; min-height: 183px; }
-  .topbar-status { padding-top: 2px; }
-  .topbar-tools { top: 68px; width: 260px; }
-}
-
 .brand {
   font-size: 14px;
   font-weight: 700;
@@ -643,6 +637,24 @@ button:focus-visible { outline: 3px solid rgba(49, 215, 255, .45); outline-offse
   .transcription-paper { padding-top: 30px; }
   .record-fab { right: 18px; bottom: 18px; }
   .form-row { grid-template-columns: 1fr; gap: 8px; }
+}
+
+@media (max-width: 600px) {
+  /* Quota/context cards can grow with real values or an A1 handoff button.
+     Let them determine the header height instead of covering the voice UI. */
+  .topbar,
+  .topbar:has(.activate-a1-main:not([hidden])) {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 16px;
+    min-height: 0;
+    padding: 0 0 18px;
+  }
+  .topbar-status { min-height: 42px; padding: 2px 0 0 52px; }
+  .topbar-tools { position: static; z-index: auto; width: 100%; }
+  .hero { padding-top: 28px; }
+  .shell { padding-bottom: 84px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -97,11 +97,11 @@ test('a correction near VAD end gets its own short stability window', async () =
 test('bare ATLAS does not submit or cancel the follow-up listening timer', async () => {
   const p = setup(); p.c.authorizeLocalWake('ATLAS');
   const timer = p.c.followUpTimer; p.c.queueLocalWakeRequest('', true);
-  assert.equal(p.c.followUpTimer, timer); await p.advance(4000);
+  assert.equal(p.c.followUpTimer, timer); await p.advance(10000);
   assert.equal(p.c.conversationActive, false); assert.equal(p.responses().length, 0);
 });
 
-test('laptop counts transcription time inside its 400 ms settling budget', async () => {
+test('laptop counts transcription time inside its 180 ms settling budget', async () => {
   const p = setup({ a1: false }); p.c.beginSpeech(); p.c.endSpeech(); await p.advance(350);
   p.c.handleUserTranscript({ transcript: 'qué hora es' });
   await p.advance(79); assert.equal(p.responses().length, 0);
@@ -109,13 +109,13 @@ test('laptop counts transcription time inside its 400 ms settling budget', async
   assert.equal(p.logs.find(e => e.stage === 'input.response_scheduled').durationMs, 80);
 });
 
-test('fast laptop transcription still preserves the full 400 ms continuation window', async () => {
+test('fast laptop transcription still preserves a 180 ms continuation window after server VAD', async () => {
   const p = setup({ a1: false }); p.c.beginSpeech(); p.c.endSpeech(); await p.advance(50);
   p.c.handleUserTranscript({ transcript: 'enciende la televisión' });
-  await p.advance(250); p.c.beginSpeech(); await p.advance(500);
+  await p.advance(100); p.c.beginSpeech(); await p.advance(500);
   assert.equal(p.responses().length, 0);
   p.c.endSpeech(); p.c.handleUserTranscript({ transcript: 'y comparte pantalla' });
-  await p.advance(400); assert.equal(p.responses().length, 1);
+  await p.advance(180); assert.equal(p.responses().length, 1);
 });
 
 test('speech boundaries preserve decimals, IPs and filenames', () => {

@@ -8,6 +8,8 @@ context, persistent Realtime conversation and direct tools. A final
 can use concise Markdown, paths, digits and technical units instead of the
 speech-oriented formatting used by WebScreen.
 
+For cross-surface faults, use the [connection map](../../openclaw/workspace/ATLAS-CONNECTIONS.md). A successful terminal turn checks the model/context/tools, not Chrome wake detection or physical audio; see the [reliability verification](../../docs/WEBSCREEN-RELIABILITY-2026-09-06.md).
+
 ```bash
 atlas-chat
 atlas-chat -p "Comprueba la temperatura de la Pi"
