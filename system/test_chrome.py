@@ -44,6 +44,21 @@ class ChromeLaunchers(unittest.TestCase):
         self.assertIn('--user-data-dir="$ROOT/chrome-profile"', desktop)
         self.assertIn('chrome-profile/', (ROOT / '.gitignore').read_text().splitlines())
 
+    def test_kiosk_contains_graphics_allocation_failures_without_weakening_runtime(self):
+        source = (ROOT / 'system/libexec/atlas-screen-kiosk-session').read_text()
+        command = source.split('google-chrome-stable ', 1)[1].split('browser_pid=$!', 1)[0]
+        self.assertIn('--disable-gpu ', command)
+        self.assertIn('--disable-gpu-compositing', command)
+        self.assertNotIn('--use-angle=gles', command)
+        for forbidden in ('--no-sandbox', '--disable-gpu-sandbox',
+                          '--disable-gpu-watchdog', '--disable-dev-shm-usage',
+                          '--disable-hang-monitor', '--disable-webrtc',
+                          '--mute-audio'):
+            self.assertNotIn(forbidden, command)
+        self.assertIn('--enable-speech-dispatcher', command)
+        self.assertIn('--autoplay-policy=no-user-gesture-required', command)
+        self.assertIn('PULSE_SERVER=unix:/run/user/1000/pulse/native', source)
+
     def test_microphone_permission_only_for_local_webscreen(self):
         policy = json.loads((ROOT / 'system/etc/opt/chrome/policies/managed/atlas-webscreen.json').read_text())
         self.assertEqual(policy['AudioCaptureAllowedUrls'], ['http://localhost:5000'])

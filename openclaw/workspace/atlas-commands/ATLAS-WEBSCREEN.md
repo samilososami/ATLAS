@@ -85,6 +85,10 @@ The client heartbeat interval is 1.5 seconds and the server lease is 20 seconds.
 An 8-second local grace window tolerates a transient missed request, then
 releases the local microphone before the backend could assign a stale lease to
 someone else. Authenticated activity also refreshes the server lease.
+Each request has a four-second total deadline, including the JSON body. Failed
+UI callbacks cannot latch the scheduler. Online/visible events prompt a bounded
+retry, without parallel heartbeats or automatic takeover. A failed health check
+retries after five seconds while this page owns ATLAS, then stops after recovery.
 
 An expired token is renewed; a revoked owner stops immediately. Reconnection
 uses bounded backoff, ignores late replies from previous pages/sessions, and
@@ -112,6 +116,11 @@ continue without repeating ATLAS. It begins after playback has settled, not
 just when text generation ends, and does not depend on a question mark in the
 answer. On A1, playback and its short acoustic tail are excluded from wake/input
 capture to avoid the assistant triggering itself.
+
+`REALTIME_INSTRUCTIONS.md` sets concise replies for all current Realtime
+surfaces: usually one or two sentences; routine successful music/device actions
+need only a short acknowledgement, without unsolicited offers. Report real
+failures briefly and expand when the user explicitly asks for detail.
 
 Recovery has separate bounds: session startup 25 seconds, response-create
 acknowledgement 12 seconds, and an active response with no progress 30 seconds.

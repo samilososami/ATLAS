@@ -9,7 +9,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
 function page({ hostname = 'localhost', search = '?kiosk=1', permission = 'granted',
                 secure = true, getUserMedia, realtime = false, settingsFetch } = {}) {
   let owner = false, adapter, requests = 0, starts = 0;
-  const nodes = new Map(), timers = new Map(), recognizers = [];
+  const nodes = new Map(), timers = new Map(), recognizers = [], windowEvents = new Map();
   let timerId = 0;
   const element = () => ({ children: [], dataset: {}, hidden: false, disabled: false,
     textContent: '', value: '', events: {},
@@ -40,15 +40,15 @@ function page({ hostname = 'localhost', search = '?kiosk=1', permission = 'grant
     isSecureContext: secure, SpeechRecognition: Recognition,
     location: { hostname, search },
     speechSynthesis: { cancel() {} },
-    addEventListener() {}, cancelAnimationFrame() {}, requestAnimationFrame: () => 1,
+    addEventListener(name, fn) { windowEvents.set(name, fn); }, cancelAnimationFrame() {}, requestAnimationFrame: () => 1,
     setInterval(fn) { intervals.set(++timerId, fn); return timerId; },
     clearInterval(id) { intervals.delete(id); },
-    setTimeout(fn) { timers.set(++timerId, fn); return timerId; },
+    setTimeout(fn, delay) { timers.set(++timerId, { fn, delay }); return timerId; },
     clearTimeout(id) { timers.delete(id); },
     atlasAccess: {
       hasControl: () => owner,
       bind(value) { adapter = value; },
-      fetch: settingsFetch || (async url => ({ json: async () => url === '/api/health'
+      fetch: settingsFetch || (async url => ({ ok: true, json: async () => url === '/api/health'
         ? { ready: true, openclaw: { model: 'test' } } : {} })),
     },
   };
@@ -59,6 +59,7 @@ function page({ hostname = 'localhost', search = '?kiosk=1', permission = 'grant
     acceptWake: true,
     awaitingWakeRequest: false,
     async start() { realtimeCallbacks.onInputStream(stream()); },
+    stop() {},
     isIdle: () => true, isOutputActive: () => false,
     setLocalWakeDetectorReady() {},
     queueLocalWakeRequest(text, final) { wakeRequests.push({ text, final }); },
@@ -75,7 +76,7 @@ function page({ hostname = 'localhost', search = '?kiosk=1', permission = 'grant
   if (realtime) window.AtlasRealtime = {
     create({ callbacks }) { realtimeCallbacks = callbacks; return realtimeMock; },
   };
-  const context = vm.createContext({ window, location: { hostname, search }, URLSearchParams,
+  const context = vm.createContext({ window, location: { hostname, search }, URLSearchParams, AbortController,
     crypto: { randomUUID: () => 'test-interaction-id' },
     performance: { now: () => 100 }, localStorage: { getItem: () => null },
     navigator: {
@@ -106,6 +107,9 @@ function page({ hostname = 'localhost', search = '?kiosk=1', permission = 'grant
     },
     initialize: () => context.initializeMicrophone(),
     restore: () => context.restoreMicrophone(),
+    checkHealth: () => context.checkHealth(),
+    unload() { windowEvents.get('beforeunload')?.(); },
+    timersAt: delay => [...timers.values()].filter(timer => timer.delay === delay).length,
     mergeFragments(current, next) {
       context.__current = current; context.__next = next;
       return vm.runInContext('mergeRecognitionFragments(__current, __next)', context);
@@ -125,12 +129,106 @@ function page({ hostname = 'localhost', search = '?kiosk=1', permission = 'grant
         wakeBurstStartedAt = ${Number(startedAt)};
         wakeContextResultIndex = ${Number(contextIndex)};`, context);
     },
-    flushTimers() {
-      const pending = [...timers.values()]; timers.clear();
-      for (const fn of pending) fn();
+    flushTimers(delay) {
+      const pending = [...timers].filter(([, timer]) => delay === undefined || timer.delay === delay);
+      for (const [id, { fn }] of pending) { timers.delete(id); fn(); }
     },
   };
 }
+
+const healthyReply = (voice = 'ash') => ({ ok: true, json: async () => ({
+  ready: true, realtime: { ready: true, model: 'test-realtime', voice },
+}) });
+
+test('health checks coalesce and stop polling after successful recovery', async () => {
+  let calls = 0, finish;
+  const p = page({ settingsFetch: async url => {
+    if (url !== '/api/health') return healthyReply();
+    calls++;
+    if (calls === 1) return new Promise(resolve => { finish = resolve; });
+    return healthyReply();
+  } });
+  p.acquire();
+  const first = p.checkHealth();
+  assert.equal(first, p.checkHealth());
+  assert.equal(calls, 1);
+  finish({ ok: false, status: 503 });
+  await first;
+  assert.equal(p.node('#health-label').textContent, 'Sin conexión con la Pi');
+  assert.equal(p.timersAt(5000), 1);
+  p.flushTimers(5000); await tick();
+  assert.equal(calls, 2);
+  assert.equal(p.node('#health-dot').className, 'ready');
+  assert.equal(p.node('#health-label').textContent, 'test-realtime · WebRTC · ash');
+  assert.equal(p.timersAt(5000), 0);
+  p.flushTimers(5000); await tick();
+  assert.equal(calls, 2, 'healthy sessions do not keep polling');
+});
+
+test('health deadline covers a JSON body that ignores abort and retires its late reply', async () => {
+  let calls = 0, finishBody, firstSignal;
+  const p = page({ settingsFetch: async (url, options) => {
+    if (url !== '/api/health') return healthyReply();
+    calls++;
+    if (calls > 1) return healthyReply();
+    firstSignal = options.signal;
+    return { ok: true, json: () => new Promise(resolve => { finishBody = resolve; }) };
+  } });
+  p.acquire(); await tick();
+  p.flushTimers(8000); await tick();
+  assert.equal(firstSignal.aborted, true);
+  assert.equal(p.node('#health-dot').className, 'error');
+  p.flushTimers(5000); await tick();
+  assert.equal(p.node('#health-dot').className, 'ready');
+  finishBody({ ready: false }); await tick();
+  assert.equal(p.node('#health-dot').className, 'ready');
+  assert.equal(p.timersAt(5000), 0);
+});
+
+test('suspended health checks cannot update a new owner or leave retries running', async () => {
+  let calls = 0, finish;
+  const p = page({ settingsFetch: async url => {
+    if (url !== '/api/health') return healthyReply();
+    calls++;
+    if (calls === 1) return new Promise(resolve => { finish = resolve; });
+    return healthyReply();
+  } });
+  p.acquire(); p.suspend(); p.acquire(); await tick();
+  assert.equal(calls, 2);
+  finish({ ok: true, json: async () => ({ ready: false }) }); await tick();
+  assert.equal(p.node('#health-dot').className, 'ready');
+  assert.equal(p.timersAt(5000), 0);
+  p.suspend(); await p.checkHealth();
+  assert.equal(calls, 2);
+  p.flushTimers(5000); await tick();
+  assert.equal(calls, 2);
+});
+
+test('losing authorization while health is pending does not restore the old indicator', async () => {
+  let finish;
+  const p = page({ settingsFetch: async url => url === '/api/health'
+    ? new Promise(resolve => { finish = resolve; }) : healthyReply() });
+  p.acquire();
+  p.node('#health-label').textContent = 'Control retirado';
+  p.suspend();
+  finish(healthyReply()); await tick();
+  assert.equal(p.node('#health-label').textContent, 'Control retirado');
+  assert.equal(p.timersAt(5000), 0);
+});
+
+test('leaving the page cancels failed health retries', async () => {
+  let calls = 0;
+  const p = page({ settingsFetch: async url => {
+    if (url !== '/api/health') return healthyReply();
+    calls++;
+    throw new Error('offline');
+  } });
+  p.acquire(); await tick();
+  assert.equal(p.timersAt(5000), 1);
+  p.unload(); p.flushTimers(5000); await tick();
+  assert.equal(p.timersAt(5000), 0);
+  assert.equal(calls, 1);
+});
 
 test('reasoning selector saves every level and resets the session, not the context', async () => {
   const calls = [];

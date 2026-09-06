@@ -67,6 +67,13 @@ atlas-screen --atlas
 
 This opens `http://localhost:5000/?kiosk=1` in fullscreen Google Chrome on the physical screen. No desktop is hiding underneath. Google Chrome runs as `sami`, with its sandbox enabled and its own private profile under `/home/atlas/.atlas/screen/chrome-profile`.
 
+The kiosk uses software compositing (`--disable-gpu --disable-gpu-compositing`)
+instead of forcing GLES. This contains the observed renderer shared-buffer
+exhaustion/`TransferBuffer::Initialize` loop; it does not disable WebRTC or audio.
+If a healthy HTTP backend appears offline on the physical page, check the kiosk
+journal, Chrome CPU and `/dev/shm` usage too. Deleted-but-open Chrome buffers
+are released by stopping that kiosk, not by deleting unrelated shared files.
+
 To keep ATLAS listening and speaking while hiding the physical image, use:
 
 ```bash

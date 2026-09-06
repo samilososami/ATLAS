@@ -15,7 +15,7 @@ Source paths below are relative to the repository. Live voice files are under
 | --- | --- | --- |
 | HTTP service and provider readiness | `.atlas/webscreen/server.py`, `.atlas/webscreen/gateway_bridge.mjs`, `system/systemd/atlas-webscreen.service` | [WebScreen](atlas-commands/ATLAS-WEBSCREEN.md), [runtime source guide](../../.atlas/webscreen/README.md) |
 | One active browser | `.atlas/webscreen/access_control.py`, `.atlas/webscreen/static/access.js` | [WebScreen ownership](atlas-commands/ATLAS-WEBSCREEN.md#one-screen-at-the-wheel) |
-| Wake, turns, playback and recovery | `.atlas/webscreen/static/app.js`, `.atlas/webscreen/static/realtime.js`, `.atlas/webscreen/WEBSCREEN_INSTRUCTIONS.md` | [WebScreen voice](atlas-commands/ATLAS-WEBSCREEN.md#voice-follow-up-and-recovery) |
+| Wake, turns, playback and recovery | `.atlas/webscreen/static/app.js`, `.atlas/webscreen/static/realtime.js`, `.atlas/webscreen/REALTIME_INSTRUCTIONS.md` | [WebScreen voice](atlas-commands/ATLAS-WEBSCREEN.md#voice-follow-up-and-recovery) |
 | Same model without voice | `.atlas/chat/atlas_chat.py`, `.atlas/chat/TERMINAL_INSTRUCTIONS.md` | [atlas-chat](atlas-commands/ATLAS-CHAT.md), [chat runtime](../../.atlas/chat/README.md) |
 | Shared conversational memory | `.atlas/webscreen/server.py`, `system/libexec/atlas-contextctl`, `atlas-commands/atlas-context` | [Context](atlas-commands/ATLAS-CONTEXT.md) |
 | Physical output and Bluetooth | `atlas-commands/atlas-audio`, `system/config/wireplumber/51-atlas-headless-bluetooth.conf` | [Audio](atlas-commands/ATLAS-AUDIO.md) |
@@ -37,6 +37,9 @@ ADB authorisation are three independent relationships.
   expire after **20 s**, and the local owner tolerates up to **8 s** without a
   successful reply before suspending. A 401 renews the expired token; revoked
   ownership stops local interaction. Late replies cannot revive old ownership.
+  Each heartbeat has a **4 s total deadline**, including its JSON body; a stuck
+  transport or UI callback cannot permanently stop the scheduler. Returning
+  online/visible retries promptly without overlapping requests or taking control.
 - The HTTP server remains available while Gateway recovery runs in the
   background. `/api/health` is a snapshot, not a blocking reconnect operation;
   inspect its readiness fields separately from an HTTP 200 response.
@@ -65,6 +68,9 @@ to the Internet or put lease tokens in URLs, logs or public files.
 3. For local connectivity, distinguish HTTP access, browser ownership and Gateway
    readiness. For provider errors, retain the error category/request ID without
    printing credentials. A server 500 alone is not evidence of corrupt OAuth.
+   If HTTP replies are fast but the physical kiosk times out, inspect
+   `journalctl -u atlas-screen-kiosk.service`, Chrome CPU and `df -h /dev/shm`.
+   Repeated GPU allocation failures can stall the browser without losing Wi-Fi.
 4. For wake failures, check browser microphone permission, detector state and
    duplicate partial/final events. For silence, distinguish first model text,
    browser playback start, default sink/mute and actual physical output.

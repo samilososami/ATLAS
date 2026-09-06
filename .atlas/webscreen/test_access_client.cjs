@@ -7,23 +7,35 @@ const source = fs.readFileSync(path.join(__dirname, 'static/access.js'), 'utf8')
 const markup = fs.readFileSync(path.join(__dirname, 'static/index.html'), 'utf8');
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
-function client() {
+function client(options = {}) {
   let now = 100, idle = true, suspended = 0;
   let reply = { owner: true, token: 'page-token' };
   let replyStatus = 200, failure = null, bodyFailure = null;
-  const calls = [], timers = [], events = new Map(), nodes = new Map();
+  let transport = null, idleFailure = options.idleFailure;
+  const calls = [], timers = [], timeouts = [], warnings = [], events = new Map(), nodes = new Map();
+  const documentEvents = new Map();
   const node = id => {
     if (!nodes.has(id)) nodes.set(id, { events: {}, addEventListener(name, fn) { this.events[name] = fn; } });
     return nodes.get(id);
   };
   const window = { location: { hostname: '192.168.1.50', search: '' },
     addEventListener: (name, fn) => events.set(name, fn), dispatchEvent() {} };
-  vm.runInNewContext(source, { window, Event, Headers, AbortSignal,
+  const document = { querySelector: node, visibilityState: 'visible',
+    addEventListener: (name, fn) => documentEvents.set(name, fn) };
+  vm.runInNewContext(source, { window, Event, Headers, AbortSignal, AbortController,
+    console: { warn: (...args) => warnings.push(args) },
     performance: { now: () => now },
-    document: { querySelector: node, addEventListener() {} },
+    document,
     setInterval: (fn, delay) => timers.push({ fn, delay }),
+    setTimeout: (fn, delay) => {
+      const timeout = { fn, delay, active: true };
+      timeouts.push(timeout);
+      return timeout;
+    },
+    clearTimeout: timeout => { if (timeout) timeout.active = false; },
     fetch: async (url, options) => {
       calls.push({ url, options });
+      if (transport) return transport(url, options);
       if (failure) throw failure;
       return { ok: replyStatus < 400, status: replyStatus, json: async () => {
         if (bodyFailure) throw bodyFailure;
@@ -31,8 +43,13 @@ function client() {
       } };
     },
   });
-  window.atlasAccess.bind({ isIdle: () => idle, suspend: () => suspended++, acquired() {} });
-  return { window, node, calls, timers, events, get suspended() { return suspended; },
+  window.atlasAccess.bind({ isIdle: () => { if (idleFailure) throw idleFailure; return idle; },
+    suspend() { suspended++; if (options.suspendFailure) throw options.suspendFailure; },
+    acquired() { if (options.acquiredFailure) throw options.acquiredFailure; } });
+  return { window, node, calls, timers, timeouts, events, document, documentEvents, warnings,
+    get suspended() { return suspended; }, setFetch: value => { transport = value; },
+    expireRequest() { const timeout = timeouts.find(t => t.active); assert.ok(timeout); timeout.fn(); },
+    setIdleFailure: value => { idleFailure = value; },
     setIdle: value => { idle = value; }, setReply: value => { reply = value; },
     setStatus: value => { replyStatus = value; }, setFailure: value => { failure = value; },
     setBodyFailure: value => { bodyFailure = value; },
@@ -131,4 +148,108 @@ test('heartbeat polling is bounded and page lifecycle reacquires instead of reus
   c.events.get('pagehide')(); await tick();
   c.events.get('pageshow')({ persisted: true }); await tick();
   assert.equal(c.calls.at(-1).url, '/api/access/connect');
+});
+
+test('a throwing idle predicate cannot permanently latch heartbeat polling', async () => {
+  const c = client({ idleFailure: new Error('missing UI state') }); await tick();
+  assert.equal(c.window.atlasAccess.hasControl(), true);
+  assert.equal(JSON.parse(c.calls[0].options.body).idle, false);
+  assert.equal(c.node('#access-takeover').disabled, false);
+  c.setTime(1700); c.timers.find(t => t.delay === 500).fn(); await tick();
+  assert.equal(c.calls.at(-1).url, '/api/access/heartbeat');
+  assert.equal(c.calls.length, 2);
+  assert.equal(c.warnings.length, 1, 'repeated callback failure does not flood logs');
+  assert.equal(c.node('#access-takeover').disabled, false);
+});
+
+test('throwing acquired/suspend callbacks do not hide network recovery or leave controls enabled', async () => {
+  const c = client({ acquiredFailure: new Error('initialization failed'),
+    suspendFailure: new Error('cleanup failed') }); await tick();
+  assert.equal(c.window.atlasAccess.hasControl(), true);
+  assert.doesNotMatch(c.node('#access-title').textContent, /Reconectando/);
+  c.setReply({ owner: false });
+  c.setTime(1700); c.timers.find(t => t.delay === 500).fn(); await tick();
+  assert.equal(c.window.atlasAccess.hasControl(), false);
+  assert.equal(c.node('#webscreen-content').hidden, true);
+  assert.equal(c.node('#webscreen-content').inert, true);
+  assert.equal(c.node('#access-takeover').disabled, false);
+  assert.equal(c.warnings.length, 2);
+});
+
+test('whole-request deadline releases a fetch that never settles despite abort', async () => {
+  const c = client(); await tick();
+  let resolveStale;
+  c.setFetch(() => new Promise(resolve => { resolveStale = resolve; }));
+  c.setTime(1700); c.timers.find(t => t.delay === 500).fn(); await tick();
+  assert.equal(c.node('#access-takeover').disabled, true);
+  c.setTime(5700); c.expireRequest(); await tick();
+  assert.equal(c.calls.at(-1).options.signal.aborted, true);
+  assert.equal(c.node('#access-takeover').disabled, false);
+  c.setFetch(null); c.setTime(6300);
+  c.timers.find(t => t.delay === 500).fn(); await tick();
+  assert.equal(c.window.atlasAccess.hasControl(), true);
+  resolveStale({ status: 200, ok: true, json: async () => ({ owner: false }) }); await tick();
+  assert.equal(c.window.atlasAccess.hasControl(), true, 'late expired reply cannot revoke current owner');
+  assert.equal(c.suspended, 0);
+});
+
+test('whole-request deadline also bounds a stalled JSON body and ignores late grants', async () => {
+  const c = client(); await tick();
+  let resolveBody;
+  c.setFetch(async () => ({ status: 200, ok: true,
+    json: () => new Promise(resolve => { resolveBody = resolve; }) }));
+  c.setTime(1700); c.timers.find(t => t.delay === 500).fn(); await tick();
+  c.setTime(5700); c.expireRequest(); await tick();
+  assert.equal(c.node('#access-takeover').disabled, false);
+  c.setFetch(null); c.setReply({ owner: false }); c.setTime(6300);
+  c.timers.find(t => t.delay === 500).fn(); await tick();
+  assert.equal(c.window.atlasAccess.hasControl(), false);
+  resolveBody({ owner: true }); await tick();
+  assert.equal(c.window.atlasAccess.hasControl(), false, 'late grant cannot restore an expired request');
+});
+
+test('pagehide cancels hung control requests and old cleanup cannot unlatch a new request', async () => {
+  const c = client(); await tick();
+  c.setFetch(() => new Promise(() => {}));
+  c.setTime(1700); c.timers.find(t => t.delay === 500).fn(); await tick();
+  const oldSignal = c.calls.at(-1).options.signal;
+  c.events.get('pagehide')();
+  c.events.get('pageshow')({ persisted: true }); await tick();
+  assert.equal(oldSignal.aborted, true);
+  assert.equal(c.calls.at(-1).url, '/api/access/connect');
+  assert.equal(c.node('#access-takeover').disabled, true);
+  c.setTime(2200); c.timers.find(t => t.delay === 500).fn(); await tick();
+  assert.equal(c.calls.length, 4, 'old request finally must not allow concurrent heartbeat');
+  c.expireRequest(); await tick();
+});
+
+test('an API 401 cancels a hung heartbeat and reconnects without automatic takeover', async () => {
+  const c = client(); await tick();
+  c.setFetch(async url => url === '/api/settings'
+    ? { status: 401, ok: false } : new Promise(() => {}));
+  c.setTime(1700); c.timers.find(t => t.delay === 500).fn(); await tick();
+  const oldSignal = c.calls.at(-1).options.signal;
+  await c.window.atlasAccess.fetch('/api/settings'); await tick();
+  assert.equal(oldSignal.aborted, true);
+  c.setFetch(null); c.setReply({ owner: false, token: 'fresh-token' });
+  c.setTime(2200); c.timers.find(t => t.delay === 500).fn(); await tick();
+  assert.equal(c.calls.at(-1).url, '/api/access/connect');
+  assert.equal(c.window.atlasAccess.hasControl(), false);
+  assert.equal(c.calls.some(call => call.url === '/api/access/takeover'), false);
+});
+
+test('online and visibility recovery bypass backoff without producing request storms', async () => {
+  const c = client(); await tick();
+  c.setTime(1700); c.setFailure(new TypeError('offline'));
+  c.timers.find(t => t.delay === 500).fn(); await tick();
+  c.setFailure(null); c.setTime(1800);
+  c.events.get('online')(); await tick();
+  assert.equal(c.calls.length, 3);
+  for (let index = 0; index < 20; index++) {
+    c.events.get('online')();
+    c.documentEvents.get('visibilitychange')();
+    await tick();
+  }
+  assert.equal(c.calls.length, 3);
+  assert.equal(c.window.atlasAccess.hasControl(), true);
 });

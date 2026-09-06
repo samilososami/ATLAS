@@ -41,7 +41,14 @@ for _ in $(seq 1 60); do
   sleep 0.5
 done
 
-google-chrome-stable --ozone-platform=x11 --use-angle=gles --kiosk --no-first-run --no-default-browser-check \
+# The physical kiosk accumulated 1.9 GiB of renderer-owned shared buffers and
+# then looped on TransferBuffer::Initialize failures while HTTP stayed healthy.
+# Keep this CSS/DOM interface on software compositing rather than forcing GLES.
+# This contains the graphics allocation failure; it is not proof of a driver
+# root cause. Do not redirect shared memory into /tmp or disable the sandbox,
+# Chrome's GPU watchdog, WebRTC, or the existing audio route.
+google-chrome-stable --ozone-platform=x11 --disable-gpu --disable-gpu-compositing \
+  --kiosk --no-first-run --no-default-browser-check \
   --enable-logging=stderr \
   --password-store=basic --lang=es-ES --disable-features=Translate \
   --enable-speech-dispatcher \

@@ -1,5 +1,5 @@
 const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
-const CLIENT_BUILD = "2026-09-06-resilience-1";
+const CLIENT_BUILD = "2026-09-06-recovery-2";
 const REALTIME_PRIMARY = Boolean(window.AtlasRealtime);
 const PHYSICAL_ATLAS_A1 = /(?:^|[?&])kiosk=1(?:&|$)/u.test(String(window.location?.search || ""));
 const accessFetch = (url, options) => window.atlasAccess.fetch(url, options);
@@ -165,6 +165,12 @@ let realtimeFallbackActive = false;
 let realtimeExternalSpeechRun = 0;
 let realtimeReconnectTimer = 0;
 let realtimeReconnectAttempts = 0;
+let healthRequest = null;
+let healthRetryTimer = 0;
+let healthGeneration = 0;
+let healthSuspended = true;
+const HEALTH_TIMEOUT_MS = 8000;
+const HEALTH_RETRY_MS = 5000;
 
 function selectedVoiceProvider() {
   if (REALTIME_PRIMARY) return "realtime";
@@ -2018,24 +2024,78 @@ async function restoreMicrophone() {
   await initializeMicrophone();
 }
 
-async function checkHealth() {
-  try {
-    const response = await accessFetch("/api/health", { cache: "no-store", signal: AbortSignal.timeout(8000) });
-    if (!response.ok) throw new Error(`Backend HTTP ${response.status}`);
-    const health = await response.json();
-    healthDot.className = health.ready ? "ready" : "error";
-    healthLabel.textContent = health.ready
-      ? (health.realtime?.ready
-        ? `${health.realtime.model} · WebRTC · ${health.realtime.voice}`
-        : "OpenAI Realtime no disponible")
-      : "Backend incompleto";
-    addLog(health.ready ? "Backend preparado" : "Backend degradado", null, health.ready ? "normal" : "error");
-  } catch {
-    if (!hasControl()) return;
-    healthDot.className = "error";
-    healthLabel.textContent = "Sin conexión con la Pi";
-    addLog("No se pudo consultar el backend", null, "error");
-  }
+function suspendHealthCheck() {
+  healthSuspended = true;
+  healthGeneration += 1;
+  window.clearTimeout(healthRetryTimer);
+  healthRetryTimer = 0;
+  const pending = healthRequest;
+  healthRequest = null;
+  pending?.cancel();
+}
+
+function scheduleHealthRetry() {
+  window.clearTimeout(healthRetryTimer);
+  healthRetryTimer = 0;
+  if (healthSuspended || !hasControl()) return;
+  // Only retry a failed/degraded check; healthy sessions need no extra polling.
+  healthRetryTimer = window.setTimeout(() => {
+    healthRetryTimer = 0;
+    void checkHealth();
+  }, HEALTH_RETRY_MS);
+}
+
+function checkHealth() {
+  if (healthSuspended || !hasControl()) return Promise.resolve();
+  if (healthRequest) return healthRequest.promise;
+  window.clearTimeout(healthRetryTimer);
+  healthRetryTimer = 0;
+  const generation = healthGeneration;
+  const controller = new AbortController();
+  const request = { promise: null, cancel: null };
+  let timeout;
+  const deadline = new Promise((resolve, reject) => {
+    request.cancel = () => {
+      controller.abort();
+      reject(new Error("Consulta del backend cancelada"));
+    };
+    timeout = window.setTimeout(request.cancel, HEALTH_TIMEOUT_MS);
+  });
+  healthRequest = request;
+  const isCurrent = () => healthRequest === request && generation === healthGeneration
+    && !healthSuspended && hasControl();
+  request.promise = (async () => {
+    try {
+      // Fetch's abort alone cannot bound a stalled body reader or an adapter
+      // that ignores its signal. Keep headers and JSON inside the same race.
+      const operation = (async () => {
+        const response = await accessFetch("/api/health", { cache: "no-store", signal: controller.signal });
+        if (!response.ok) throw new Error(`Backend HTTP ${response.status}`);
+        return response.json();
+      })();
+      const health = await Promise.race([operation, deadline]);
+      if (!isCurrent()) return;
+      healthDot.className = health.ready ? "ready" : "error";
+      healthLabel.textContent = health.ready
+        ? (health.realtime?.ready
+          ? `${health.realtime.model} · WebRTC · ${health.realtime.voice}`
+          : "OpenAI Realtime no disponible")
+        : "Backend incompleto";
+      addLog(health.ready ? "Backend preparado" : "Backend degradado", null, health.ready ? "normal" : "error");
+      if (!health.ready) scheduleHealthRetry();
+    } catch {
+      if (!isCurrent()) return;
+      healthDot.className = "error";
+      healthLabel.textContent = "Sin conexión con la Pi";
+      addLog("No se pudo consultar el backend", null, "error");
+      scheduleHealthRetry();
+    } finally {
+      window.clearTimeout(timeout);
+      if (healthRequest === request) healthRequest = null;
+      controller.abort();
+    }
+  })();
+  return request.promise;
 }
 
 async function activatePrimaryMicrophone() {
@@ -2251,6 +2311,7 @@ document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") scheduleRecognitionRestart(100);
 });
 window.addEventListener("beforeunload", () => {
+  suspendHealthCheck();
   window.clearTimeout(realtimeReconnectTimer);
   realtimeController?.stop(false);
   microphoneGeneration += 1;
@@ -2276,6 +2337,7 @@ window.atlasAccess.bind({
     && !currentAudio && !streamedSpeechActive && !dictationRunning
     && !dictationShouldRestart && !ttsLabBusy && !settingsSubmit.disabled),
   suspend() {
+    suspendHealthCheck();
     window.clearTimeout(realtimeReconnectTimer);
     realtimeReconnectTimer = 0;
     realtimeController?.stop(false);
@@ -2304,6 +2366,7 @@ window.atlasAccess.bind({
     cancelButton.hidden = true;
   },
   acquired() {
+    healthSuspended = false;
     switchView("atlas");
     setScreen("MICRÓFONO", "Preparando ATLAS", "Solicitando acceso al micrófono…", "listening");
     void checkHealth();

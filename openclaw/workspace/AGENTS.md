@@ -140,9 +140,12 @@ The repository `.atlas/README.md` maps your runtime folders and system helpers.
 `/home/atlas/.atlas/webscreen/README.md` explains the voice pipeline.
 `/home/atlas/.atlas/chat/README.md` explains the text-only Realtime client,
 its terminal presentation layer, persistent/ephemeral modes and diagnostics.
-`/home/atlas/.atlas/webscreen/WEBSCREEN_INSTRUCTIONS.md` holds the voice,
-preamble and direct-answer rules; edit those sections instead of hiding prompts
-in Python. The repository's main README introduces ATLAS, and
+`/home/atlas/.atlas/webscreen/REALTIME_INSTRUCTIONS.md` holds the current voice,
+brevity and direct-answer rules; edit those sections instead of hiding prompts
+in Python. Routine successful actions need only a short acknowledgement, not
+offers or hypothetical troubleshooting. Expand when sami asks for detail.
+`WEBSCREEN_INSTRUCTIONS.md` documents the archived pipeline, not current Realtime.
+The repository's main README introduces ATLAS, and
 `atlas-commands/README.md` describes the executable wrappers for humans.
 This workspace's `README.md` explains which files are public templates.
 [`ATLAS-CONNECTIONS.md`](ATLAS-CONNECTIONS.md) maps connection ownership,

@@ -13,11 +13,33 @@
   let lastReply = 0, adapter = null, state = {}, released = false;
   let message = '';
   let failures = 0, nextUpdateAt = 0, generation = 0;
+  let pendingRequest = null, lastRecoveryAt = -Infinity;
+  const callbackFailures = new Set();
   const HEARTBEAT_MS = 1500;
+  const REQUEST_TIMEOUT_MS = 4000;
   // Stop before the server's 20s lease expires, but tolerate one lost packet.
   const CONTROL_GRACE_MS = 8000;
   const hasControl = () => owner && performance.now() - lastReply < CONTROL_GRACE_MS;
-  const idle = () => Boolean(adapter?.isIdle());
+  function invokeAdapter(name, fallback) {
+    try { return adapter?.[name]?.() ?? fallback; }
+    catch (error) {
+      // UI failures must not permanently latch the connection scheduler. In
+      // particular, a broken idle predicate is conservatively treated as busy.
+      if (!callbackFailures.has(name)) {
+        callbackFailures.add(name);
+        console.warn(`[ATLAS acceso] Falló ${name}:`, error);
+      }
+      return fallback;
+    }
+  }
+
+  function cancelPendingRequest() {
+    const request = pendingRequest;
+    if (!request) return;
+    pendingRequest = null;
+    updating = false;
+    request.cancel();
+  }
 
   function render() {
     const control = hasControl();
@@ -37,10 +59,11 @@
   function setOwner(value) {
     const previous = owner;
     owner = value;
-    if (previous && !owner) adapter?.suspend();
+    // Hide/inert controls before calling application code that could throw.
     render();
+    if (previous && !owner) invokeAdapter('suspend');
     if (!previous && owner) {
-      adapter?.acquired();
+      invokeAdapter('acquired');
       window.dispatchEvent(new Event('atlas-access-acquired'));
     }
   }
@@ -48,18 +71,42 @@
   async function update(action = 'heartbeat') {
     if (updating || released || !adapter) return;
     updating = true;
+    const request = { controller: new AbortController(), cancel() {} };
+    pendingRequest = request;
     const actual = token ? action : 'connect';
     const requestToken = token, requestGeneration = generation;
     const requestedAt = performance.now();
-    const wasIdle = idle();
-    render();
+    let timeout;
     try {
-      const response = await fetch(`/api/access/${actual}`, {
-        method: 'POST', cache: 'no-store', signal: AbortSignal.timeout(4000),
-        headers: { 'Content-Type': 'application/json', 'X-Atlas-Access': '1', 'X-Atlas-Client': token },
-        body: JSON.stringify({ idle: wasIdle, clientKind: isAtlasA1 ? 'atlas-a1' : 'browser' }),
+      const wasIdle = Boolean(invokeAdapter('isIdle', false));
+      render();
+      const deadline = new Promise((resolve, reject) => {
+        request.cancel = () => {
+          request.controller.abort();
+          const error = new Error('Petición de conexión cancelada.');
+          error.name = 'AbortError';
+          reject(error);
+        };
+        timeout = setTimeout(() => {
+          request.controller.abort();
+          const error = new Error('Sin conexión con la Pi. Reintentando…');
+          error.name = 'TimeoutError';
+          reject(error);
+        }, REQUEST_TIMEOUT_MS);
       });
-      if (released || requestGeneration !== generation || requestToken !== token) return;
+      // Bound both response headers and the JSON body independently of fetch's
+      // abort handling. A late reply cannot apply state after this race expires.
+      const operation = (async () => {
+        const response = await fetch(`/api/access/${actual}`, {
+          method: 'POST', cache: 'no-store', signal: request.controller.signal,
+          headers: { 'Content-Type': 'application/json', 'X-Atlas-Access': '1', 'X-Atlas-Client': requestToken },
+          body: JSON.stringify({ idle: wasIdle, clientKind: isAtlasA1 ? 'atlas-a1' : 'browser' }),
+        });
+        const result = [401, 423].includes(response.status) ? null : await response.json();
+        return { response, result };
+      })();
+      const { response, result } = await Promise.race([operation, deadline]);
+      if (released || pendingRequest !== request || requestGeneration !== generation || requestToken !== token) return;
       // A status is authoritative even if its body is interrupted/malformed.
       // Invalidate before parsing so an expired token cannot loop forever.
       if (response.status === 401) {
@@ -68,9 +115,13 @@
         setOwner(false);
         return;
       }
-      if (response.status === 423) setOwner(false);
-      const result = await response.json();
-      if (released || requestGeneration !== generation || requestToken !== token) return;
+      if (response.status === 423) {
+        nextUpdateAt = performance.now() + HEARTBEAT_MS;
+        message = '';
+        failures = 0;
+        setOwner(false);
+        return;
+      }
       if (!response.ok) {
         throw new Error(result.error || 'No se pudo conectar con ATLAS.');
       }
@@ -86,7 +137,7 @@
       else message = '';
       setOwner(result.owner);
     } catch (error) {
-      if (released || requestGeneration !== generation || requestToken !== token) return;
+      if (released || pendingRequest !== request || requestGeneration !== generation || requestToken !== token) return;
       failures += 1;
       nextUpdateAt = performance.now() + Math.min(4000, 500 * 2 ** Math.min(failures - 1, 3));
       message = error.name === 'TimeoutError' || error.name === 'TypeError'
@@ -95,8 +146,13 @@
       // still revokes locally before the backend can lease ATLAS to somebody else.
       if (!hasControl()) setOwner(false);
     } finally {
-      updating = false;
-      render();
+      clearTimeout(timeout);
+      request.controller.abort();
+      if (pendingRequest === request) {
+        pendingRequest = null;
+        updating = false;
+        render();
+      }
     }
   }
 
@@ -112,6 +168,7 @@
       if ([401, 423].includes(response.status) && requestToken === token) {
         generation += 1;
         if (response.status === 401) token = '';
+        cancelPendingRequest();
         nextUpdateAt = 0;
         setOwner(false);
       }
@@ -129,6 +186,7 @@
   window.addEventListener('pagehide', () => {
     released = true;
     generation += 1;
+    cancelPendingRequest();
     setOwner(false);
     if (token) void fetch('/api/access/release', {
       method: 'POST', keepalive: true,
@@ -142,7 +200,16 @@
       void update();
     }
   });
+  function resumeConnection() {
+    if (released || performance.now() - lastRecoveryAt < 500) return;
+    lastRecoveryAt = performance.now();
+    nextUpdateAt = 0;
+    // A live request retains its bounded deadline; events cannot create a
+    // parallel heartbeat storm or bypass ownership with automatic takeover.
+    void update();
+  }
+  window.addEventListener('online', resumeConnection);
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') void update();
+    if (document.visibilityState === 'visible') resumeConnection();
   });
 })();

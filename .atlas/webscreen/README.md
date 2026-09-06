@@ -24,6 +24,12 @@ micrófono, TTS ni interfaz web. Su manual operativo está en
 6. La sesión recibe `REALTIME_INSTRUCTIONS.md`, todos los Markdown del workspace salvo los episodios de `memory/`, los reportes actuales de dispositivos en `.atlas/adb/devices/` y el contexto conversacional Realtime compartido con las sesiones normales de `atlas-chat`. `AGENTS.md` sigue siendo el mapa para localizar contexto adicional y `NOTES.md` funciona como cuaderno operativo compacto.
 7. Los turnos producen logs JSON Lines. Si falla la reserva, WebRTC o el proveedor, WebScreen reconecta Realtime con espera progresiva; no deriva el texto a OpenClaw.
 
+`REALTIME_INSTRUCTIONS.md` fija respuestas breves por defecto: una o dos frases;
+tras una acción rutinaria confirmada, una confirmación de una a cinco palabras
+(«Listo», «Música en pausa»), sin ofertas ni problemas hipotéticos añadidos.
+Los errores reales se explican brevemente y las explicaciones largas siguen
+disponibles cuando se solicitan. Esta regla también llega a `atlas-chat`.
+
 La voz nativa Realtime utiliza la sesión OAuth aceptada por OpenClaw. La cuota
 concreta se debe medir en la cuenta y no se presenta como ilimitada. Cuando se
 selecciona ElevenLabs o la voz del navegador, Realtime mantiene el razonamiento
@@ -150,6 +156,19 @@ recarga crea un permiso nuevo y puede recuperar el control con el mismo botón.
 Tras actualizar WebScreen hay que recargar las pestañas antiguas.
 
 Una pérdida breve de heartbeat conserva el audio y la sesión dentro de esos ocho segundos. Un `401` invalida el token incluso si falla la lectura del cuerpo HTTP y vuelve a registrar la página; un `423` retira el control inmediatamente. Las respuestas antiguas y la vuelta desde la caché de navegación no pueden resucitar permisos caducados.
+
+Cada petición de acceso tiene un límite total de cuatro segundos, incluida la
+lectura del JSON. Un transporte bloqueado o una excepción de la interfaz no
+detienen los siguientes intentos. Volver a primer plano o recuperar Internet
+adelanta el reintento, sin peticiones paralelas ni toma automática de control.
+La comprobación de salud fallida se reintenta a los cinco segundos mientras
+la página conserva el control; al recuperarse deja de sondear. Su plazo total
+es de ocho segundos y las respuestas antiguas no modifican una sesión nueva.
+
+Si la Pi responde pero el kiosco sigue «Sin conexión», revisar también Chrome:
+`journalctl -u atlas-screen-kiosk.service`, su CPU y `df -h /dev/shm`. El launcher
+físico usa composición por software para contener el agotamiento de buffers
+gráficos observado. No se borra memoria compartida ni se desactiva el audio.
 
 ### Recuperación de conexiones
 
