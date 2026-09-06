@@ -17,7 +17,8 @@ Este directorio contiene la base de contexto que convierte una instalación de O
 - `VARIABLES.md`: constantes no secretas de cada instalación.
 - `ADB.md`: reglas de conexión, inventario automático y control de dispositivos Android autorizados.
 - `NMAP.md`: descubrimiento acotado de red y uso del informe privado automático.
-- `atlas-commands/`: documentación actual de cada comando para el agente.
+- `atlas-commands/`: documentación actual de cada comando para el agente,
+  incluido `ATLAS-CHAT.md` para el cliente Realtime de terminal.
 
 El runtime de voz y pantalla vive en [`../../.atlas`](../../.atlas), separado de la identidad y memoria de OpenClaw.
 

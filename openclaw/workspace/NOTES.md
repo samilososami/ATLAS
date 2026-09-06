@@ -12,3 +12,6 @@ This is your compact operational cheat sheet. You maintain it yourself, keep it 
 ## Devices
 
 ## Voice and WebScreen
+
+- Text-only Realtime diagnosis -> use `atlas-chat --ephemeral`; omit
+  `--ephemeral` when the turn should share WebScreen's persistent conversation.

@@ -7,6 +7,12 @@ arquitectura anterior de preámbulo más agente OpenClaw se conserva únicamente
 como backup reversible en `Backups/WebScreen/legacy-preamble-2026-08-29`: no es
 un fallback ejecutable del flujo actual.
 
+`atlas-chat` es la superficie hermana de terminal: usa el mismo modelo
+`gpt-realtime-2.1`, las mismas instrucciones y Markdown, las mismas herramientas
+y, salvo con `--ephemeral`, la misma conversación persistente. No abre WebRTC,
+micrófono, TTS ni interfaz web. Su manual operativo está en
+`openclaw/workspace/atlas-commands/ATLAS-CHAT.md`.
+
 ## Flujo Realtime actual
 
 1. El backend solicita una reserva WebRTC efímera para `gpt-realtime-2.1` usando el OAuth ya configurado en la Pi. OpenClaw actúa aquí solo como broker de autenticación: ninguno de sus agentes procesa la conversación. El parámetro protocolario `brain: agent-consult` es el único perfil admitido por `talk.client.create`; no activa el agente legacy. El navegador configura después `atlas_shell` y `atlas_web_search` como herramientas del modelo. Nunca recibe el token persistente ni una API key.

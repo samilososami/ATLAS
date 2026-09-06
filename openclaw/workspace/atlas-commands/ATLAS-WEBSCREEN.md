@@ -103,3 +103,14 @@ For full Pi health, use:
 ```bash
 atlas-status
 ```
+
+## Text-only terminal companion
+
+Use `atlas-chat` when the same ATLAS Realtime brain must be tested or used from
+a terminal without microphone, audio output or browser UI. It reserves the same
+`gpt-realtime-2.1` route, loads the same crucial Markdown, exposes the same
+shell and web-search tools, and normally shares WebScreen's persistent
+conversation. `atlas-chat --ephemeral` deliberately starts without that
+conversation history and does not write new turns back to it.
+
+See `ATLAS-CHAT.md` for interactive commands and `atlas-chat -p` usage.
