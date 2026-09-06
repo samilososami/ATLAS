@@ -164,6 +164,7 @@ Use them when they match the task. Detailed command docs live in `atlas-commands
 
 - `atlas-commands/ATLAS-STATUS.md` — `atlas-status`, quick Raspberry Pi health, physical screen, and service state.
 - `atlas-commands/ATLAS-WEBSCREEN.md` — `atlas-webscreen`, local ATLAS visual/voice web surface.
+- `atlas-commands/ATLAS-CHAT.md` — `atlas-chat`, direct text-only Realtime terminal with visible tools and timings.
 - `atlas-commands/ATLAS-DESKTOP.md` — `atlas-desktop`, visual desktop, windows, browser, screenshots, clicks, and wallpapers.
 - `atlas-commands/ATLAS-SCREEN.md` — `atlas-screen`, physical SunFounder power, desktop, root terminal, and touchscreen WebScreen kiosk.
 - `atlas-commands/ATLAS-RAFAS.md` — `atlas-rafas`, system/network diagnostics, safe interactive doctor and local root recovery.

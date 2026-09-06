@@ -74,6 +74,21 @@ atlas-app revoke
 
 Instalación y conexión por Internet: [ATLAS Companion](../.atlas/companion/README.md).
 
+## `atlas-chat`
+
+Abre un chat de terminal, solo por texto, con el mismo `gpt-realtime-2.1`,
+OAuth, contexto Markdown, memoria y tools directas que WebScreen. Las respuestas
+se muestran en blanco; los comandos, búsquedas y resultados, en gris. También
+mide el tiempo hasta el primer texto y el tiempo total de cada turno.
+
+```bash
+atlas-chat
+atlas-chat -p "Comprueba la temperatura de la Pi"
+```
+
+El wrapper funciona como `sami` y como root; root delega la ejecución al usuario
+de servicio para no crear estado privado con propietario incorrecto.
+
 ## `atlas-say`
 
 Convierte texto en audio mediante ElevenLabs y lo reproduce por la salida predeterminada.

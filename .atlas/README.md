@@ -7,6 +7,9 @@ live here; OpenClaw keeps your identity and memory in its own workspace.
   instructions and regression tests. Its README explains the voice pipeline.
   `starter/` keeps the dedicated starter workspace and `workspace/` holds
   projects requested through the voice interface.
+- `chat/`: text-only terminal client for the same `gpt-realtime-2.1`, OAuth,
+  Markdown context, persistent conversation and direct tools as WebScreen.
+  Its private history and diagnostic logs are created only on the live A1.
 - `companion/`: authenticated Android service and independent, self-hostable
   encrypted relay. `atlas-app` manages pairing and reports client/relay state.
   Private pairing keys and certificates live only in its ignored `state/`.
