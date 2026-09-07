@@ -1,0 +1,37 @@
+#!/usr/bin/env node
+"use strict";
+
+const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
+
+const source = fs.readFileSync(path.join(__dirname,
+  "app/src/main/java/dev/atlas/a1/AtlasAccessibilityService.java"), "utf8");
+
+assert.match(source, /"enter"\.equals\(key\).*imeEnter\(\)/s,
+  "ENTER must route through the focused IME action");
+assert.match(source, /AccessibilityAction\.ACTION_IME_ENTER\.getId\(\)/,
+  "ENTER must use ACTION_IME_ENTER, not arbitrary key injection");
+assert.match(source, /inheritedPassword\|\|node\.isPassword\(\)/,
+  "password sensitivity must propagate through the node subtree");
+assert.match(source, /password\?redacted:[^\n]*node\.getText\(\)/,
+  "password node text must be redacted");
+assert.match(source, /password\?redacted:[^\n]*node\.getContentDescription\(\)/,
+  "password node descriptions must be redacted");
+assert.match(source,
+  /code==ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT&&attempt\+1<SCREENSHOT_MAX_ATTEMPTS/,
+  "only the short-interval screenshot error may retry");
+assert.match(source, /SCREENSHOT_MAX_ATTEMPTS=2/,
+  "screenshots must make at most one retry");
+assert.match(source, /setGuardPassThrough\(true\)[\s\S]*main\.postDelayed[\s\S]*dispatchGesture/,
+  "the overlay must become pass-through before gesture dispatch");
+assert.match(source, /GESTURE_OVERLAY_SETTLE_MS=32/,
+  "gesture dispatch must wait for WindowManager to publish the input flag");
+assert.match(source, /FLAG_NOT_TOUCHABLE/,
+  "pass-through mode must use FLAG_NOT_TOUCHABLE");
+assert.match(source, /onCompleted[^}]*setGuardPassThrough\(false\)/s,
+  "completed gestures must restore the blocking overlay");
+assert.match(source, /onCancelled[^}]*setGuardPassThrough\(false\)/s,
+  "cancelled gestures must restore the blocking overlay");
+
+console.log("Android Use security contracts passed");

@@ -6,6 +6,13 @@ from urllib.parse import urlparse
 
 ROOT=pathlib.Path(os.environ.get('ATLAS_HOME','/home/atlas'))
 STATE=ROOT/'.atlas/companion/state'
+CONTROL_OPERATION_ALIASES={
+    'location':'location.get',
+    'get_location':'location.get',
+    'capabilities':'phone.capabilities',
+    'call':'phone.call',
+    'calls.place':'phone.call',
+}
 
 def b64(value): return base64.urlsafe_b64encode(value).decode().rstrip('=')
 def config(): return json.loads((STATE/'config.json').read_text())
@@ -75,6 +82,17 @@ def parse_params(raw,arguments):
     if positional: values['args']=positional
     return values
 
+def normalize_control_method(operation):
+    """Return the wire method for a friendly or canonical control operation."""
+    operation=str(operation or '').strip().lower()
+    while operation.startswith('control.'):
+        operation=operation[len('control.'):]
+    if not operation: raise SystemExit('La operación de control no puede estar vacía')
+    operation=CONTROL_OPERATION_ALIASES.get(operation,operation)
+    if operation.startswith('androiduse.'):
+        return operation
+    return 'control.'+operation
+
 def mobile_call(method,params,timeout):
     body=json.dumps({'method':method,'params':params,'timeout':timeout}).encode()
     request=urllib.request.Request('https://127.0.0.1:5010/local/control',data=body,
@@ -136,7 +154,7 @@ def main():
     if action=='control':
         if not args.arguments: raise SystemExit('Uso: atlas-app control OPERACIÓN [clave=valor ...] [--params JSON]')
         operation=args.arguments[0]; params=parse_params(args.params,args.arguments[1:])
-        method=operation if operation.startswith(('control.','androiduse.')) else 'control.'+operation
+        method=normalize_control_method(operation)
         result=mobile_call(method,params,args.timeout)
         if args.json or isinstance(result,(dict,list)): print(json.dumps(result,ensure_ascii=False))
         else: print(result)

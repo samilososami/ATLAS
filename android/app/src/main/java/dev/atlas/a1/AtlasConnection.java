@@ -50,7 +50,6 @@ final class AtlasConnection implements AutoCloseable {
     private final ExecutorService inboundWorker=Executors.newSingleThreadExecutor(r->{Thread t=new Thread(r,"atlas-phone-rpc");t.setDaemon(true);return t;});
     private final ScheduledExecutorService heartbeatWorker=Executors.newSingleThreadScheduledExecutor(r->{Thread t=new Thread(r,"atlas-a1-heartbeat");t.setDaemon(true);return t;});
     private ScheduledFuture<?> heartbeat;
-    private volatile boolean legacyFallback;
     AtlasConnection(Context context) {
         prefs=context.getSharedPreferences("atlas",Context.MODE_PRIVATE);
         String savedClient=prefs.getString("clientId",null);
@@ -155,23 +154,25 @@ final class AtlasConnection implements AutoCloseable {
         if(configured.isEmpty()&&!legacyEndpoint().isEmpty())return "wss://atlas-a1:5010/app";
         return configured;
     }
-    synchronized void preferDirect(){legacyFallback=false;}
+    synchronized void preferDirect(){}
+    private boolean explicitlyUsesLegacyRelay(){
+        return pairing!=null&&"legacy-relay".equals(pairing.optString("transport"))&&!legacyEndpoint().isEmpty();
+    }
     private String endpoint()throws IOException{
         String direct=directEndpoint();
-        String legacy=legacyEndpoint();String value=!direct.isEmpty()&&(!legacyFallback||legacy.isEmpty())?direct:legacy;
+        String legacy=legacyEndpoint();String value=explicitlyUsesLegacyRelay()?legacy:(!direct.isEmpty()?direct:legacy);
         if(value.startsWith("https://"))value="wss://"+value.substring(8);
         if(!value.startsWith("wss://"))throw new IOException("A1 no tiene una dirección Tailscale segura configurada");
         return value;
     }
     boolean hasEndpoint(){try{return pairing!=null&&!endpoint().isEmpty();}catch(Exception ignored){return false;}}
-    boolean usesDirectEndpoint(){return !directEndpoint().isEmpty()&&(!legacyFallback||legacyEndpoint().isEmpty());}
+    boolean usesDirectEndpoint(){return !directEndpoint().isEmpty()&&!explicitlyUsesLegacyRelay();}
     private void failTransport(WebSocket socket,String error,boolean direct){
-        // A cancelled/stale socket must never force a healthy replacement back
-        // to the relay. Only the currently owned direct transport can select the
-        // compatibility fallback.
+        // Tailscale is the selected transport. A transient direct failure must
+        // never demote the app to a stale Cloudflare URL saved by an older
+        // pairing; doing so made recovery impossible when that relay was gone.
         synchronized(this){
             if(socket!=null&&socket!=relay)return;
-            if(direct&&!legacyEndpoint().isEmpty())legacyFallback=true;
         }
         failRelay(socket,error);
     }
@@ -295,9 +296,9 @@ final class AtlasConnection implements AutoCloseable {
         if(reply.has("error"))throw new IOException(reply.getString("error"));return reply.getJSONObject("result");
     }
 
-    /** True only while the old relay is active and a direct Tailscale route is available to probe. */
+    /** Legacy relay mode is explicit; normal Tailscale sessions never need migration probes. */
     synchronized boolean shouldProbeDirect(){
-        return legacyFallback&&relayState==RelayState.ONLINE&&relay!=null&&pending.isEmpty()&&!directEndpoint().isEmpty();
+        return false;
     }
 
     /**

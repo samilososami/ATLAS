@@ -1,28 +1,49 @@
 #!/usr/bin/env python3
 """Fast Android Accessibility control through the paired ATLAS app."""
 import argparse, base64, json, os, pathlib, subprocess, sys, time
+from urllib.parse import urlparse
 
 ROOT=pathlib.Path(os.environ.get('ATLAS_HOME','/home/atlas'))
+NO_ARGUMENT_ACTIONS=('start','stop','status','screenshot','tree','back','home','recents')
+LAUNCH_SCHEMES=frozenset(('http','https','geo','tel','sms','mailto'))
+
+def number(value,label,integer=False):
+    try: return int(value) if integer else float(value)
+    except (TypeError,ValueError): raise SystemExit(f'{label} debe ser un número')
 
 def parameters(action,values):
-    if action in ('start','stop','status'): return {}
-    if action=='screenshot': return {}
+    if action in NO_ARGUMENT_ACTIONS:
+        if values: raise SystemExit(f'Uso: atlas-androiduse {action}')
+        return {}
     if action=='tap':
         if len(values)!=2: raise SystemExit('Uso: atlas-androiduse tap X Y')
-        return {'x':float(values[0]),'y':float(values[1])}
+        return {'x':number(values[0],'X'),'y':number(values[1],'Y')}
+    if action=='long_press':
+        if len(values) not in (2,3): raise SystemExit('Uso: atlas-androiduse long_press X Y [DURACION_MS]')
+        result={'x':number(values[0],'X'),'y':number(values[1],'Y')}
+        if len(values)==3: result['duration']=number(values[2],'DURACION_MS',integer=True)
+        return result
     if action=='swipe':
         if len(values) not in (4,5): raise SystemExit('Uso: atlas-androiduse swipe X1 Y1 X2 Y2 [DURACION_MS]')
-        return {'x1':float(values[0]),'y1':float(values[1]),'x2':float(values[2]),'y2':float(values[3]),
-                'duration':int(values[4]) if len(values)==5 else 300}
+        return {'x1':number(values[0],'X1'),'y1':number(values[1],'Y1'),
+                'x2':number(values[2],'X2'),'y2':number(values[3],'Y2'),
+                'duration':number(values[4],'DURACION_MS',integer=True) if len(values)==5 else 300}
     if action=='text':
         if not values: raise SystemExit('Uso: atlas-androiduse text TEXTO')
         return {'text':' '.join(values)}
     if action=='key':
         if len(values)!=1: raise SystemExit('Uso: atlas-androiduse key BACK|HOME|RECENTS|ENTER')
-        return {'key':values[0].upper()}
+        key=values[0].upper()
+        if key not in ('BACK','HOME','RECENTS','ENTER'):
+            raise SystemExit('Uso: atlas-androiduse key BACK|HOME|RECENTS|ENTER')
+        return {'key':key}
     if action=='launch':
         if len(values)!=1: raise SystemExit('Uso: atlas-androiduse launch PAQUETE|URL')
-        return {'target':values[0]}
+        target=values[0].strip(); scheme=urlparse(target).scheme.lower()
+        return {'uri':target} if scheme in LAUNCH_SCHEMES else {'package':target}
+    if action=='wait':
+        if len(values)>1: raise SystemExit('Uso: atlas-androiduse wait [MILISEGUNDOS]')
+        return {'ms':number(values[0],'MILISEGUNDOS',integer=True)} if values else {}
     raise SystemExit('Acción desconocida')
 
 def call(action,params,timeout):
@@ -54,7 +75,8 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--json',action='store_true')
     parser.add_argument('--timeout',type=float,default=35)
-    parser.add_argument('action',choices=('start','stop','status','screenshot','tap','swipe','text','key','launch'))
+    parser.add_argument('action',choices=('start','stop','status','screenshot','tree','tap','long_press','swipe',
+                                         'text','key','launch','back','home','recents','wait'))
     parser.add_argument('values',nargs='*')
     args=parser.parse_args(); target=''
     values=args.values

@@ -309,15 +309,27 @@ def application(config):
     async def socket(request):
         ws=web.WebSocketResponse(heartbeat=20,max_msg_size=2_000_000,autoping=True)
         await ws.prepare(request); remote=request.remote or ''; peer='tailscale' if remote.startswith('100.') or remote.startswith('fd7a:115c:a1e0:') else 'direct'
+        tasks=set(); send_lock=asyncio.Lock()
+        async def respond(data):
+            try:
+                box=await c.dispatch(data['box'],peer,ws); payload={'box':box}
+            except Exception: payload={'error':'Invalid or expired encrypted request'}
+            try:
+                async with send_lock: await ws.send_json(payload)
+            except (ConnectionError,OSError,RuntimeError): pass
         try:
             async for event in ws:
                 if event.type==WSMsgType.TEXT:
                     try:
-                        data=json.loads(event.data); box=await c.dispatch(data['box'],peer,ws)
-                        await ws.send_json({'box':box})
-                    except Exception: await ws.send_json({'error':'Invalid or expired encrypted request'})
+                        data=json.loads(event.data)
+                        if len(tasks)>=32: raise ValueError('Demasiadas peticiones simultáneas')
+                        task=asyncio.create_task(respond(data));tasks.add(task);task.add_done_callback(tasks.discard)
+                    except Exception:
+                        async with send_lock: await ws.send_json({'error':'Invalid or expired encrypted request'})
                 elif event.type in (WSMsgType.CLOSE,WSMsgType.ERROR): break
         finally:
+            for task in tasks: task.cancel()
+            await asyncio.gather(*tasks,return_exceptions=True)
             disconnected=[client for client,value in c.sockets.items() if value is ws]
             c.sockets={client:value for client,value in c.sockets.items() if value is not ws}
             for client in disconnected: c.clients.pop(client,None)

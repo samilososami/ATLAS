@@ -1,4 +1,5 @@
 import importlib.util
+import base64
 import json
 import os
 import subprocess
@@ -42,13 +43,171 @@ class AtlasChatTests(unittest.TestCase):
     def test_tool_contract_matches_webscreen_names(self):
         module = self.load_client()
         tools = {entry["name"]: entry for entry in module.REALTIME_TOOLS}
-        self.assertEqual(set(tools), {"atlas_shell", "atlas_web_search", "atlas_routine"})
+        self.assertEqual(set(tools), {
+            "atlas_shell", "atlas_web_search", "atlas_routine",
+            "atlas_phone", "atlas_android",
+        })
         self.assertEqual(tools["atlas_shell"]["parameters"]["required"], ["command"])
         self.assertEqual(tools["atlas_web_search"]["parameters"]["required"], ["query"])
         self.assertEqual(tools["atlas_routine"]["parameters"]["required"], ["action"])
+        self.assertEqual(tools["atlas_phone"]["parameters"]["required"], ["operation"])
+        self.assertEqual(tools["atlas_android"]["parameters"]["required"], ["operation"])
         browser = (ROOT / ".atlas/webscreen/static/realtime.js").read_text()
         for name in tools:
             self.assertIn(f'name: "{name}"', browser)
+
+    def test_phone_tool_uses_closed_webscreen_contract_and_aliases(self):
+        module = self.load_client()
+        chat = object.__new__(module.AtlasChat)
+        capture = io.StringIO()
+        chat.console = Console(file=capture, width=80, color_system=None)
+        chat.tool_details = []
+        chat.compact = True
+        chat.log = Mock()
+        execute = Mock(return_value={"ok": True, "accuracy": 8})
+        aliases = {"get_location": "location.get"}
+        allowed = frozenset({"location.get"})
+        chat.webscreen = SimpleNamespace(
+            execute_atlas_app_control=execute,
+            ATLAS_PHONE_OPERATIONS=allowed,
+            ATLAS_PHONE_OPERATION_ALIASES=aliases,
+            ATLAS_APP_CONTROL_MAX_PHONE_RESULT_CHARS=4096,
+        )
+
+        result = chat._run_tool("atlas_phone", {
+            "operation": "get_location", "params": {"fresh": True},
+        }, "phone-test")
+
+        execute.assert_called_once_with("get_location", {"fresh": True}, allowed, aliases)
+        self.assertEqual(result["result"]["accuracy"], 8)
+        self.assertIsNone(chat._last_tool_image)
+        self.assertIn("TELÉFONO", capture.getvalue())
+
+    def test_android_tool_auto_inspects_without_leaking_capture_bytes(self):
+        module = self.load_client()
+        chat = object.__new__(module.AtlasChat)
+        capture = io.StringIO()
+        chat.console = Console(file=capture, width=80, color_system=None)
+        chat.tool_details = []
+        chat.compact = True
+        chat.log = Mock()
+        chat._android_control_active = False
+        png = base64.b64encode(b"\x89PNG\r\n\x1a\nmock").decode()
+        raw_capture = {"ok": True, "pngBase64": png, "width": 1080, "height": 2316}
+        allowed = frozenset({"androiduse.start", "androiduse.screenshot", "androiduse.stop"})
+        execute = Mock(side_effect=[{"ok": True}, raw_capture])
+        chat.webscreen = SimpleNamespace(
+            execute_atlas_app_control=execute,
+            ATLAS_ANDROID_OPERATIONS=allowed,
+            ATLAS_ANDROID_AUTO_INSPECT=frozenset({"androiduse.start"}),
+            normalize_android_screenshot=Mock(return_value={
+                "pngBase64": png, "width": 1080, "height": 2316, "mime": "image/png",
+            }),
+            public_android_result=lambda value: {
+                key: item for key, item in value.items() if key != "pngBase64"
+            },
+        )
+
+        result = chat._run_tool("atlas_android", {
+            "operation": "androiduse.start", "params": {},
+        }, "android-test")
+
+        self.assertTrue(chat._android_control_active)
+        self.assertNotIn("pngBase64", json.dumps(result))
+        self.assertTrue(result["screenshot"]["attached"])
+        self.assertEqual(chat._last_tool_image["pngBase64"], png)
+        self.assertNotIn(png, capture.getvalue())
+
+    def test_android_screenshot_retries_short_interval_once_only(self):
+        module = self.load_client()
+        chat = object.__new__(module.AtlasChat)
+        raw = {"ok": True, "pngBase64": "encoded", "width": 10, "height": 20}
+        execute = Mock(side_effect=[
+            RuntimeError("No se pudo capturar la pantalla (3)"), raw,
+        ])
+        chat.webscreen = SimpleNamespace(
+            execute_atlas_app_control=execute,
+            ATLAS_ANDROID_OPERATIONS=frozenset({"androiduse.screenshot"}),
+            normalize_android_screenshot=Mock(return_value={
+                "pngBase64": "encoded", "width": 10, "height": 20, "mime": "image/png",
+            }),
+        )
+        with patch.object(module.time, "sleep") as sleep:
+            returned, screenshot = chat._capture_android_screenshot()
+        self.assertIs(returned, raw)
+        self.assertEqual(screenshot["width"], 10)
+        self.assertEqual(execute.call_count, 2)
+        sleep.assert_called_once_with(module.SCREENSHOT_RETRY_SECONDS)
+
+    def test_image_is_a_separate_realtime_input(self):
+        module = self.load_client()
+        chat = object.__new__(module.AtlasChat)
+        chat._send = Mock()
+        screenshot = {"pngBase64": "YWJj", "width": 10, "height": 20}
+        result = {
+            "operation": "androiduse.screenshot",
+            "result": {"ok": True, "captureAttached": True},
+        }
+        chat._send_tool_result("call-1", result, screenshot)
+        self.assertEqual(chat._send.call_count, 2)
+        function_output = chat._send.call_args_list[0].args[0]
+        self.assertNotIn("YWJj", function_output["item"]["output"])
+        image_message = chat._send.call_args_list[1].args[0]
+        content = image_message["item"]["content"]
+        self.assertEqual(content[1], {
+            "type": "input_image", "image_url": "data:image/png;base64,YWJj",
+        })
+
+    def test_close_stops_active_android_control_before_realtime(self):
+        module = self.load_client()
+        chat = object.__new__(module.AtlasChat)
+        ws = Mock()
+        chat.ws = ws
+        chat._android_control_active = True
+        chat.log = Mock()
+        execute = Mock(return_value={"ok": True})
+        allowed = frozenset({"androiduse.stop"})
+        chat.webscreen = SimpleNamespace(
+            execute_atlas_app_control=execute,
+            ATLAS_ANDROID_OPERATIONS=allowed,
+        )
+        chat.close()
+        execute.assert_called_once_with("androiduse.stop", {}, allowed)
+        ws.close.assert_called_once_with()
+        self.assertFalse(chat._android_control_active)
+        self.assertIsNone(chat.ws)
+
+    def test_failed_auto_inspection_stops_android_control(self):
+        module = self.load_client()
+        chat = object.__new__(module.AtlasChat)
+        capture = io.StringIO()
+        chat.console = Console(file=capture, width=80, color_system=None)
+        chat.tool_details = []
+        chat.compact = True
+        chat.log = Mock()
+        chat._android_control_active = False
+        allowed = frozenset({"androiduse.start", "androiduse.screenshot", "androiduse.stop"})
+        execute = Mock(side_effect=[
+            {"ok": True}, RuntimeError("captura fallida"), {"ok": True},
+        ])
+        chat.webscreen = SimpleNamespace(
+            execute_atlas_app_control=execute,
+            ATLAS_ANDROID_OPERATIONS=allowed,
+            ATLAS_ANDROID_AUTO_INSPECT=frozenset({"androiduse.start"}),
+            normalize_android_screenshot=Mock(),
+            public_android_result=lambda value: value,
+        )
+
+        result = chat._run_tool("atlas_android", {
+            "operation": "androiduse.start", "params": {},
+        }, "failed-inspection")
+
+        self.assertFalse(result["ok"])
+        self.assertFalse(chat._android_control_active)
+        self.assertEqual(
+            [call.args[0] for call in execute.call_args_list],
+            ["androiduse.start", "androiduse.screenshot", "androiduse.stop"],
+        )
 
     def test_logs_never_receive_provider_secret_field(self):
         source = CLIENT.read_text()

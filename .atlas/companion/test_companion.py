@@ -70,6 +70,32 @@ class CompanionTests(unittest.IsolatedAsyncioTestCase):
             acknowledgement=phone.open((await ws.receive_json(timeout=2))['box'])
             self.assertTrue(acknowledgement['result']['ok'])
             self.assertEqual(await pending,{'available':True})
+    async def test_direct_websocket_allows_reentrant_phone_tool_during_command(self):
+        configuration=cfg();configuration['pairedDevice']='s23u'
+        app=application(configuration);app.cleanup_ctx.clear();companion=app['companion']
+        async def command_which_calls_phone(_command):
+            result=await companion.send_mobile('control.location.get',{},timeout=2)
+            return {'output':json.dumps(result),'exitCode':0,'timedOut':False,'truncated':False}
+        with patch.object(companion,'command',new=command_which_calls_phone):
+            async with TestClient(TestServer(app)) as client:
+                ws=await client.ws_connect('/app');phone=Cipher(configuration['key'],'app')
+                await ws.send_json({'box':phone.seal({'id':'connect-reentrant','client':'reentrant-client',
+                    'device':'s23u','method':'ping','params':{}})})
+                phone.open((await ws.receive_json(timeout=2))['box'])
+                await ws.send_json({'box':phone.seal({'id':'prepare-reentrant','client':'reentrant-client',
+                    'device':'s23u','method':'command.prepare','params':{'command':'atlas-app control location.get'}})})
+                prepared=phone.open((await ws.receive_json(timeout=2))['box'])['result']
+                await ws.send_json({'box':phone.seal({'id':'execute-reentrant','client':'reentrant-client',
+                    'device':'s23u','method':'command.execute','params':{'nonce':prepared['nonce']}})})
+                request=phone.open((await ws.receive_json(timeout=2))['box'])
+                self.assertEqual(request['method'],'control.location.get')
+                await ws.send_json({'box':phone.seal({'id':'reply-reentrant','client':'reentrant-client',
+                    'device':'s23u','method':'app.reply','params':{'requestId':request['id'],
+                    'result':{'accuracy':12.0}}})})
+                replies=[phone.open((await ws.receive_json(timeout=2))['box']) for _ in range(2)]
+                by_id={reply['id']:reply for reply in replies}
+                self.assertTrue(by_id['reply-reentrant']['result']['ok'])
+                self.assertIn('12.0',by_id['execute-reentrant']['result']['output'])
     async def test_owner_conflict(self):
         self.c.owner='first-client'
         with self.assertRaises(ValueError):await self.c.acquire('another-client')
