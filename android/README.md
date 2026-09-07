@@ -1,116 +1,132 @@
-# ATLAS Android · 0.1.12 preview
+# ATLAS Android · 0.2.0 preview
 
-Android 11+ companion for an owner-controlled ATLAS A1. Install the APK from
-[GitHub Releases](https://github.com/samilososami/ATLAS/releases). This is a
-development-signed preview, not the ATLAS OS disk image.
+Aplicación Android 11+ para hablar con ATLAS y controlar un ATLAS A1 propio. La
+APK se publica en [GitHub Releases](https://github.com/samilososami/ATLAS/releases).
+Es una preview firmada para desarrollo; no es la imagen de ATLAS OS.
 
-Version 0.1.12 brings the tactile visual language of the onboarding pages to
-the full app, with event-driven motion, semantic haptics and a staged pairing
-experience that remains lightweight while ATLAS is idle or in the background.
+La versión 0.2.0 migra la conexión principal a Tailscale, añade control nativo y
+visual del teléfono, rehace la interfaz completa y mantiene voz, chat, acciones,
+terminal, estado, widgets y actualizaciones dentro de una sola aplicación.
 
-## First connection
+## Primera conexión
 
-1. Install [Companion on A1](../.atlas/companion/README.md).
-2. On A1, run `atlas-app pair` in a private terminal.
-3. In ATLAS → Ajustes, paste the code and tap **Conectar con A1**. Android
-   asks for biometrics or your screen-lock credential by default. Configure
-   a device lock first; no biometric data leaves your phone.
-4. Tap **Preparar voz**, grant microphone access, then hold the voice button
-   and release to send. Changing voice/reasoning applies to a new session.
+1. Instala [Companion en A1](../.atlas/companion/README.md) y conecta `atlas-a1`,
+   el teléfono y, si quieres administrarlo, el portátil a la misma red Tailscale.
+2. En A1 ejecuta `atlas-app pair`. El modo Bluetooth dura 120 segundos y muestra
+   un código `XXX-XXX`.
+3. En ATLAS → Ajustes pulsa **Emparejar**, selecciona el A1 detectado e introduce
+   las seis cifras. La clave de aplicación y la huella TLS se guardan cifradas en
+   Android Keystore.
+4. La sesión Realtime se prepara al abrir la app. En **Pulsar**, mantén el botón,
+   habla y suéltalo para enviar.
 
-Local access works on the same network. Internet access needs your own public
-WSS relay; no Tailscale, managed VPN or external companion app is required.
-See the companion instructions. A pairing code is an administration secret.
+**Comprobar permisos**, en Ajustes, abre solo las páginas de permisos que todavía
+faltan. Sirve también para activar Accesibilidad después de una actualización sin
+borrar datos ni repetir la introducción. Los permisos especiales vuelven a
+comprobarse al regresar desde Ajustes de Android.
 
-After pairing, a foreground link supervisor keeps one encrypted relay socket
-owned by the app process even when the activity is closed. It reacts immediately
-to Wi-Fi/mobile-data handoffs and retries relay failures with bounded exponential
-backoff. A1 presence is pushed by the relay instead of polled, and the WebView is
-fully paused in the background. Relay availability and A1 presence are separate
-states: an offline Pi no longer tears down a healthy Cloudflare link.
-Android asks once to exempt ATLAS from battery optimization; the same control stays
-available in Settings until granted. Force-stopping ATLAS in Android Settings still
-stops the process and link by design.
+## Conexión persistente
 
-## Five tabs
+Companion escucha en el canal privado `wss://atlas-a1:5010/app`. Tailscale intenta
+una ruta directa entre el teléfono y A1; si la red no permite UDP directo puede
+usar su relay cifrado. El antiguo relay de Cloudflare se conserva únicamente como
+respaldo para emparejamientos anteriores. Una instalación 0.1.x prueba MagicDNS
+con la clave y el pin ya guardados, sin obligar a emparejar de nuevo, y vuelve a
+probar la ruta directa cada 90 segundos si tuvo que recurrir al relay antiguo.
 
-- **Atlas:** hold-to-talk PCM → Realtime, Android wake recognition while visible,
-  or streaming chat with optional native OpenAI audio. The backend supplies
-  ATLAS context and Tavily. Shell tool calls ask for native confirmation.
-  Conversation history and the text composer appear only in **Chat**. The
-  chat's text-only preference never disables audio in Pulsar or wake mode.
-- **Acciones:** named command tiles, 23 icons and seven accent colors. Long-press
-  a tile to edit/delete. Every command shows its exact text before execution.
-- **Terminal:** real PTY, resize, Ctrl-C, arrows, keyboard and xterm scrollback.
-- **Estado:** actual A1 diagnostics, services and the quota windows reported by
-  Gateway. Pro shows only the weekly window; Plus shows 5-hour and weekly.
-  Unavailable data is never presented as zero, and changing plan only requires
-  refreshing OAuth rather than changing the UI.
-- **Ajustes:** encrypted pairing, LAN/relay/auto transport, app lock, action/pairing
-  biometrics, native voices, reasoning levels and a verified GitHub release
-  updater. The interface uses the fixed ATLAS dark palette and its blue accents.
+Un foreground service conserva el WebSocket cifrado cuando la Activity queda en
+segundo plano, reacciona a cambios entre Wi-Fi y datos y aplica backoff acotado.
+Android muestra una notificación persistente y puede pedir excluir ATLAS de la
+optimización de batería. **Forzar detención** desde Android sí mata el proceso y
+la conexión, deliberadamente.
 
-## Home-screen widgets and updates
+La sesión Realtime se precarga al abrir la app y se renueva antes del máximo del
+proveedor. Un corte breve tiene margen de recuperación y reconexión automática.
+Si Android destruye la Activity, la voz se prepara otra vez al volver; el enlace
+con A1 permanece a cargo del servicio.
 
-In Settings, **Añadir widget** requests placement of the configurable ATLAS
-widget. It starts at 2×2 and can be resized horizontally and vertically. Choose
-a saved action, A1 status, Codex limits, Chat, or Push-to-talk. Larger diagnostic
-widgets reveal extra service details. Android widgets cannot host continuous
-press-and-hold recording or a reliable editable chat field, so those variants
-open the correct app mode directly. Command widgets also open the app and retain
-its exact-command confirmation and biometric policy.
+## Cinco tabs
 
-**Buscar actualizaciones** lists Android-specific GitHub releases, displays the
-release notes, and offers download/install. ATLAS verifies the fixed repository
-path, size, GitHub SHA-256 digest, package name, higher version code, and identical
-APK signer before handing the file to Android. Android may ask once for permission
-to install apps from ATLAS and always presents the system installation confirmation.
+- **ATLAS.** Pulsar para hablar, wake word visible y Chat de texto. El chat añade
+  el mensaje local inmediatamente, muestra que ATLAS está pensando y recibe la
+  respuesta progresiva. Sus sugerencias rotan entre 50 frases breves.
+- **ACCIONES.** Botones sin ripple y selección estable por pulsación larga. El
+  editor ofrece nombre, acción predefinida, iconos y colores; el comando real se
+  guarda internamente y nunca se crea un botón inerte. Tocar ejecuta directamente,
+  respetando la protección biométrica opcional.
+- **TERMINAL.** PTY real de borde a borde, pantalla completa inmersiva, teclas
+  auxiliares sobre el teclado y zoom tipográfico con pellizco. La shell sobrevive
+  al segundo plano y expira tras cinco minutos sin actividad. Solo consulta salida
+  mientras el tab está visible.
+- **ESTADO.** Conserva la última lectura válida, refresca al entrar y permite
+  pull-to-refresh. Pro muestra la cuota semanal; Plus, 5 h y semanal. Datos no
+  disponibles nunca se presentan como cero.
+- **AJUSTES.** Emparejamiento, permisos pendientes, bloqueo al abrir, protección
+  de acciones, voz, razonamiento, actualización verificada y desemparejado real.
 
-The visual shell is bundled HTML/CSS/JS inside Android WebView, with native Java
-for networking, pinned TLS, Keystore, biometrics, permissions and recognition.
-No remote website is loaded as the app UI. Icons use the supplied ATLAS artwork.
-The first-run tutorial includes 25 page-specific PNG illustrations, one for each
-narrative or permission step; generated assets are real-alpha PNGs and are loaded
-one page ahead to avoid visual flashes without decoding the full set at startup.
-The filled ATLAS silhouette and rounded gear are vector UI glyphs. The decorative
-white ATLAS wordmark sits on navy for contrast in both themes. The full-color
-header and central logos are unchanged; only the launcher inset grew from 22%
-to 25%. The interactive terminal intentionally retains its dark console surface.
+## Control del teléfono
+
+ATLAS prioriza APIs nativas para llamadas, SMS, contactos, calendario, ubicación,
+notificaciones, archivos, galería, cámara, sensores y panel Wi-Fi. Las operaciones
+devuelven `permission_required`, `unsupported` o `requires_user_action` cuando
+Android exige permiso, confirmación o no ofrece la capacidad; nunca simulan éxito.
+
+`atlas-androiduse` es el fallback visual. El AccessibilityService puede observar
+la jerarquía, capturar la pantalla, tocar, deslizar, escribir, abrir aplicaciones
+y usar Atrás/Inicio/Recientes. Durante el control aparece una notificación, un aura
+azul, un bloqueo de entrada y un botón rojo para detenerlo. Cada acción importante
+se sigue con una nueva inspección y la sesión se cierra al terminar o por watchdog.
+Accesibilidad se activa manualmente en Ajustes de Android.
+
+En A1 están disponibles `atlas-app control …` y `atlas-androiduse …`. Si el móvil
+no está enlazado, responden exactamente `Error: Android device not connected`.
+
+## Widgets y actualizaciones
+
+Los widgets se eligen desde el selector del launcher: resumen de A1, cuotas, CPU,
+RAM, un botón guardado y accesos a Chat o Voz. Empiezan en 2×2 y muestran más o
+menos información según el tamaño. Las restricciones de Android impiden mantener
+un campo de chat o una grabación continua dentro de un RemoteViews; esos widgets
+abren directamente el modo correspondiente.
+
+**Buscar actualizaciones** consulta únicamente releases Android de este repo,
+muestra versión y notas y descarga con progreso. Antes de abrir el instalador se
+verifican origen, tamaño, SHA-256, package name, versionCode superior y la misma
+firma APK. Android conserva su propia confirmación de instalación.
 
 ## Build
 
-Requires JDK 17+, Android SDK platform 36 and build-tools 36.0.0. Gradle 9.1.0 is
-pinned by the wrapper (AGP 9.0.1). On the development machine these dependencies
-are shared under `/tools/codex` and available to both kali and root.
+Requiere JDK 17+, plataforma Android 36 y build-tools 36.0.0. En la máquina de
+desarrollo están compartidos bajo `/tools/codex`, disponibles para kali y root.
 
 ```sh
 cd android
-ANDROID_HOME=/path/to/android-sdk ./gradlew assembleDebug
+./build.sh
 ```
 
-Or run `./build.sh` using the shared SDK/Gradle when installed. Output:
-`app/build/outputs/apk/debug/app-debug.apk`. Private signing keys and local SDK
-settings must remain outside Git. This preview uses development signing;
-production distribution needs a stable release key managed by the owner.
+Salida: `app/build/outputs/apk/debug/app-debug.apk`. `build.sh` reutiliza la
+identidad de desarrollo local de ATLAS para que una compilación lanzada como root
+o kali pueda actualizar la APK anterior. La keystore permanece fuera del repo.
+Para otra máquina puede definirse su propio `ANDROID_USER_HOME` y debe conservarse
+la misma clave en todas sus releases.
 
-The shared emulator can be launched with `atlas-emulator` on the development
-machine, as kali or root. Do not run both against the same virtual device at once.
-Run `node --test android/test_*.cjs` from the repository root for appearance,
-widgets, update safeguards, voice/chat output-mode and ordered terminal-input tests.
+Pruebas principales:
 
-## Validation boundaries
+```sh
+node --test android/test_*.cjs
+./gradlew testDebugUnitTest lintDebug assembleDebug --console=plain
+```
 
-The initial APK is published before emulator testing, as requested. Compilation
-and automated protocol/PTY tests do not prove physical microphone quality,
-provider compatibility, biometric enrollment, or Internet traversal. Those are
-acceptance tests to run on a real phone and A1. Current validation results are
-recorded in release notes rather than silently assumed.
+La UI se entrega como HTML/CSS/JS local dentro de WebView; Java implementa enlace,
+audio fallback, Keystore, biometría, permisos, BLE y APIs Android. Las 26 imágenes
+del tutorial son PNG individuales y se precargan de una en una. xterm.js 5.5.0 y
+addon-fit 0.10.0 se distribuyen bajo MIT; su licencia está en
+`app/src/main/assets/web/XTERM-LICENSE`.
 
-Wake mode needs an Android recognition service and may use its network API.
-It stops in the background; this app does not promise always-on wake detection.
-Native Realtime voices are included; the WebScreen's external browser/ElevenLabs
-voice adapters are not yet ported into the mobile client. Quota and A1 control
-remain separate from microphone ownership.
+## Límites de validación
 
-Third-party terminal: xterm.js 5.5.0 and addon-fit 0.10.0, MIT, license bundled
-in `app/src/main/assets/web/XTERM-LICENSE`.
+El emulador permite verificar instalación, actualización, navegación y contratos,
+pero no demuestra la calidad real del micrófono, BLE, telefonía, Tailscale en
+Android, biometría ni el AccessibilityService sobre One UI. Esas comprobaciones
+E2E finales deben hacerse en el S23 Ultra. Algunas APIs abren una pantalla o
+confirmación del sistema porque Android no permite autorizarlas silenciosamente.

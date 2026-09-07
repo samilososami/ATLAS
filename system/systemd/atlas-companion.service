@@ -1,7 +1,7 @@
 [Unit]
 Description=ATLAS Android companion (encrypted pairing and remote administration)
-After=network-online.target bluetooth.service
-Wants=network-online.target
+After=network-online.target bluetooth.service tailscaled.service
+Wants=network-online.target tailscaled.service
 
 [Service]
 Type=simple
@@ -16,7 +16,7 @@ RestartSec=3
 UMask=0077
 KillMode=control-group
 # This is an owner-authorized administration service: sudo is intentional.
-# Do not expose the legacy WebScreen HTTP port through the relay.
+# Port 5010 is reached through the owner's tailnet. Never expose WebScreen/5000.
 
 [Install]
 WantedBy=multi-user.target

@@ -21,6 +21,7 @@ Documenta aquí el entorno físico y de software de la instalación.
 - OpenClaw Gateway:
 - ATLAS WebScreen:
 - ATLAS Desktop:
+- Tailscale / ATLAS Companion:
 - STT:
 - TTS:
 
@@ -48,3 +49,8 @@ the voice session and audio path alive; see
 ADB uses the same authorised identity for normal and root entry points; the
 inventory timer is not a second agent and never automatically connects stale
 records. See [`ADB.md`](ADB.md) before testing a device.
+
+The Android app uses a persistent encrypted Companion WebSocket through the
+owner's tailnet. Tailscale `Running`, Companion active and a live app socket are
+separate states. Native phone tools live behind `atlas-app control`; only use
+`atlas-androiduse` when a task truly requires visual Accessibility control.

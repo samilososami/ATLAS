@@ -1,0 +1,69 @@
+#!/usr/bin/env python3
+"""Fast Android Accessibility control through the paired ATLAS app."""
+import argparse, base64, json, os, pathlib, subprocess, sys, time
+
+ROOT=pathlib.Path(os.environ.get('ATLAS_HOME','/home/atlas'))
+
+def parameters(action,values):
+    if action in ('start','stop','status'): return {}
+    if action=='screenshot': return {}
+    if action=='tap':
+        if len(values)!=2: raise SystemExit('Uso: atlas-androiduse tap X Y')
+        return {'x':float(values[0]),'y':float(values[1])}
+    if action=='swipe':
+        if len(values) not in (4,5): raise SystemExit('Uso: atlas-androiduse swipe X1 Y1 X2 Y2 [DURACION_MS]')
+        return {'x1':float(values[0]),'y1':float(values[1]),'x2':float(values[2]),'y2':float(values[3]),
+                'duration':int(values[4]) if len(values)==5 else 300}
+    if action=='text':
+        if not values: raise SystemExit('Uso: atlas-androiduse text TEXTO')
+        return {'text':' '.join(values)}
+    if action=='key':
+        if len(values)!=1: raise SystemExit('Uso: atlas-androiduse key BACK|HOME|RECENTS|ENTER')
+        return {'key':values[0].upper()}
+    if action=='launch':
+        if len(values)!=1: raise SystemExit('Uso: atlas-androiduse launch PAQUETE|URL')
+        return {'target':values[0]}
+    raise SystemExit('Acción desconocida')
+
+def call(action,params,timeout):
+    command=['atlas-app','--json','--timeout',str(timeout),'--params',json.dumps(params,separators=(',',':')),
+             'control','androiduse.'+action]
+    process=subprocess.run(command,text=True,capture_output=True)
+    if process.returncode:
+        message=(process.stderr or process.stdout).strip()
+        raise SystemExit(message or 'Error: Android device not connected')
+    try: return json.loads(process.stdout)
+    except ValueError: raise SystemExit('Error: invalid response from Android device')
+
+def save_screenshot(result,target):
+    encoded=result.get('pngBase64')
+    if not isinstance(encoded,str) or not encoded: raise SystemExit('Error: Android screenshot was empty')
+    try: image=base64.b64decode(encoded,validate=True)
+    except ValueError: raise SystemExit('Error: Android screenshot was invalid')
+    if not image.startswith(b'\x89PNG\r\n\x1a\n'): raise SystemExit('Error: Android screenshot was not PNG')
+    path=pathlib.Path(target) if target else ROOT/'.atlas/companion/screenshots/latest.png'
+    if not path.is_absolute(): path=pathlib.Path.cwd()/path
+    path.parent.mkdir(parents=True,exist_ok=True); temporary=path.with_suffix(path.suffix+'.tmp')
+    temporary.write_bytes(image); temporary.chmod(0o600); os.replace(temporary,path)
+    if os.geteuid()==0:
+        owner=ROOT.stat(); os.chown(path,owner.st_uid,owner.st_gid); os.chown(path.parent,owner.st_uid,owner.st_gid)
+    return {'path':str(path),'width':result.get('width'),'height':result.get('height'),
+            'capturedAt':result.get('capturedAt',int(time.time()*1000))}
+
+def main():
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--json',action='store_true')
+    parser.add_argument('--timeout',type=float,default=35)
+    parser.add_argument('action',choices=('start','stop','status','screenshot','tap','swipe','text','key','launch'))
+    parser.add_argument('values',nargs='*')
+    args=parser.parse_args(); target=''
+    values=args.values
+    if args.action=='screenshot' and values:
+        if len(values)>1: raise SystemExit('Uso: atlas-androiduse screenshot [RUTA]')
+        target=values[0]; values=[]
+    result=call(args.action,parameters(args.action,values),args.timeout)
+    if args.action=='screenshot': result=save_screenshot(result,target)
+    if args.json or isinstance(result,(dict,list)): print(json.dumps(result,ensure_ascii=False))
+    else: print(result)
+
+if __name__=='__main__': main()

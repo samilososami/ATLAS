@@ -19,7 +19,9 @@ Doctor never restarts a healthy NetworkManager, enables disabled services,
 turns on an intentionally disabled screen, deletes files, resets OAuth or
 reboots the Pi. Disk pressure, failed hardware, power and account problems need
 an explicit next step. It cannot guarantee repair of arbitrary failures.
-Use `atlas-app` for the Android service, pairing and relay state; see
+RAFAS also reports `tailscaled.service`, backend state and A1's private 100.x
+address; it can restart a crashed enabled daemon but never completes account
+authentication automatically. Use `atlas-app` for Android live sockets, BLE pairing and Tailscale path; see
 `ATLAS-APP.md`. `atlas-status` remains the general overview.
 
 ## Recovery console

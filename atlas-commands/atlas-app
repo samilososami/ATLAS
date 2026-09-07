@@ -1,66 +1,159 @@
 #!/usr/bin/env python3
-"""ATLAS mobile service, pairing and connection diagnostics."""
+"""ATLAS mobile service, Tailscale pairing and Android control."""
 import argparse, base64, hashlib, json, os, pathlib, secrets, ssl, subprocess, sys, time
+import urllib.error, urllib.request
 from urllib.parse import urlparse
+
 ROOT=pathlib.Path(os.environ.get('ATLAS_HOME','/home/atlas'))
 STATE=ROOT/'.atlas/companion/state'
-def b64(v): return base64.urlsafe_b64encode(v).decode().rstrip('=')
+
+def b64(value): return base64.urlsafe_b64encode(value).decode().rstrip('=')
 def config(): return json.loads((STATE/'config.json').read_text())
-def save(c):
+def save(value):
     STATE.mkdir(parents=True,exist_ok=True); STATE.chmod(0o700)
-    p=STATE/'config.tmp'; p.write_text(json.dumps(c)); p.chmod(0o600); os.replace(p,STATE/'config.json')
-    owner=ROOT.stat()
+    path=STATE/'config.tmp'; path.write_text(json.dumps(value,separators=(',',':'))); path.chmod(0o600)
+    os.replace(path,STATE/'config.json'); owner=ROOT.stat()
     if os.geteuid()==0:
         os.chown(STATE,owner.st_uid,owner.st_gid); os.chown(STATE/'config.json',owner.st_uid,owner.st_gid)
+
 def init():
-    if (STATE/'config.json').exists(): return
+    if (STATE/'config.json').exists():
+        value=config(); changed=False
+        if value.get('version',1)<2: value['version']=2; changed=True
+        if 'legacyRelay' not in value: value['legacyRelay']=value.get('relay',''); changed=True
+        if value.get('transport')!='tailscale': value['transport']='tailscale'; changed=True
+        if changed: save(value)
+        return
     if os.geteuid()!=0: raise SystemExit('Usa sudo atlas-app init')
-    save({'version':1,'key':b64(secrets.token_bytes(32)),'room':secrets.token_hex(24),
-          'relayPassword':secrets.token_urlsafe(32),'relay':''})
+    save({'version':2,'key':b64(secrets.token_bytes(32)),'room':secrets.token_hex(24),
+          'relayPassword':secrets.token_urlsafe(32),'legacyRelay':'','transport':'tailscale'})
     subprocess.run(['openssl','req','-x509','-newkey','rsa:2048','-nodes','-days','3650',
        '-keyout',str(STATE/'private.key'),'-out',str(STATE/'certificate.pem'),
        '-subj','/CN=atlas-a1','-addext','subjectAltName=DNS:atlas-a1.local,DNS:atlas-a1'],check=True,
        stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     owner=ROOT.stat()
-    for p in STATE.iterdir(): p.chmod(0o600); os.chown(p,owner.st_uid,owner.st_gid)
+    for path in STATE.iterdir(): path.chmod(0o600); os.chown(path,owner.st_uid,owner.st_gid)
+
+def tailscale_state(device=None):
+    if not __import__('shutil').which('tailscale'):
+        return {'installed':False,'state':'NotInstalled','online':False,'host':'','ip':'','endpoint':''}
+    try: process=subprocess.run(['tailscale','status','--json'],capture_output=True,text=True,timeout=6)
+    except subprocess.TimeoutExpired:
+        return {'installed':True,'state':'Unavailable','online':False,'host':'','ip':'','endpoint':''}
+    try:
+        raw=json.loads(process.stdout); own=raw.get('Self') or {}; addresses=own.get('TailscaleIPs') or []
+        ipv4=next((value for value in addresses if '.' in value),''); host=own.get('HostName') or ipv4
+        peer=next((value for value in (raw.get('Peer') or {}).values()
+                   if str(value.get('HostName','')).lower()==str(device or '').lower()),None)
+        if peer and peer.get('CurAddr'): path='direct'
+        elif peer and peer.get('Active') and peer.get('Relay'): path='derp:'+peer['Relay']
+        elif peer and peer.get('Online'): path='idle'
+        else: path='not-connected'
+        return {'installed':True,'state':raw.get('BackendState','Unknown'),'online':bool(own.get('Online')),
+                'host':host,'ip':ipv4,'endpoint':f'wss://{host}:5010/app' if host else '',
+                'deviceOnline':bool(peer and peer.get('Online')),'path':path}
+    except (ValueError,TypeError):
+        return {'installed':True,'state':'NeedsLogin','online':False,'host':'','ip':'','endpoint':''}
+
+def revoke():
+    value=config(); value['key']=b64(secrets.token_bytes(32)); value.pop('pairedDevice',None); value.pop('pairedAt',None)
+    save(value); subprocess.run(['sudo','-n','systemctl','restart','atlas-companion.service'],check=True)
+
+def parse_params(raw,arguments):
+    if raw:
+        try: value=json.loads(raw)
+        except ValueError as error: raise SystemExit(f'--params debe ser JSON válido: {error}')
+        if not isinstance(value,dict): raise SystemExit('--params debe contener un objeto JSON')
+        return value
+    values={}; positional=[]
+    for argument in arguments:
+        if '=' not in argument: positional.append(argument); continue
+        key,value=argument.split('=',1)
+        try: value=json.loads(value)
+        except ValueError: pass
+        values[key]=value
+    if positional: values['args']=positional
+    return values
+
+def mobile_call(method,params,timeout):
+    body=json.dumps({'method':method,'params':params,'timeout':timeout}).encode()
+    request=urllib.request.Request('https://127.0.0.1:5010/local/control',data=body,
+                                   headers={'Content-Type':'application/json'},method='POST')
+    try:
+        with urllib.request.urlopen(request,context=ssl._create_unverified_context(),timeout=timeout+3) as response:
+            value=json.load(response)
+    except urllib.error.HTTPError as error:
+        try: detail=json.loads(error.read()).get('error')
+        except Exception: detail=None
+        raise SystemExit('Error: '+(detail or 'No se pudo completar la operación'))
+    except (OSError,TimeoutError) as error:
+        raise SystemExit(f'Error: Companion unavailable ({error})')
+    if value.get('error'): raise SystemExit('Error: '+str(value['error']))
+    return value.get('result',{})
+
 def main():
-    ap=argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('action',nargs='?',default='status',choices=['status','init','pair','revoke','relay','relay-credentials','start','stop','restart','logs'])
-    ap.add_argument('url',nargs='?'); ap.add_argument('--json',action='store_true'); a=ap.parse_args()
-    if a.action=='init': init(); print('Servicio preparado. Ejecuta atlas-app pair para emparejar.'); return
-    if a.action in ('start','stop','restart'):
-        sys.exit(subprocess.call(['sudo','-n','systemctl',a.action,'atlas-companion.service']))
-    if a.action=='logs': sys.exit(subprocess.call(['journalctl','-u','atlas-companion.service','-n','60','--no-pager']))
-    if a.action=='pair':
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--json',action='store_true')
+    parser.add_argument('--params',help='Objeto JSON para atlas-app control')
+    parser.add_argument('--timeout',type=float,default=35)
+    parser.add_argument('action',nargs='?',default='status')
+    parser.add_argument('arguments',nargs='*')
+    args=parser.parse_args(); action=args.action
+    if action=='init': init(); print('Servicio preparado. Autentica Tailscale y ejecuta atlas-app pair.'); return
+    if action in ('start','stop','restart'):
+        raise SystemExit(subprocess.call(['sudo','-n','systemctl',action,'atlas-companion.service']))
+    if action=='logs':
+        raise SystemExit(subprocess.call(['journalctl','-u','atlas-companion.service','-n','80','--no-pager']))
+    if action=='pair':
         helper=ROOT/'.atlas/companion/ble_pair.py'
         if not helper.exists(): raise SystemExit('Falta el servicio de emparejamiento Bluetooth. Reinstala ATLAS Companion.')
         command=['/usr/bin/python3',str(helper)]
         if os.geteuid()!=0: command=['sudo','-n',*command]
-        try: sys.exit(subprocess.call(command))
+        try: raise SystemExit(subprocess.call(command))
         except KeyboardInterrupt: print('\nEmparejamiento cancelado.'); return
-    if a.action=='relay':
-        if not a.url or urlparse(a.url).scheme!='wss' or not urlparse(a.url).hostname:
-            raise SystemExit('Uso: atlas-app relay wss://tu-dominio/connect')
-        c=config(); c['relay']=a.url; save(c)
-        print('Relay guardado. Reinicia atlas-app y vuelve a emparejar el móvil.'); return
-    if a.action=='relay-credentials':
-        c=config(); credentials={c['room']:hashlib.sha256(c['relayPassword'].encode()).hexdigest()}
-        if not a.json: print('Configuración privada para el relay de ATLAS:')
-        print(json.dumps(credentials,indent=None if a.json else 2)); return
-    if a.action=='revoke':
-        if not sys.stdin.isatty() or input('Revocar TODOS los móviles emparejados [s/N]: ').lower()!='s': return
-        c=config(); c['key']=b64(secrets.token_bytes(32)); save(c)
-        subprocess.run(['sudo','-n','systemctl','restart','atlas-companion.service'],check=True)
-        print('Emparejamientos revocados. Genera un código nuevo.'); return
+    if action in ('revoke','unpair'):
+        if not sys.stdin.isatty() or input('Desemparejar el dispositivo Android [s/N]: ').lower()!='s': return
+        revoke(); print('Dispositivo desemparejado. Genera un código nuevo para volver a enlazarlo.'); return
+    if action in ('relay','legacy-relay'):
+        value=config(); target=args.arguments[0] if args.arguments else ''
+        if target=='off':
+            value['transport']='tailscale'; save(value); print('Tailscale vuelve a ser el transporte predeterminado.'); return
+        if urlparse(target).scheme!='wss' or not urlparse(target).hostname:
+            raise SystemExit('Uso heredado: atlas-app legacy-relay wss://host/connect | off')
+        value['legacyRelay']=target; value['transport']='legacy-relay'; save(value)
+        print('Relay heredado activado. Reinicia Companion y vuelve a emparejar.'); return
+    if action=='relay-credentials':
+        value=config(); credentials={value['room']:hashlib.sha256(value['relayPassword'].encode()).hexdigest()}
+        if not args.json: print('Configuración privada para el relay heredado:')
+        print(json.dumps(credentials,indent=None if args.json else 2)); return
+    if action=='tailscale':
+        value=tailscale_state(config().get('pairedDevice'))
+        if args.json: print(json.dumps(value)); return
+        print('Tailscale:',value['state'],'/','online' if value['online'] else 'offline')
+        print('Endpoint:',value['endpoint'] or 'pendiente de autenticar con sudo tailscale up'); return
+    if action=='endpoint':
+        value=tailscale_state(); print(value['endpoint'] or 'unavailable'); return
+    if action=='control':
+        if not args.arguments: raise SystemExit('Uso: atlas-app control OPERACIÓN [clave=valor ...] [--params JSON]')
+        operation=args.arguments[0]; params=parse_params(args.params,args.arguments[1:])
+        method=operation if operation.startswith(('control.','androiduse.')) else 'control.'+operation
+        result=mobile_call(method,params,args.timeout)
+        if args.json or isinstance(result,(dict,list)): print(json.dumps(result,ensure_ascii=False))
+        else: print(result)
+        return
+    if action!='status': raise SystemExit('Acción desconocida. Usa atlas-app --help.')
     service=subprocess.run(['systemctl','is-active','atlas-companion.service'],capture_output=True,text=True).stdout.strip()
     try: state=json.loads((STATE/'status.json').read_text())
     except (OSError,ValueError): state={}
-    c=config(); device=c.get('pairedDevice')
-    result={'service':service,'localUrl':'https://atlas-a1.local:5010','paired':bool(device),'pairedDevice':device,
-            'fresh':time.time()-state.get('updatedAt',0)<20,**state}
-    if a.json: print(json.dumps(result)); return
-    connected=bool(state.get('clients',{})) and result['fresh']
-    print('ATLAS APP\nServicio:',service,'\nRelay:',state.get('relay','sin configurar'))
+    value=config(); device=value.get('pairedDevice'); tailscale=tailscale_state(device)
+    result={'service':service,'transport':value.get('transport','tailscale'),'tailscale':tailscale,
+            'endpoint':tailscale.get('endpoint',''),'localUrl':'https://atlas-a1.local:5010/rpc',
+            'paired':bool(device),'pairedDevice':device,'fresh':time.time()-state.get('updatedAt',0)<20,**state}
+    if args.json: print(json.dumps(result)); return
+    connected=bool(state.get('connections',len(state.get('clients',{})))) and result['fresh']
+    print('ATLAS APP\nServicio:',service,'\nTransporte:',result.get('transport','tailscale'))
+    print('Tailscale:',tailscale['state'],'\nEndpoint:',tailscale['endpoint'] or 'pendiente')
     print('Dispositivo emparejado:',device or 'ninguno','\nConexión actual:','conectada' if connected else 'desconectada')
     print('Conversación activa:',state.get('voiceActive',False),'\nTerminales:',state.get('terminals',0))
+
 if __name__=='__main__': main()

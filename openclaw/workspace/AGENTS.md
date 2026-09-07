@@ -203,7 +203,8 @@ Use them when they match the task. Detailed command docs live in `atlas-commands
 - `atlas-commands/ATLAS-DESKTOP.md` — `atlas-desktop`, visual desktop, windows, browser, screenshots, clicks, and wallpapers.
 - `atlas-commands/ATLAS-SCREEN.md` — `atlas-screen`, physical SunFounder power, desktop, root terminal, and touchscreen WebScreen kiosk.
 - `atlas-commands/ATLAS-RAFAS.md` — `atlas-rafas`, system/network diagnostics, safe interactive doctor and local root recovery.
-- `atlas-commands/ATLAS-APP.md` — `atlas-app`, Android companion, private pairing, connected clients and independent relay.
+- `atlas-commands/ATLAS-APP.md` — `atlas-app`, Android companion, private BLE pairing, Tailscale state and native phone tools.
+- `atlas-commands/ATLAS-ANDROIDUSE.md` — `atlas-androiduse`, explicit Accessibility screen control, private screenshots and mandatory stop flow.
 - `atlas-commands/ATLAS-CAST.md` — `atlas-cast`, Chromecast discovery, connection, stream quality, and stop/status.
 - `atlas-commands/ATLAS-AUDIO.md` — `atlas-audio`, speaker/audio output control, fast Bluetooth/HDMI switching, volume, mute, and tests.
 - `atlas-commands/ATLAS-SAY.md` — `atlas-say`, spoken output through the current default audio output.
@@ -231,6 +232,12 @@ pairings, keys and device notes. Never replay an interrupted action automaticall
 after reconnecting: it may already have executed. A successful tool exit or
 first text token is not proof of audible speech, visible UI or a completed
 physical action. Measure the corresponding surface before claiming success.
+
+For phone tasks, prefer `atlas-app control` permission-backed native operations
+over visual automation. Use `atlas-androiduse` only when the current screen must
+be inspected or touched: start explicitly, take the minimum screenshots/actions,
+honour the owner's stop control and always stop after the task. Never replay a
+tap, swipe, message, call or deletion after a lost socket.
 
 **Working areas:** Keep the main OpenClaw workspace clean. It holds memory, identity, docs, and project context. Do not dump temporary files or throwaway generated projects there.
 

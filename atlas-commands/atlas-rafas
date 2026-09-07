@@ -15,7 +15,8 @@ import time
 ATLAS_HOME = Path(os.environ.get('ATLAS_HOME', '/home/atlas'))
 SERVICES = ('NetworkManager.service', 'atlas-webscreen.service',
             'atlas-screen-kiosk.service', 'atlas-rafas-hotkey.service',
-            'atlas-rafas-logger.service', 'atlas-companion.service')
+            'atlas-rafas-logger.service', 'tailscaled.service',
+            'atlas-companion.service')
 
 def run(args, timeout=5):
     try:
@@ -71,7 +72,17 @@ def network():
     dns = run(['getent','ahostsv4','api.openai.com'], timeout=4)[0] == 0
     # HTTPS distinguishes working DNS from a usable route. No credentials sent.
     https = run(['curl','-I','-sS','--max-time','4','https://www.cloudflare.com/cdn-cgi/trace'], timeout=5)[0] == 0
-    return dict(devices=devices, wifi=wifi, addresses=addresses, defaultRoutes=routes, dns=dns, https=https)
+    tailscale={'installed':False,'state':'NotInstalled','online':False,'ip':None}
+    if shutil.which('tailscale'):
+        _, value, _ = run(['tailscale','status','--json'])
+        try:
+            raw=json.loads(value); own=raw.get('Self') or {}
+            tailscale={'installed':True,'state':raw.get('BackendState','Unknown'),
+                       'online':bool(own.get('Online')),
+                       'ip':next((ip for ip in own.get('TailscaleIPs',[]) if '.' in ip),None)}
+        except ValueError: tailscale={'installed':True,'state':'NeedsLogin','online':False,'ip':None}
+    return dict(devices=devices, wifi=wifi, addresses=addresses, defaultRoutes=routes,
+                dns=dns, https=https, tailscale=tailscale)
 
 def other_failed_units(output, services):
     known = {s['name'] for s in services}
@@ -116,6 +127,8 @@ def health():
     if not net['defaultRoutes']: issues.append('Sin ruta de salida: revisar Ethernet o Wi-Fi.')
     if not net['dns']: issues.append('DNS no resuelve api.openai.com.')
     if not net['https']: issues.append('HTTPS no disponible: revisar conexión, portal cautivo, DNS o reloj.')
+    if net['tailscale']['installed'] and net['tailscale']['state']!='Running':
+        issues.append('Tailscale no está autenticado: ejecutar sudo tailscale up.')
     if ntp != 'yes': issues.append('Reloj sin sincronización NTP confirmada.')
     for s in services:
         if s['load']=='loaded' and (s['active']=='failed' or
@@ -145,6 +158,8 @@ def display(h):
         print(f"  {d['interface']}: {d['state']} · {d['connection']}")
     for interface, addresses in n['addresses'].items():
         if addresses: print(f"  {interface}: {', '.join(addresses)}")
+    tailscale=n['tailscale']
+    print(f"Tailscale: {tailscale['state']} · {'online' if tailscale['online'] else 'offline'} · {tailscale['ip'] or 'sin IP'}")
     print(f"DNS: {'OK' if n['dns'] else 'FALLO'} · HTTPS: {'OK' if n['https'] else 'FALLO'} · NTP: {'OK' if h['ntpSynchronized'] else 'sin confirmar'}")
     print(f"Temperatura: {h['temperatureC']} °C · alimentación: {h['throttled'] or 'no disponible'}")
     for d in h['disks']: print(f"Disco {d['path']}: {d['usedPercent']}% usado · {d['freeBytes']//(1024**2)} MiB libres")

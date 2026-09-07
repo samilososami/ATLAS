@@ -27,10 +27,11 @@ import javax.net.ssl.*;
 import okhttp3.*;
 import org.json.*;
 
-/** Shared authenticated LAN/relay transport for the app and read-only widget jobs. */
+/** Shared authenticated direct/Tailscale transport for the app and read-only widget jobs. */
 final class AtlasConnection implements AutoCloseable {
     enum RelayState { DISCONNECTED, CONNECTING, ONLINE }
     interface RelayObserver { void changed(RelayState state,boolean a1Online,String detail); }
+    interface InboundHandler { JSONObject handle(String method,JSONObject params)throws Exception; }
 
     final SharedPreferences prefs;
     final OkHttpClient normal=new OkHttpClient.Builder().callTimeout(40,TimeUnit.SECONDS).build();
@@ -45,6 +46,11 @@ final class AtlasConnection implements AutoCloseable {
     private volatile String relayDetail="Sin conectar";
     private WebSocket relay;
     private CompletableFuture<Boolean> relayReady;
+    private volatile InboundHandler inboundHandler;
+    private final ExecutorService inboundWorker=Executors.newSingleThreadExecutor(r->{Thread t=new Thread(r,"atlas-phone-rpc");t.setDaemon(true);return t;});
+    private final ScheduledExecutorService heartbeatWorker=Executors.newSingleThreadScheduledExecutor(r->{Thread t=new Thread(r,"atlas-a1-heartbeat");t.setDaemon(true);return t;});
+    private ScheduledFuture<?> heartbeat;
+    private volatile boolean legacyFallback;
     AtlasConnection(Context context) {
         prefs=context.getSharedPreferences("atlas",Context.MODE_PRIVATE);
         String savedClient=prefs.getString("clientId",null);
@@ -67,6 +73,7 @@ final class AtlasConnection implements AutoCloseable {
         relayObservers.add(observer);observer.changed(relayState,a1Online,relayDetail);
     }
     void removeRelayObserver(RelayObserver observer){relayObservers.remove(observer);}
+    void setInboundHandler(InboundHandler handler){inboundHandler=handler;}
     RelayState relayState(){return relayState;}
     boolean isRelayConnected(){return relayState==RelayState.ONLINE&&relay!=null;}
     boolean isA1Online(){return a1Online;}
@@ -130,38 +137,126 @@ final class AtlasConnection implements AutoCloseable {
         return normal.newBuilder().sslSocketFactory(ssl.getSocketFactory(),trust).hostnameVerifier((h,s)->true)
             .followRedirects(false).retryOnConnectionFailure(false).connectTimeout(3,TimeUnit.SECONDS).build();
     }
+    private String configuredDirectEndpoint(){
+        if(pairing==null)return "";
+        String endpoint=pairing.optString("endpoint","").trim();if(!endpoint.isEmpty())return endpoint;
+        String host=pairing.optString("tailscale","").trim();if(host.isEmpty())host=pairing.optString("tailscaleIp","").trim();
+        if(!host.isEmpty())return host.contains("://")?host:"wss://"+host+":5010/app";
+        String direct=pairing.optString("direct","").trim();if(!direct.isEmpty())return direct.replaceFirst("^https://","wss://").replaceFirst("/rpc/?$","/app");
+        return "";
+    }
+    private String legacyEndpoint(){
+        if(pairing==null)return "";String legacy=pairing.optString("url","").trim();if(legacy.isEmpty())legacy=pairing.optString("relay","").trim();return legacy;
+    }
+    private String directEndpoint(){
+        String configured=configuredDirectEndpoint();
+        // Existing v1 pairings already contain the same app-layer key and TLS
+        // certificate pin. Probe MagicDNS without mutating that saved payload.
+        if(configured.isEmpty()&&!legacyEndpoint().isEmpty())return "wss://atlas-a1:5010/app";
+        return configured;
+    }
+    synchronized void preferDirect(){legacyFallback=false;}
+    private String endpoint()throws IOException{
+        String direct=directEndpoint();
+        String legacy=legacyEndpoint();String value=!direct.isEmpty()&&(!legacyFallback||legacy.isEmpty())?direct:legacy;
+        if(value.startsWith("https://"))value="wss://"+value.substring(8);
+        if(!value.startsWith("wss://"))throw new IOException("A1 no tiene una dirección Tailscale segura configurada");
+        return value;
+    }
+    boolean hasEndpoint(){try{return pairing!=null&&!endpoint().isEmpty();}catch(Exception ignored){return false;}}
+    boolean usesDirectEndpoint(){return !directEndpoint().isEmpty()&&(!legacyFallback||legacyEndpoint().isEmpty());}
+    private void failTransport(WebSocket socket,String error,boolean direct){
+        // A cancelled/stale socket must never force a healthy replacement back
+        // to the relay. Only the currently owned direct transport can select the
+        // compatibility fallback.
+        synchronized(this){
+            if(socket!=null&&socket!=relay)return;
+            if(direct&&!legacyEndpoint().isEmpty())legacyFallback=true;
+        }
+        failRelay(socket,error);
+    }
     private synchronized boolean current(WebSocket socket){return socket!=null&&socket==relay;}
     private synchronized CompletableFuture<Boolean> currentReady(WebSocket socket){return current(socket)?relayReady:null;}
+    private JSONObject directPing(String id){return object("id",id,"client",clientId,"device",deviceName,"method","ping","params",new JSONObject());}
+    private synchronized void stopHeartbeat(WebSocket source){
+        if(source!=null&&source!=relay)return;
+        if(heartbeat!=null)heartbeat.cancel(false);heartbeat=null;
+    }
+    private void startHeartbeat(WebSocket socket){
+        synchronized(this){
+            stopHeartbeat(socket);
+            heartbeat=heartbeatWorker.scheduleWithFixedDelay(()->{
+                try{
+                    if(!current(socket)){stopHeartbeat(socket);return;}
+                    String box=seal(directPing("heartbeat-"+UUID.randomUUID()));
+                    if(!socket.send(object("box",box).toString()))failTransport(socket,"ATLAS A1 sin conexión",true);
+                }catch(Exception error){failTransport(socket,"No se pudo mantener la conexión con ATLAS A1",true);}
+            },20,20,TimeUnit.SECONDS);
+        }
+    }
     synchronized void openRelay()throws Exception{
         if(relay!=null&&relayReady!=null&&!relayReady.isCompletedExceptionally())return;
-        String url=pairing.optString("relay");if(!url.startsWith("wss://"))throw new IOException("No hay relay configurado. Conecta a la misma Wi-Fi que A1.");
+        String url=endpoint();boolean direct=usesDirectEndpoint();
         relayReady=new CompletableFuture<>();
-        setRelayState(RelayState.CONNECTING,false,"Conectando con el relay");
-        relay=normal.newBuilder().pingInterval(60,TimeUnit.SECONDS).build().newWebSocket(new Request.Builder().url(url).build(),new WebSocketListener(){
-            @Override public void onOpen(WebSocket w,Response r){if(!w.send(object("role","app","room",pairing.optString("room")).toString()))failRelay(w,"El relay no aceptó la autenticación");}
+        setRelayState(RelayState.CONNECTING,false,direct?"Conectando directamente con ATLAS A1":"Conectando con el relay");
+        OkHttpClient transport=(direct?pinned():normal).newBuilder().pingInterval(20,TimeUnit.SECONDS).readTimeout(0,TimeUnit.MILLISECONDS).build();
+        final String directProbeId=direct?"connect-"+UUID.randomUUID():"";
+        relay=transport.newWebSocket(new Request.Builder().url(url).build(),new WebSocketListener(){
+            @Override public void onOpen(WebSocket w,Response r){
+                try{
+                    // The private /app endpoint accepts encrypted envelopes from the
+                    // very first frame. Only the deprecated public relay has a
+                    // plaintext role/room handshake.
+                    JSONObject first=direct?object("box",seal(directPing(directProbeId))):object("role","app","room",pairing.optString("room"),"client",clientId,"device",deviceName,"transport","relay");
+                    if(!w.send(first.toString()))failTransport(w,"ATLAS A1 no aceptó la autenticación",direct);
+                }catch(Exception error){failTransport(w,"No se pudo autenticar con ATLAS A1",direct);}
+            }
             @Override public void onMessage(WebSocket w,String text){try{
                 if(!current(w))return;
                 JSONObject v=new JSONObject(text);
                 if(v.has("ok")){
                     if(!v.optBoolean("ok")){failRelay(w,"El relay rechazó la conexión");return;}
                     CompletableFuture<Boolean> ready=currentReady(w);if(ready!=null)ready.complete(true);
-                    setRelayState(RelayState.ONLINE,v.optBoolean("online"),v.optBoolean("online")?"ATLAS A1 conectado":"Relay conectado; esperando a A1");return;
+                    boolean online=direct||v.optBoolean("online");
+                    setRelayState(RelayState.ONLINE,online,online?"ATLAS A1 conectado":"Relay conectado; esperando a A1");return;
                 }
                 if(v.optBoolean("presence")){
                     boolean online=v.optBoolean("online");
                     setRelayState(RelayState.ONLINE,online,online?"ATLAS A1 conectado":"Relay conectado; esperando a A1");return;
                 }
                 if(v.has("box")){
-                    JSONObject plain=unseal(v.getString("box"));CompletableFuture<JSONObject> f=pending.remove(plain.getString("id"));if(f!=null)f.complete(plain);
+                    JSONObject plain=unseal(v.getString("box"));String id=plain.optString("id");CompletableFuture<JSONObject> f=pending.remove(id);
+                    if(direct&&directProbeId.equals(id)){
+                        if(plain.has("error")){failTransport(w,plain.optString("error","ATLAS A1 rechazó la conexión"),true);return;}
+                        CompletableFuture<Boolean> ready=currentReady(w);if(ready!=null)ready.complete(true);
+                        setRelayState(RelayState.ONLINE,true,"ATLAS A1 conectado");startHeartbeat(w);return;
+                    }
+                    if(f!=null)f.complete(plain);else if(plain.has("method"))dispatchInbound(w,plain);
                     setRelayState(RelayState.ONLINE,true,"ATLAS A1 conectado");
                 } else if(v.has("error")){
+                    if(direct){failTransport(w,"ATLAS A1 rechazó la conexión cifrada",true);w.cancel();return;}
                     // A1 being offline is not a relay failure. Keep this socket alive so
                     // the next probe can recover immediately when the Pi reconnects.
                     a1Unavailable(v.optString("error","ATLAS A1 no está conectado"));
                 }
-            }catch(Exception e){failRelay(w,"No se pudo autenticar la respuesta de A1");}}
-            @Override public void onFailure(WebSocket w,Throwable t,Response r){failRelay(w,"Conexión al relay interrumpida");}
-            @Override public void onClosed(WebSocket w,int code,String reason){failRelay(w,"Relay desconectado");}
+            }catch(Exception e){failTransport(w,"No se pudo autenticar la respuesta de A1",direct);}}
+            @Override public void onFailure(WebSocket w,Throwable t,Response r){failTransport(w,direct?"Conexión directa con A1 interrumpida":"Conexión al relay interrumpida",direct);}
+            @Override public void onClosed(WebSocket w,int code,String reason){failTransport(w,direct?"ATLAS A1 desconectado":"Relay desconectado",direct);}
+        });
+    }
+    private void dispatchInbound(WebSocket socket,JSONObject request){
+        final InboundHandler handler=inboundHandler;
+        if(handler==null)return;
+        inboundWorker.execute(()->{
+            JSONObject params=object("requestId",request.optString("id"));
+            try{params.put("result",handler.handle(request.getString("method"),request.optJSONObject("params")==null?new JSONObject():request.getJSONObject("params")));}
+            catch(Exception error){try{params.put("error",error.getMessage()==null?"No se pudo ejecutar la acción en Android":error.getMessage());}catch(Exception ignored){}}
+            // Server-initiated requests are acknowledged through the same normal
+            // authenticated RPC shape. A bare {id,result} would be interpreted as
+            // a new client request by the direct companion endpoint.
+            JSONObject reply=object("id","reply-"+UUID.randomUUID(),"client",clientId,"device",deviceName,"method","app.reply","params",params);
+            try{String box=seal(reply);synchronized(AtlasConnection.this){if(current(socket))socket.send(object("box",box).toString());}}
+            catch(Exception ignored){}
         });
     }
     private void a1Unavailable(String error){
@@ -174,6 +269,7 @@ final class AtlasConnection implements AutoCloseable {
         synchronized(this){
             if(source!=null&&source!=relay)return;
             if(source==null&&relay!=null)return;
+            stopHeartbeat(source);
             ready=relayReady;relay=null;relayReady=null;
         }
         IOException cause=new IOException(error);
@@ -185,18 +281,57 @@ final class AtlasConnection implements AutoCloseable {
         if(pairing==null)throw new IOException("Empareja primero tu ATLAS A1");
         CompletableFuture<Boolean> ready;
         openRelay();synchronized(this){ready=relayReady;}
-        if(ready==null||!ready.get(10,TimeUnit.SECONDS))throw new IOException("Relay rechazado");
+        if(ready==null||!ready.get(10,TimeUnit.SECONDS))throw new IOException("ATLAS A1 rechazó la conexión");
     }
     JSONObject rpc(String method,JSONObject params)throws Exception{
         if(pairing==null)throw new IOException("Empareja primero tu ATLAS A1");
         String id=UUID.randomUUID().toString();String box=seal(object("id",id,"client",clientId,"device",deviceName,"method",method,"params",params));
         JSONObject reply;
-        connectRelay();WebSocket socket;synchronized(this){socket=relay;}if(socket==null)throw new IOException("Relay sin conexión");
+        connectRelay();WebSocket socket;synchronized(this){socket=relay;}if(socket==null)throw new IOException("ATLAS A1 sin conexión");
         CompletableFuture<JSONObject> future=new CompletableFuture<>();pending.put(id,future);
-        try {if(!socket.send(object("box",box).toString())){failRelay(socket,"Relay sin conexión");throw new IOException("Relay sin conexión");}reply=future.get(40,TimeUnit.SECONDS);}
+        try {if(!socket.send(object("box",box).toString())){failRelay(socket,"ATLAS A1 sin conexión");throw new IOException("ATLAS A1 sin conexión");}reply=future.get(40,TimeUnit.SECONDS);}
         finally{pending.remove(id);}
         if(!id.equals(reply.optString("id")))throw new SecurityException("Respuesta no correspondiente");
         if(reply.has("error"))throw new IOException(reply.getString("error"));return reply.getJSONObject("result");
+    }
+
+    /** True only while the old relay is active and a direct Tailscale route is available to probe. */
+    synchronized boolean shouldProbeDirect(){
+        return legacyFallback&&relayState==RelayState.ONLINE&&relay!=null&&pending.isEmpty()&&!directEndpoint().isEmpty();
+    }
+
+    /**
+     * Tests the pinned MagicDNS/Tailscale endpoint without touching the live
+     * relay socket. The caller may swap transports only after the encrypted
+     * ping round-trip succeeds.
+     */
+    boolean probeDirectAvailability(){
+        if(pairing==null||!shouldProbeDirect())return false;
+        final CompletableFuture<Boolean> outcome=new CompletableFuture<>();
+        final String probeId="migration-"+UUID.randomUUID();
+        final AtomicBoolean finished=new AtomicBoolean();
+        try{
+            OkHttpClient transport=pinned().newBuilder().pingInterval(20,TimeUnit.SECONDS)
+                .readTimeout(0,TimeUnit.MILLISECONDS).connectTimeout(3,TimeUnit.SECONDS).build();
+            WebSocket probe=transport.newWebSocket(new Request.Builder().url(directEndpoint()).build(),new WebSocketListener(){
+                private void finish(WebSocket socket,boolean ok){if(!finished.compareAndSet(false,true))return;outcome.complete(ok);try{socket.close(1000,"probe complete");}catch(Exception ignored){}}
+                @Override public void onOpen(WebSocket socket,Response response){
+                    try{socket.send(object("box",seal(directPing(probeId))).toString());}
+                    catch(Exception error){finish(socket,false);}
+                }
+                @Override public void onMessage(WebSocket socket,String text){
+                    try{
+                        JSONObject envelope=new JSONObject(text);if(!envelope.has("box")){finish(socket,false);return;}
+                        JSONObject plain=unseal(envelope.getString("box"));
+                        if(probeId.equals(plain.optString("id")))finish(socket,!plain.has("error"));
+                    }catch(Exception error){finish(socket,false);}
+                }
+                @Override public void onFailure(WebSocket socket,Throwable error,Response response){finish(socket,false);}
+                @Override public void onClosed(WebSocket socket,int code,String reason){finish(socket,false);}
+            });
+            heartbeatWorker.schedule(()->{if(finished.compareAndSet(false,true)){outcome.complete(false);probe.cancel();}},6,TimeUnit.SECONDS);
+            return outcome.get(7,TimeUnit.SECONDS);
+        }catch(Exception error){return false;}
     }
 
 }

@@ -76,17 +76,17 @@ test('pairing reports every visible secure-connection stage',()=>{
   assert.match(ble,/void stop\(\)\{generation\+\+/);
 });
 
-test('native shell provides semantic haptics and a reduced-motion-safe reveal',()=>{
+test('native shell provides semantic haptics and a deterministic WebView reveal',()=>{
   const main=read('java/dev/atlas/a1/MainActivity.java');
-  assert.match(main,/ValueAnimator\.areAnimatorsEnabled\(\)/);
-  assert.match(main,/new PathInterpolator\(\.22f,1f,\.36f,1f\)/);
+  assert.match(main,/web\.setVisibility\(View\.VISIBLE\);web\.setAlpha\(1f\)/);
+  assert.doesNotMatch(main,/web\.animate\(\)\.alpha\(1f\)/);
   for(const kind of ['selection','press','confirm','reject'])assert.match(main,new RegExp(`"${kind}"`));
 });
 
 test('allow-all pauses for settings-backed permissions and resumes on return',()=>{
   const app=read('assets/web/app.js');
   assert.match(app,/result\.opened&&!result\.ok/);
-  assert.match(app,/allowAllResumeIndex=i\+1/);
+  assert.match(app,/allowAllResumeIndex=i/);
   assert.match(app,/kind==='permissionsChanged'/);
-  assert.match(app,/allowAllFrom\(next\)/);
+  assert.match(app,/allowAllFrom\(next\+1\)/);
 });

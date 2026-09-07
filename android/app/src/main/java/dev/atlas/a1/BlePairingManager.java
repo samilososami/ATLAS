@@ -90,7 +90,7 @@ final class BlePairingManager {
         private void fail(BluetoothGatt g,String message){if(reported||token!=generation)return;reported=true;cancelTimeout();events.state("error",message);events.error(message);closeGatt(g);}
         private void deliver(BluetoothGatt g,byte[] value){
             if(reported||token!=generation)return;String payload=new String(value,StandardCharsets.UTF_8);
-            if(!payload.startsWith("atlas1:")){fail(g,"ATLAS A1 rechazó el código");return;}
+            if(!payload.startsWith("atlas1:")&&!payload.startsWith("atlas2:")){fail(g,"ATLAS A1 rechazó el código");return;}
             reported=true;cancelTimeout();events.state("paired","ATLAS A1 emparejado correctamente");events.success(payload);closeGatt(g);
         }
         @Override public void onConnectionStateChange(BluetoothGatt g,int status,int state){

@@ -49,21 +49,22 @@ registra pulsaciones ni escucha en la red. La autenticación de RAFAS queda pend
 La app utiliza un servicio independiente en HTTPS/5010. Cada código de
 emparejamiento incluye una clave de administración y un certificado fijado:
 **trátalo como una contraseña root del dispositivo**, no lo publiques ni lo
-añadas a capturas. `atlas-app revoke` invalida todos los móviles emparejados.
-No hay roles de invitado ni revocación individual en esta preview.
+añadas a capturas. `atlas-app unpair` invalida el único móvil emparejado.
+No hay roles de invitado en esta preview.
 
 La clave se guarda cifrada con Android Keystore; la copia de seguridad de la
 app está desactivada. La huella/credencial se verifica en Android y no se envía
-a A1. Cada comando requiere una confirmación nativa con el texto completo;
-la terminal pide autorización al abrirse y después permite una shell completa.
+a A1. Cada permiso nativo se valida en Android. La terminal y Accessibility
+permiten acciones potentes; el modo visual debe mostrar notificación, borde azul
+y un botón local para detenerlo. Las capturas son datos privados y no se publican.
 Esto no limita lo que puede hacer el propietario que posee la clave.
 
-El relay propio transporta sobres AES-256-GCM con protección de dirección,
-fecha y repetición, sin conocer su contenido. Ve identificadores, tiempos y
-tamaños; puede interrumpir el servicio. Necesita TLS público, límites de
-conexiones y mantenimiento del servidor. No expongas HTTP/5000 como alternativa.
-El protocolo aún no tiene una auditoría independiente. La APK inicial está
-firmada para desarrollo y no se presenta como producto endurecido para terceros.
+La conexión predeterminada viaja por el tailnet privado y conserva, además,
+sobres AES-256-GCM con protección de dirección, fecha y repetición. Tailscale y
+el emparejamiento de ATLAS son dos capas distintas. No abras 5010 en el router
+ni expongas HTTP/5000 como alternativa. El relay antiguo está desactivado por
+defecto. El protocolo aún no tiene una auditoría independiente y la APK sigue
+siendo un producto personal de desarrollo, no una administración para terceros.
 
 ## Reportar un problema
 

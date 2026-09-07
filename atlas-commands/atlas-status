@@ -551,8 +551,10 @@ atlas_app_values() {
 import json,sys
 try:
     value=json.load(sys.stdin)
-    connected=bool(value.get("fresh") and value.get("clients"))
-    print("\t".join((str(value.get("service","unknown")),str(value.get("relay","unknown")),str(value.get("pairedDevice") or "none"),"connected" if connected else "disconnected")))
+    connected=bool(value.get("fresh") and value.get("connections",len(value.get("clients",{}))))
+    tailscale=value.get("tailscale") or {}
+    transport=str(value.get("transport","tailscale"))+":"+str(tailscale.get("state","unknown"))+"/"+str(tailscale.get("path","unknown"))
+    print("\t".join((str(value.get("service","unknown")),transport,str(value.get("pairedDevice") or "none"),"connected" if connected else "disconnected")))
 except Exception:
     print("unknown\tunknown\tnone\tdisconnected")
 ' <<< "$output"
@@ -578,7 +580,7 @@ IFS=$'	' read -r cast_state cast_enabled < <(atlas_cast_state)
 IFS=$'	' read -r desktop_state desktop_enabled < <(system_service_run_state atlas-desktop.service)
 IFS=$'	' read -r webscreen_state webscreen_enabled < <(system_service_run_state atlas-webscreen.service)
 IFS=$'	' read -r screen_power screen_mode screen_surface screen_boot < <(atlas_screen_values)
-IFS=$'	' read -r app_service app_relay app_device app_connection < <(atlas_app_values)
+IFS=$'	' read -r app_service app_transport app_device app_connection < <(atlas_app_values)
 gateway_state_color="$(run_color "$gateway_state")"
 cast_state_color="$(run_color "$cast_state")"
 desktop_state_color="$(run_color "$desktop_state")"
@@ -619,6 +621,6 @@ ${BOLD}Atlas WebScreen:${RESET} ${webscreen_state_color}${webscreen_state}${RESE
 ${BOLD}Atlas Desktop:${RESET} ${desktop_state_color}${desktop_state}${RESET} / ${desktop_enabled}
 ${BOLD}Atlas Cast:${RESET} ${cast_state_color}${cast_state}${RESET} / ${cast_enabled}
 ${BOLD}Atlas Screen:${RESET} ${screen_power_color}${screen_power}${RESET} / selected ${screen_mode} / active ${screen_surface} / boot ${screen_boot}
-${BOLD}Atlas App:${RESET} ${app_service_color}${app_service}${RESET} / relay ${app_relay}
+${BOLD}Atlas App:${RESET} ${app_service_color}${app_service}${RESET} / ${app_transport}
 ${BOLD}Dispositivo emparejado:${RESET} ${CYAN}${app_device}${RESET} / ${app_connection}
 OUT

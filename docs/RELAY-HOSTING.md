@@ -1,62 +1,51 @@
-# Dónde alojar el relay de ATLAS
+# Tailscale transport and legacy relay
 
-Un dominio aporta una dirección, no un servidor. Se puede reservar un subdominio
-como `relay.example.com` sin cambiar la web del dominio principal. No se debe
-publicar WebScreen (5000), SSH ni el código de emparejamiento.
+ATLAS Companion now uses the owner's private Tailscale network by default. The
+phone and ATLAS A1 join the same tailnet and communicate over WireGuard, usually
+peer-to-peer. If NAT traversal cannot create a direct path, Tailscale can use an
+end-to-end encrypted DERP path without changing the Companion protocol.
 
-El relay incluido usa Python/aiohttp y mantiene en memoria las conexiones
-activas de una Pi y sus móviles. Hace falta **una instancia compartida**, no
-funciones independientes que reciban cada extremo en procesos distintos.
-La Pi abre la conexión hacia fuera: no es necesario abrir puertos en casa.
+This replaces the old public relay architecture for normal use:
 
-## Opción recomendada: Cloudflare Workers Free
+- no VPS, domain, router port or Cloudflare Worker is required;
+- A1 exposes only TLS/5010 to devices allowed by the tailnet;
+- WebScreen/5000 and SSH are not published by this integration;
+- BLE pairing still supplies an additional pinned certificate and AES key;
+- `tailscale ping <device>` reports whether a current path is direct or DERP.
 
-Revisión de documentación oficial: 3 de septiembre de 2026.
+## Setup
 
-[Durable Objects](https://developers.cloudflare.com/durable-objects/platform/pricing/)
-está disponible en el plan Free con almacenamiento SQLite. Su API de
-[hibernación WebSocket](https://developers.cloudflare.com/durable-objects/best-practices/websockets/)
-mantiene conectados el móvil y la Pi mientras el proceso duerme, evitando pagar
-duración durante la inactividad. El límite gratuito actual es 100.000 peticiones
-al día y 13.000 GB-s diarios; es holgado para un A1 personal, no una garantía de
-servicio ni de que el plan permanezca igual.
+```sh
+sudo bash system/install-companion.sh
+sudo tailscale up --hostname=atlas-a1 --operator=sami
+atlas-app tailscale
+atlas-app pair
+```
 
-El repositorio ya incluye el Worker en `.atlas/relay-cloudflare`. Usa un único
-Durable Object para conservar la compatibilidad con el protocolo existente: la
-Pi y la app siguen enviando el `room` en su primer mensaje. Cloudflare solo ve
-identificadores de ruta, tamaños, tiempos y cajas cifradas; no posee la clave
-AES extremo a extremo.
+Install and sign in to Tailscale on Android first. MagicDNS provides a stable
+hostname; the BLE payload also contains the current `100.x` address. Disable
+key expiry for the always-on A1 in the admin console if appropriate. Device
+membership in the tailnet does not replace ATLAS pairing: both layers are
+required.
 
-El dominio `samilososami.com` ya usa DNS de Cloudflare. Al desplegar,
-[Custom Domains](https://developers.cloudflare.com/workers/configuration/routing/custom-domains/)
-creará `relay.samilososami.com` y su certificado TLS automáticamente. Seguir la
-[guía de despliegue](../.atlas/relay-cloudflare/README.md). No publicar el secreto
-`ATLAS_RELAY_DEVICES`, el código `atlas1:` ni WebScreen.
+## Troubleshooting
 
-## Alternativa gratuita para pruebas: Render
+```sh
+tailscale status
+tailscale ping s23u
+tailscale netcheck
+atlas-app status --json
+curl -k https://127.0.0.1:5010/health
+```
 
-[Render Free](https://render.com/docs/free) admite dominio propio, TLS gestionado
-y una sola instancia compatible con el relay Python. Desde febrero de 2026, los
-mensajes WebSocket entrantes evitan que duerma; sin tráfico durante 15 minutos
-se apaga y el arranque puede rondar un minuto. También puede reiniciarse y su
-disco es efímero. Sigue siendo una alternativa, pero Cloudflare encaja mejor con
-el DNS actual y la hibernación de conexiones.
+First distinguish Tailscale `Running`, reachability of the peer, Companion
+service health and an actual live app socket. A DERP path is valid and secure,
+but may be slower than a direct path. Never open 5010 on the public router as a
+shortcut and never expose WebScreen/5000.
 
-## Vercel
+## Legacy compatibility
 
-Vercel admite WebSockets, pero las Functions conservan una duración máxima y
-sus instancias no deben usar memoria local como estado compartido. Haría falta
-añadir Redis u otro coordinador externo para emparejar ambos sockets. Para este
-relay es más complejo y menos natural que un Durable Object con hibernación.
-
-## VPS propio
-
-Es la opción más directa para una instancia persistente: servicio Python como
-usuario sin privilegios, `devices.json` privado y proxy TLS en 443. Con
-[Caddy](https://caddyserver.com/docs/automatic-https), el DNS público apuntando al
-servidor y los puertos requeridos disponibles, los certificados se gestionan
-automáticamente. Seguir la [guía de Companion](../.atlas/companion/README.md).
-
-En todas las opciones el código/protocolo siguen siendo de ATLAS, sin Tailscale.
-El alojamiento gratuito externo sí implica depender de ese proveedor; se puede
-migrar después al VPS propio sin sustituir el sistema por una VPN propietaria.
+The previous `.atlas/relay-cloudflare` and Python relay remain in the source for
+older APKs and rollback. They are disabled after migration. A deliberate
+`atlas-app legacy-relay wss://HOST/connect` switches back; `legacy-relay off`
+returns to Tailscale. Relay credentials and pairing keys remain private.

@@ -18,6 +18,7 @@ public final class AtlasLinkService extends Service {
     private final AtlasConnection.RelayObserver relayObserver=this::relayChanged;
     private ScheduledExecutorService worker;
     private ScheduledFuture<?> nextAttempt;
+    private ScheduledFuture<?> directProbe;
     private long nextAttemptAt=Long.MAX_VALUE;
     private volatile long retryMs=1_000;
     private ConnectivityManager connectivity;
@@ -47,11 +48,12 @@ public final class AtlasLinkService extends Service {
         connectivity=getSystemService(ConnectivityManager.class);
         activeNetwork=connectivity.getActiveNetwork();
         connection=AtlasRuntime.connection(this);
+        connection.setInboundHandler((method,params)->AtlasPhoneTools.execute(this,method,params));
         connection.addRelayObserver(relayObserver);
         networkCallback=new ConnectivityManager.NetworkCallback(){
             @Override public void onAvailable(Network network){
                 Network previous=activeNetwork;activeNetwork=network;
-                if(previous!=null&&!previous.equals(network))connection.resetRelay("La red del móvil ha cambiado");
+                if(previous!=null&&!previous.equals(network)){connection.preferDirect();connection.resetRelay("La red del móvil ha cambiado");}
                 retryMs=1_000;scheduleAttempt(0);
             }
             @Override public void onLost(Network network){
@@ -63,11 +65,12 @@ public final class AtlasLinkService extends Service {
         };
         try{connectivity.registerDefaultNetworkCallback(networkCallback);}catch(Exception ignored){}
         scheduleAttempt(0);
+        directProbe=worker.scheduleWithFixedDelay(this::probeDirectWithoutInterruptingRelay,90,90,TimeUnit.SECONDS);
     }
 
     private Notification notification(String text){
         PendingIntent open=PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
-        return new Notification.Builder(this,CHANNEL).setSmallIcon(R.drawable.widget_icon_device)
+        return new Notification.Builder(this,CHANNEL).setSmallIcon(R.drawable.ic_stat_atlas)
             .setContentTitle("ATLAS A1").setContentText(text).setOngoing(true).setOnlyAlertOnce(true)
             .setCategory(Notification.CATEGORY_SERVICE).setContentIntent(open).build();
     }
@@ -82,7 +85,7 @@ public final class AtlasLinkService extends Service {
     private void relayChanged(AtlasConnection.RelayState state,boolean a1Online,String detail){
         if(destroyed)return;
         if(state==AtlasConnection.RelayState.ONLINE){
-            retryMs=1_000;updateState(a1Online?"online":"relay",a1Online,a1Online?"ATLAS A1 conectado":"Relay conectado · esperando a A1");
+            retryMs=1_000;updateState(a1Online?"online":"waiting",a1Online,a1Online?"ATLAS A1 conectado":"Esperando a ATLAS A1");
         }else if(state==AtlasConnection.RelayState.CONNECTING){
             updateState("connecting",false,"Conectando con ATLAS A1…");
         }else{
@@ -132,13 +135,27 @@ public final class AtlasLinkService extends Service {
         }
     }
 
+    private void probeDirectWithoutInterruptingRelay(){
+        if(destroyed||!hasInternet()||connection==null||!connection.shouldProbeDirect())return;
+        // The encrypted probe uses a temporary socket, so the current relay and
+        // any active UI session remain untouched while Tailscale/MagicDNS starts.
+        if(!connection.probeDirectAvailability()||!connection.shouldProbeDirect())return;
+        connection.preferDirect();
+        connection.resetRelay("Cambiando a la conexión directa de Tailscale");
+        retryMs=1_000;
+        scheduleAttempt(0);
+    }
+
     @Override public int onStartCommand(Intent intent,int flags,int id){scheduleAttempt(0);return START_STICKY;}
     @Override public android.os.IBinder onBind(Intent intent){return null;}
     @Override public void onDestroy(){
         destroyed=true;
+        AtlasAccessibilityService.stopControlIfRunning();
         if(connection!=null)connection.removeRelayObserver(relayObserver);
+        if(connection!=null)connection.setInboundHandler(null);
         if(connectivity!=null&&networkCallback!=null)try{connectivity.unregisterNetworkCallback(networkCallback);}catch(Exception ignored){}
         synchronized(scheduleLock){if(nextAttempt!=null)nextAttempt.cancel(true);}
+        if(directProbe!=null)directProbe.cancel(true);
         if(worker!=null)worker.shutdownNow();
         if(connection!=null)connection.resetRelay("Servicio detenido");
         super.onDestroy();

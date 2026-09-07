@@ -77,6 +77,7 @@
 #onboarding-image[src$="23-gallery-audio.png"] { --asset-scale: 1.06; }
 #onboarding-image[src$="24-storage.png"] { --asset-scale: 1.09; }
 #onboarding-image[src$="25-activity-sensors.png"] { --asset-scale: 1.16; }
+#onboarding-image[src$="26-accessibility.png"] { --asset-scale: 1.02; }
 
 /* Cambiar de nombre de animación en páginas pares fuerza una entrada nueva. */
 .onboarding-copy {
@@ -95,7 +96,8 @@
 .onboarding-copy:has(#onboarding-image[src$="18-calendar.png"]),
 .onboarding-copy:has(#onboarding-image[src$="20-call-log.png"]),
 .onboarding-copy:has(#onboarding-image[src$="22-wifi.png"]),
-.onboarding-copy:has(#onboarding-image[src$="24-storage.png"]) {
+.onboarding-copy:has(#onboarding-image[src$="24-storage.png"]),
+.onboarding-copy:has(#onboarding-image[src$="26-accessibility.png"]) {
   --asset-enter: onboarding-asset-in-b;
   --copy-enter: onboarding-copy-in-b;
 }

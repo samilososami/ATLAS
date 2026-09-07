@@ -9,10 +9,17 @@ owner=$(stat -c %U "$atlas_home")
 backup="$atlas_home/.atlas/backups/companion-$(date +%Y%m%d-%H%M%S)"
 install -d -m 700 "$backup"
 preserve() { if [[ -f $1 ]]; then cp --parents -- "$1" "$backup/"; fi; }
-for name in atlas-rafas atlas-app; do
+for name in atlas-rafas atlas-status atlas-app atlas-androiduse; do
   preserve "/usr/local/bin/$name"
   install -m 755 "$repo/atlas-commands/$name" "/usr/local/bin/$name"
 done
+if ! command -v tailscale >/dev/null 2>&1; then
+  installer=$(mktemp)
+  curl -fsSL https://tailscale.com/install.sh -o "$installer"
+  sh "$installer"
+  rm -f "$installer"
+fi
+systemctl enable --now tailscaled.service
 install -d -m 755 -o "$owner" -g "$owner" "$atlas_home/.atlas/companion"
 for name in server.py crypto.py relay.py ble_pair.py README.md; do
   preserve "$atlas_home/.atlas/companion/$name"
@@ -34,3 +41,4 @@ systemctl enable --now atlas-companion.service
 systemctl restart atlas-companion.service
 printf 'Installed. Backup: %s\n' "$backup"
 echo 'Pair from a private local terminal: atlas-app pair'
+echo 'If Tailscale still needs login, run: sudo tailscale up --hostname=atlas-a1 --operator='"$owner"

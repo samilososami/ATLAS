@@ -22,15 +22,17 @@ Source paths below are relative to the repository. Live voice files are under
 | Shared conversational memory | `.atlas/webscreen/server.py`, `system/libexec/atlas-contextctl`, `atlas-commands/atlas-context` | [Context](atlas-commands/ATLAS-CONTEXT.md) |
 | Physical output and Bluetooth | `atlas-commands/atlas-audio`, `system/config/wireplumber/51-atlas-headless-bluetooth.conf` | [Audio](atlas-commands/ATLAS-AUDIO.md) |
 | Authorised Android transport | `system/bin/adb`, `system/libexec/atlas-adb-inventory`, `system/libexec/atlas-adb-monitor` | [ADB](ADB.md) |
-| Android app and relay | `.atlas/companion/`, `atlas-commands/atlas-app` | [Companion](atlas-commands/ATLAS-APP.md) |
+| Android app and Tailscale | `.atlas/companion/`, `atlas-commands/atlas-app` | [Companion](atlas-commands/ATLAS-APP.md) |
+| Android visual control | `atlas-commands/atlas-androiduse`, Companion server requests | [Android Use](atlas-commands/ATLAS-ANDROIDUSE.md) |
 | Physical display and broader Pi health | `atlas-commands/atlas-screen`, `atlas-commands/atlas-status`, `atlas-commands/atlas-rafas` | [Screen](atlas-commands/ATLAS-SCREEN.md), [Status](atlas-commands/ATLAS-STATUS.md), [RAFAS](atlas-commands/ATLAS-RAFAS.md) |
 
 The Gateway bridge supplies the configured authentication/reservation path;
 Realtime handles the conversation directly with shared Markdown and explicit
 tools. The archived starter/Whisper pipeline is not an automatic fallback.
 `atlas-chat` shares that model/context/tool path but not browser ownership or
-microphone/playback. Companion pairing, Bluetooth speaker pairing and Android
-ADB authorisation are three independent relationships.
+microphone/playback. Companion BLE pairing, Tailscale membership, Bluetooth
+speaker pairing, Accessibility and Android ADB authorisation are independent
+relationships. A green VPN icon is not proof of a live Companion socket.
 
 Double applause is also independent from the wake word: it is a local visual
 gesture, not an authentication or turn trigger. The detector only receives
@@ -90,7 +92,11 @@ to the Internet or put lease tokens in URLs, logs or public files.
    user's saved alias first. Known names need no scan; ambiguous names need an
    exact target. The A1 controller needs an Audio Source UUID for A2DP playback.
    Headless WirePlumber seat policy can prevent that endpoint from existing.
-6. For Android, follow [ADB](ADB.md): `adb devices -l`, then explicit
+6. For the ATLAS app, run `atlas-app status --json`, then `tailscale ping s23u`
+   only when the saved device alias resolves. Distinguish Tailscale `Running`, a
+   direct/DERP path, Companion/5010 and the app's persistent encrypted socket.
+   Never open 5010 publicly as a repair.
+7. For Android ADB, follow [ADB](ADB.md): `adb devices -l`, then explicit
    `adb -s SERIAL get-state` and a harmless read on the authorised target.
    `unauthorized` requires Android approval; never bypass it or kill the shared
    server as an automatic fix. Cached private records are context, not liveness.
@@ -108,8 +114,9 @@ smallest repair supported by the observed fault and verify its result.
   up affected files, preserves keys/records, and performs **no** BlueZ, PipeWire,
   browser or ADB restart. Its optional `--restart-audio-manager` applies the
   fragment with one WirePlumber restart during maintenance, not mid-turn.
-- `sudo bash system/install-companion.sh`: companion service; read its
-  [manual](atlas-commands/ATLAS-APP.md) before changing pairing/relay state.
+- `sudo bash system/install-companion.sh`: Companion, Tailscale prerequisite,
+  `atlas-app` and `atlas-androiduse`; read both mobile manuals before changing
+  pairing, native-phone or Accessibility state.
 - `sudo bash system/install-webscreen-resilience.sh`: the shared WebScreen files
   `server.py`, `access_control.py`, `gateway_bridge.mjs`, `static/access.js`,
   `static/app.js`, `static/index.html`, `static/realtime.js` and

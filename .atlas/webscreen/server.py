@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import difflib
 import hashlib
 import io
@@ -147,6 +148,40 @@ REALTIME_SHELL_TIMEOUT_SECONDS = int(os.environ.get("ATLAS_REALTIME_SHELL_TIMEOU
 REALTIME_SHELL_MAX_TIMEOUT_SECONDS = 30
 REALTIME_SHELL_MAX_COMMAND_CHARS = 4096
 REALTIME_SHELL_MAX_OUTPUT_CHARS = 12000
+ATLAS_APP_CONTROL_BIN = os.environ.get("ATLAS_APP_CONTROL_BIN", "atlas-app").strip() or "atlas-app"
+ATLAS_APP_CONTROL_TIMEOUT_SECONDS = int(os.environ.get("ATLAS_APP_CONTROL_TIMEOUT", "25"))
+ATLAS_APP_CONTROL_MAX_PARAMS_CHARS = 8 * 1024
+ATLAS_APP_CONTROL_MAX_OUTPUT_CHARS = 12 * 1024 * 1024
+ATLAS_APP_CONTROL_MAX_PHONE_RESULT_CHARS = 128 * 1024
+ATLAS_APP_CONTROL_OFFLINE_ERROR = "Error: Android device not connected"
+# Keep this allowlist deliberately closed. Realtime never forwards an arbitrary
+# method name or a shell fragment to atlas-app.
+ATLAS_PHONE_OPERATIONS = frozenset({
+    "phone.capabilities", "phone.call", "calls.recent", "sms.send", "sms.unread", "sms.list",
+    "contacts.search", "calendar.list", "calendar.create", "calendar.update", "calendar.delete", "location.get",
+    "notifications.list", "notifications.show", "wifi.panel", "wifi.connect",
+    "files.list", "files.read", "files.move", "files.delete",
+    "media.list", "media.recent", "media.delete",
+    "camera.photo", "camera.video", "sensors.summary",
+})
+ATLAS_PHONE_OPERATION_ALIASES = {
+    "capabilities": "phone.capabilities",
+    "get_location": "location.get",
+    "calls.place": "phone.call",
+}
+ATLAS_ANDROID_OPERATIONS = frozenset({
+    "androiduse.status", "androiduse.start", "androiduse.stop",
+    "androiduse.screenshot", "androiduse.tree", "androiduse.tap",
+    "androiduse.long_press", "androiduse.swipe", "androiduse.text",
+    "androiduse.back", "androiduse.home", "androiduse.recents",
+    "androiduse.launch", "androiduse.wait",
+})
+ATLAS_ANDROID_AUTO_INSPECT = frozenset({
+    "androiduse.start", "androiduse.tap", "androiduse.long_press",
+    "androiduse.swipe", "androiduse.text", "androiduse.back",
+    "androiduse.home", "androiduse.recents", "androiduse.launch",
+    "androiduse.wait",
+})
 TAVILY_DEFAULT_BASE_URL = "https://api.tavily.com"
 TAVILY_SEARCH_TIMEOUT_SECONDS = 30
 TAVILY_SEARCH_MAX_RESULTS = 8
@@ -193,6 +228,114 @@ FAST_DIRECT_PARENT_TTL_SECONDS = 120
 TTS_STREAM_TICKETS_LOCK = threading.Lock()
 TTS_STREAM_TICKETS: dict[str, tuple[float, str]] = {}
 TTS_STREAM_TICKET_SECONDS = 90
+
+
+class AndroidDeviceDisconnected(RuntimeError):
+    """The paired Android endpoint is not currently reachable."""
+
+
+def _atlas_app_control_executable() -> str:
+    configured = ATLAS_APP_CONTROL_BIN
+    if os.path.isabs(configured):
+        if not os.path.isfile(configured) or not os.access(configured, os.X_OK):
+            raise OSError(f"No se encontró el ejecutable atlas-app en {configured}")
+        return configured
+    resolved = shutil.which(configured)
+    if not resolved:
+        raise OSError("No se encontró atlas-app en PATH")
+    return resolved
+
+
+def _atlas_control_json(stdout: str) -> dict[str, Any]:
+    text = str(stdout or "").strip()
+    if not text:
+        raise RuntimeError("atlas-app no devolvió ningún resultado")
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError:
+        # An older CLI may prefix one diagnostic line. Accept only a final JSON
+        # object; arbitrary prose is never passed through to Realtime.
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        try:
+            value = json.loads(lines[-1])
+        except (IndexError, json.JSONDecodeError) as error:
+            raise RuntimeError("atlas-app devolvió una respuesta JSON inválida") from error
+    if not isinstance(value, dict):
+        raise RuntimeError("atlas-app devolvió un resultado con formato inválido")
+    return value
+
+
+def execute_atlas_app_control(operation: Any, params: Any,
+                              allowed_operations: frozenset[str],
+                              aliases: dict[str, str] | None = None) -> dict[str, Any]:
+    """Invoke one explicitly allowed phone method without a shell."""
+    requested = str(operation or "").strip().lower()
+    canonical = (aliases or {}).get(requested, requested)
+    if canonical not in allowed_operations:
+        raise ValueError(f"Operación de teléfono no permitida: {requested or '(vacía)'}")
+    if params is None:
+        params = {}
+    if not isinstance(params, dict):
+        raise ValueError("Los parámetros de teléfono deben ser un objeto JSON")
+    params_json = json.dumps(params, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+    if len(params_json) > ATLAS_APP_CONTROL_MAX_PARAMS_CHARS:
+        raise ValueError("Los parámetros de teléfono son demasiado grandes")
+    command = [
+        _atlas_app_control_executable(), "control", canonical,
+        "--params", params_json, "--json",
+    ]
+    completed = subprocess.run(
+        command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
+        timeout=ATLAS_APP_CONTROL_TIMEOUT_SECONDS, check=False,
+    )
+    stdout = completed.stdout or ""
+    stderr = completed.stderr or ""
+    if len(stdout) + len(stderr) > ATLAS_APP_CONTROL_MAX_OUTPUT_CHARS:
+        raise RuntimeError("atlas-app devolvió una respuesta demasiado grande")
+    combined = "\n".join(part for part in (stderr.strip(), stdout.strip()) if part)
+    if "Android device not connected" in combined:
+        raise AndroidDeviceDisconnected(ATLAS_APP_CONTROL_OFFLINE_ERROR)
+    if completed.returncode != 0:
+        message = (stderr.strip() or stdout.strip() or
+                   f"atlas-app terminó con código {completed.returncode}")
+        raise RuntimeError(message[:1000])
+    result = _atlas_control_json(stdout)
+    if "Android device not connected" in str(result.get("error") or ""):
+        raise AndroidDeviceDisconnected(ATLAS_APP_CONTROL_OFFLINE_ERROR)
+    return result
+
+
+def normalize_android_screenshot(result: dict[str, Any]) -> dict[str, Any]:
+    encoded = str(result.get("pngBase64") or result.get("data") or "").strip()
+    mime = str(result.get("mime") or "image/png").lower()
+    if not encoded or mime != "image/png":
+        raise RuntimeError("El teléfono no devolvió una captura PNG utilizable")
+    if len(encoded) > ATLAS_APP_CONTROL_MAX_OUTPUT_CHARS:
+        raise RuntimeError("La captura del teléfono es demasiado grande")
+    try:
+        raw = base64.b64decode(encoded, validate=True)
+    except (ValueError, TypeError, binascii.Error) as error:
+        raise RuntimeError("La captura del teléfono no contiene Base64 válido") from error
+    if not raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise RuntimeError("La captura del teléfono no es un PNG válido")
+    try:
+        width, height = int(result.get("width")), int(result.get("height"))
+    except (TypeError, ValueError) as error:
+        raise RuntimeError("La captura no incluye dimensiones válidas") from error
+    if not (1 <= width <= 10000 and 1 <= height <= 10000):
+        raise RuntimeError("Las dimensiones de la captura están fuera de rango")
+    return {"pngBase64": encoded, "width": width, "height": height, "mime": "image/png"}
+
+
+def public_android_result(result: dict[str, Any]) -> dict[str, Any]:
+    """Remove screenshot bytes before the result reaches function_call_output."""
+    public = dict(result)
+    had_image = bool(public.pop("data", None))
+    had_image = bool(public.pop("pngBase64", None)) or had_image
+    if had_image:
+        public["captureAttached"] = True
+    return public
 
 
 def is_physical_a1_client(client_ip: str, host: str, requested_kind: Any = None) -> bool:
@@ -1953,6 +2096,15 @@ def _clap_number(value: Any, minimum: float, maximum: float, label: str) -> floa
 def _clap_event(value: Any, label: str) -> dict[str, float]:
     if not isinstance(value, dict):
         raise ValueError(f"{label} inválido")
+    onset_ratio = value.get("onsetRatio")
+    if onset_ratio is None:
+        onset_ratio = value.get("onsetratio")
+    if onset_ratio is None:
+        onset_ratio = value.get("onset_radio")
+    if onset_ratio is None:
+        onset_ratio = value.get("onsetRadio")
+    if onset_ratio is None:
+        onset_ratio = value.get("onsetradio")
     return {
         "rms": _clap_number(value.get("rms"), 0, 1, f"{label}.rms"),
         "peak": _clap_number(value.get("peak"), 0, 1, f"{label}.peak"),
@@ -1960,7 +2112,7 @@ def _clap_event(value: Any, label: str) -> dict[str, float]:
         "flatness": _clap_number(value.get("flatness"), 0, 1, f"{label}.flatness"),
         "crestFactor": _clap_number(value.get("crestFactor"), 1, 20, f"{label}.crestFactor"),
         "spectralCentroidHz": _clap_number(value.get("spectralCentroidHz"), 200, 12000, f"{label}.spectralCentroidHz"),
-        "onsetRatio": _clap_number(value.get("onsetRatio"), 1, 30, f"{label}.onsetRatio"),
+        "onsetRatio": _clap_number(onset_ratio, 0.2, 30, f"{label}.onsetRatio"),
         "eventDurationMs": _clap_number(value.get("eventDurationMs"), 0, 400, f"{label}.eventDurationMs"),
     }
 
@@ -2884,6 +3036,10 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
             self.handle_realtime_consult()
         elif self.path == "/api/realtime/shell":
             self.handle_realtime_shell()
+        elif self.path == "/api/realtime/phone":
+            self.handle_realtime_phone()
+        elif self.path == "/api/realtime/android":
+            self.handle_realtime_android()
         elif self.path == "/api/realtime/routine":
             self.handle_realtime_routine()
         elif self.path == "/api/routines/execute":
@@ -3311,6 +3467,81 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
             self.send_json(400, {"error": str(error)[:300]})
         except OSError as error:
             self.send_json(502, {"error": f"La shell no pudo iniciar: {error}"[:500]})
+
+    def _read_realtime_device_tool(self) -> tuple[str, dict[str, Any], bool, str]:
+        payload = self.read_json_payload(maximum=16 * 1024)
+        args = payload.get("args")
+        if isinstance(args, str):
+            args = json.loads(args or "{}")
+        if not isinstance(args, dict):
+            raise ValueError("Argumentos de control de teléfono inválidos")
+        operation = str(args.get("operation") or "").strip().lower()
+        params = args.get("params", {})
+        if not isinstance(params, dict):
+            raise ValueError("Los parámetros de teléfono deben ser un objeto JSON")
+        inspect_after = args.get("inspectAfter", args.get("inspect_after", True)) is not False
+        interaction_id = safe_identifier(
+            str(payload.get("interactionId") or ""), uuid4().hex,
+        )
+        return operation, params, inspect_after, interaction_id
+
+    def handle_realtime_phone(self) -> None:
+        try:
+            operation, params, _, interaction_id = self._read_realtime_device_tool()
+            result = execute_atlas_app_control(
+                operation, params, ATLAS_PHONE_OPERATIONS, ATLAS_PHONE_OPERATION_ALIASES,
+            )
+            if len(json.dumps(result, ensure_ascii=False)) > ATLAS_APP_CONTROL_MAX_PHONE_RESULT_CHARS:
+                raise RuntimeError("La API nativa devolvió demasiados datos; acota la consulta")
+            append_realtime_event({
+                "interactionId": interaction_id, "stage": "phone.completed",
+                "message": "ATLAS ejecutó una API nativa del teléfono",
+                "text": operation, "status": "ok" if result.get("ok", True) else "failed",
+                "source": "atlas-phone",
+            }, self.log_client())
+            self.send_json(200, {"operation": operation, "result": result})
+        except (ValueError, json.JSONDecodeError) as error:
+            self.send_json(400, {"error": str(error)[:500]})
+        except AndroidDeviceDisconnected as error:
+            self.send_json(503, {"error": str(error)})
+        except subprocess.TimeoutExpired:
+            self.send_json(504, {"error": "El teléfono no respondió a tiempo"})
+        except (OSError, RuntimeError) as error:
+            self.send_json(502, {"error": str(error)[:1000]})
+
+    def handle_realtime_android(self) -> None:
+        try:
+            operation, params, inspect_after, interaction_id = self._read_realtime_device_tool()
+            result = execute_atlas_app_control(operation, params, ATLAS_ANDROID_OPERATIONS)
+            screenshot: dict[str, Any] | None = None
+            if operation == "androiduse.screenshot":
+                screenshot = normalize_android_screenshot(result)
+            elif (inspect_after and operation in ATLAS_ANDROID_AUTO_INSPECT
+                  and result.get("ok", True) is not False and not result.get("error")):
+                capture = execute_atlas_app_control(
+                    "androiduse.screenshot", {}, ATLAS_ANDROID_OPERATIONS,
+                )
+                screenshot = normalize_android_screenshot(capture)
+            public_result = public_android_result(result)
+            append_realtime_event({
+                "interactionId": interaction_id, "stage": "android.completed",
+                "message": "ATLAS ejecutó una acción visual en Android",
+                "text": operation,
+                "status": "ok" if public_result.get("ok", True) else "failed",
+                "source": "atlas-androiduse",
+            }, self.log_client())
+            response: dict[str, Any] = {"operation": operation, "result": public_result}
+            if screenshot is not None:
+                response["screenshot"] = screenshot
+            self.send_json(200, response)
+        except (ValueError, json.JSONDecodeError) as error:
+            self.send_json(400, {"error": str(error)[:500]})
+        except AndroidDeviceDisconnected as error:
+            self.send_json(503, {"error": str(error)})
+        except subprocess.TimeoutExpired:
+            self.send_json(504, {"error": "El teléfono no respondió a tiempo"})
+        except (OSError, RuntimeError) as error:
+            self.send_json(502, {"error": str(error)[:1000]})
 
     def handle_routine_execute(self) -> None:
         try:

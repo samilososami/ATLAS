@@ -1,0 +1,189 @@
+package dev.atlas.a1;
+
+import android.accessibilityservice.*;
+import android.app.*;
+import android.content.*;
+import android.graphics.*;
+import android.graphics.drawable.GradientDrawable;
+import android.hardware.HardwareBuffer;
+import android.net.Uri;
+import android.os.*;
+import android.provider.Settings;
+import android.util.*;
+import android.view.*;
+import android.view.accessibility.*;
+import android.widget.*;
+import java.io.*;
+import java.util.*;
+import java.util.concurrent.*;
+import org.json.*;
+
+/** Explicitly enabled, locally paired UI-control surface for this private sideload. */
+public final class AtlasAccessibilityService extends AccessibilityService {
+    private static volatile AtlasAccessibilityService instance;
+    private static final int CONTROL_NOTIFICATION=83;
+    private static final String CHANNEL="atlas-control";
+    private final Handler main=new Handler(Looper.getMainLooper());
+    private final ExecutorService captureWorker=Executors.newSingleThreadExecutor();
+    private WindowManager windows;
+    private FrameLayout guard;
+    private WindowManager.LayoutParams guardParams;
+    private volatile boolean controlling;
+    private final Runnable idleStop=this::stopControl;
+
+    static boolean enabled(Context context){
+        String value=Settings.Secure.getString(context.getContentResolver(),Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES);
+        ComponentName component=new ComponentName(context,AtlasAccessibilityService.class);
+        return value!=null&&(Arrays.asList(value.split(":" )).contains(component.flattenToString())||Arrays.asList(value.split(":" )).contains(component.flattenToShortString()));
+    }
+    static boolean controlling(){AtlasAccessibilityService service=instance;return service!=null&&service.controlling;}
+    static void stopControlIfRunning(){AtlasAccessibilityService service=instance;if(service!=null)service.stopControl();}
+    static JSONObject execute(JSONObject request)throws Exception{
+        AtlasAccessibilityService service=instance;
+        if(service==null){
+            if("status".equals(request.optString("action")))return new JSONObject().put("enabled",false).put("controlling",false);
+            throw new SecurityException("permission_required: ACCESSIBILITY_SERVICE");
+        }
+        return service.perform(request.optString("action"),request);
+    }
+
+    @Override protected void onServiceConnected(){instance=this;windows=getSystemService(WindowManager.class);}
+    @Override public void onAccessibilityEvent(AccessibilityEvent event){}
+    @Override public void onInterrupt(){stopControl();}
+    @Override public boolean onUnbind(Intent intent){stopControl();instance=null;return super.onUnbind(intent);}
+    @Override public void onDestroy(){stopControl();captureWorker.shutdownNow();instance=null;super.onDestroy();}
+
+    private <T> T onMain(Callable<T> work)throws Exception{
+        if(Looper.myLooper()==Looper.getMainLooper())return work.call();
+        CompletableFuture<T> result=new CompletableFuture<>();
+        main.post(()->{try{result.complete(work.call());}catch(Exception e){result.completeExceptionally(e);}});
+        return result.get(8,TimeUnit.SECONDS);
+    }
+    private JSONObject perform(String action,JSONObject p)throws Exception{
+        if("start".equals(action)){startControl();return ok();}
+        if("stop".equals(action)){stopControl();return ok();}
+        if("status".equals(action))return new JSONObject().put("enabled",true).put("controlling",controlling);
+        if(!controlling)throw new IOException("Inicia primero una sesión con atlas-androiduse start");
+        touchSession();
+        switch(action){
+            case "screenshot": return screenshot();
+            case "tree": return onMain(this::tree);
+            case "tap": return gesture(point(p,"x"),point(p,"y"),point(p,"x"),point(p,"y"),80);
+            case "long_press": return gesture(point(p,"x"),point(p,"y"),point(p,"x"),point(p,"y"),Math.max(550,p.optLong("duration",700)));
+            case "swipe": return gesture(point(p,"x1"),point(p,"y1"),point(p,"x2"),point(p,"y2"),Math.max(120,Math.min(1800,p.optLong("duration",360))));
+            case "text": return onMain(()->setText(p.optString("text")));
+            case "back": return global(GLOBAL_ACTION_BACK);
+            case "home": return global(GLOBAL_ACTION_HOME);
+            case "recents": return global(GLOBAL_ACTION_RECENTS);
+            case "key": {
+                String key=p.optString("key").toLowerCase(Locale.ROOT);
+                if("back".equals(key))return global(GLOBAL_ACTION_BACK);if("home".equals(key))return global(GLOBAL_ACTION_HOME);if("recents".equals(key))return global(GLOBAL_ACTION_RECENTS);
+                throw new UnsupportedOperationException("unsupported: Accessibility no puede inyectar teclas arbitrarias; usa text o back/home/recents");
+            }
+            case "launch": return onMain(()->launch(p));
+            case "wait": Thread.sleep(Math.max(0,Math.min(2500,p.optLong("ms",350))));return ok();
+            default: throw new SecurityException("Acción Android Use no permitida: "+action);
+        }
+    }
+    private float point(JSONObject p,String key){
+        double value=p.optDouble(key,0);DisplayMetrics metrics=getResources().getDisplayMetrics();
+        if(value>=0&&value<=1)value*=key.startsWith("x")?metrics.widthPixels:metrics.heightPixels;
+        return (float)value;
+    }
+    private JSONObject gesture(float x1,float y1,float x2,float y2,long duration)throws Exception{
+        CompletableFuture<Boolean> result=new CompletableFuture<>();
+        onMain(()->{
+            setGuardPassThrough(true);
+            Path path=new Path();path.moveTo(x1,y1);if(x1!=x2||y1!=y2)path.lineTo(x2,y2);
+            GestureDescription gesture=new GestureDescription.Builder().addStroke(new GestureDescription.StrokeDescription(path,0,duration)).build();
+            if(!dispatchGesture(gesture,new GestureResultCallback(){
+                @Override public void onCompleted(GestureDescription d){setGuardPassThrough(false);result.complete(true);}
+                @Override public void onCancelled(GestureDescription d){setGuardPassThrough(false);result.complete(false);}
+            },null)){setGuardPassThrough(false);result.complete(false);}
+            return null;
+        });
+        try{if(!result.get(4,TimeUnit.SECONDS))throw new IOException("Android rechazó el gesto");return new JSONObject().put("dispatched",true);}
+        finally{onMain(()->{setGuardPassThrough(false);return null;});}
+    }
+    private JSONObject global(int action)throws Exception{return onMain(()->new JSONObject().put("performed",performGlobalAction(action)));}
+    private JSONObject setText(String text)throws Exception{
+        AccessibilityNodeInfo root=getRootInActiveWindow();if(root==null)throw new IOException("No hay una ventana activa");
+        AccessibilityNodeInfo target=root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT);if(target==null)target=findEditable(root);
+        if(target==null){root.recycle();throw new IOException("No hay un campo de texto activo");}
+        Bundle args=new Bundle();args.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,text);
+        boolean changed=target.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT,args);target.recycle();root.recycle();
+        if(!changed)throw new IOException("La aplicación no permite introducir texto en ese campo");return ok();
+    }
+    private AccessibilityNodeInfo findEditable(AccessibilityNodeInfo node){
+        if(node==null)return null;if(node.isEditable())return AccessibilityNodeInfo.obtain(node);
+        for(int i=0;i<node.getChildCount();i++){AccessibilityNodeInfo child=node.getChild(i),found=findEditable(child);if(child!=null)child.recycle();if(found!=null)return found;}return null;
+    }
+    private JSONObject launch(JSONObject p)throws Exception{
+        Intent intent;String packageName=p.optString("package").trim(),uri=p.optString("uri").trim();
+        if(!packageName.isEmpty()){if(!packageName.matches("[A-Za-z0-9_.]{3,160}"))throw new SecurityException("Paquete no válido");intent=getPackageManager().getLaunchIntentForPackage(packageName);if(intent==null)throw new IOException("Aplicación no instalada");}
+        else {Uri target=Uri.parse(uri);if(!Arrays.asList("https","http","geo","tel","sms","mailto").contains(target.getScheme()))throw new SecurityException("Enlace no permitido");intent=new Intent(Intent.ACTION_VIEW,target);}
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);startActivity(intent);return ok();
+    }
+    private JSONObject tree()throws Exception{
+        AccessibilityNodeInfo root=getRootInActiveWindow();JSONArray nodes=new JSONArray();if(root!=null){appendNode(root,nodes,0,new int[]{0});root.recycle();}return new JSONObject().put("nodes",nodes);
+    }
+    private void appendNode(AccessibilityNodeInfo node,JSONArray out,int depth,int[] count)throws Exception{
+        if(node==null||depth>12||count[0]++>=220)return;Rect bounds=new Rect();node.getBoundsInScreen(bounds);
+        out.put(new JSONObject().put("class",String.valueOf(node.getClassName())).put("text",String.valueOf(node.getText()==null?"":node.getText()))
+            .put("description",String.valueOf(node.getContentDescription()==null?"":node.getContentDescription())).put("clickable",node.isClickable()).put("editable",node.isEditable())
+            .put("bounds",new JSONArray(Arrays.asList(bounds.left,bounds.top,bounds.right,bounds.bottom))));
+        for(int i=0;i<node.getChildCount();i++){AccessibilityNodeInfo child=node.getChild(i);if(child!=null){appendNode(child,out,depth+1,count);child.recycle();}}
+    }
+    private JSONObject screenshot()throws Exception{
+        CompletableFuture<JSONObject> result=new CompletableFuture<>();onMain(()->{if(guard!=null)guard.setVisibility(View.INVISIBLE);return null;});
+        main.postDelayed(()->takeScreenshot(Display.DEFAULT_DISPLAY,captureWorker,new TakeScreenshotCallback(){
+            @Override public void onSuccess(ScreenshotResult shot){
+                try(HardwareBuffer buffer=shot.getHardwareBuffer()){
+                    Bitmap hardware=Bitmap.wrapHardwareBuffer(buffer,shot.getColorSpace());if(hardware==null)throw new IOException("Android no entregó la captura");
+                    Bitmap bitmap=hardware.copy(Bitmap.Config.ARGB_8888,false);int originalWidth=bitmap.getWidth(),originalHeight=bitmap.getHeight();
+                    if(bitmap.getWidth()>768){Bitmap scaled=Bitmap.createScaledBitmap(bitmap,768,Math.round(bitmap.getHeight()*(768f/bitmap.getWidth())),true);bitmap.recycle();bitmap=scaled;}
+                    byte[] encoded;int deliveredWidth,deliveredHeight;
+                    while(true){
+                        ByteArrayOutputStream bytes=new ByteArrayOutputStream();bitmap.compress(Bitmap.CompressFormat.PNG,100,bytes);encoded=bytes.toByteArray();
+                        deliveredWidth=bitmap.getWidth();deliveredHeight=bitmap.getHeight();
+                        if(encoded.length<=1_250_000||bitmap.getWidth()<=320)break;
+                        int width=Math.max(320,Math.round(bitmap.getWidth()*.78f));Bitmap scaled=Bitmap.createScaledBitmap(bitmap,width,Math.round(bitmap.getHeight()*(width/(float)bitmap.getWidth())),true);bitmap.recycle();bitmap=scaled;
+                    }
+                    bitmap.recycle();
+                    result.complete(new JSONObject().put("mime","image/png").put("width",originalWidth).put("height",originalHeight).put("captureWidth",deliveredWidth).put("captureHeight",deliveredHeight).put("bytes",encoded.length).put("pngBase64",android.util.Base64.encodeToString(encoded,android.util.Base64.NO_WRAP)));
+                }catch(Exception e){result.completeExceptionally(e);}finally{main.post(()->{if(guard!=null&&controlling)guard.setVisibility(View.VISIBLE);});}
+            }
+            @Override public void onFailure(int code){main.post(()->{if(guard!=null&&controlling)guard.setVisibility(View.VISIBLE);});result.completeExceptionally(new IOException("No se pudo capturar la pantalla ("+code+")"));}
+        }),80);return result.get(12,TimeUnit.SECONDS);
+    }
+    private void startControl()throws Exception{onMain(()->{if(!controlling){controlling=true;showGuard();showNotification();}touchSession();return null;});}
+    private void touchSession(){main.removeCallbacks(idleStop);main.postDelayed(idleStop,120_000);}
+    private void stopControl(){main.post(()->{main.removeCallbacks(idleStop);controlling=false;if(guard!=null){try{windows.removeView(guard);}catch(Exception ignored){}guard=null;guardParams=null;}getSystemService(NotificationManager.class).cancel(CONTROL_NOTIFICATION);});}
+    private void setGuardPassThrough(boolean passThrough){
+        if(guard==null||guardParams==null||windows==null)return;
+        int next=passThrough?guardParams.flags|WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE:guardParams.flags&~WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+        if(next==guardParams.flags)return;guardParams.flags=next;
+        try{windows.updateViewLayout(guard,guardParams);}catch(Exception ignored){}
+    }
+    private void showNotification(){
+        NotificationManager manager=getSystemService(NotificationManager.class);manager.createNotificationChannel(new NotificationChannel(CHANNEL,"Control del teléfono",NotificationManager.IMPORTANCE_LOW));
+        PendingIntent open=PendingIntent.getActivity(this,0,new Intent(this,MainActivity.class),PendingIntent.FLAG_UPDATE_CURRENT|PendingIntent.FLAG_IMMUTABLE);
+        manager.notify(CONTROL_NOTIFICATION,new Notification.Builder(this,CHANNEL).setSmallIcon(R.drawable.ic_stat_atlas).setContentTitle("ATLAS está controlando este teléfono.")
+            .setContentText("Abre ATLAS para detener el control").setOngoing(true).setOnlyAlertOnce(true).setCategory(Notification.CATEGORY_SERVICE).setContentIntent(open).build());
+    }
+    private void showGuard(){
+        guard=new FrameLayout(this);guard.setBackgroundColor(Color.TRANSPARENT);guard.setOnTouchListener((v,e)->true);guard.addView(new AuraView(this),new FrameLayout.LayoutParams(-1,-1));
+        Button stop=new Button(this);stop.setText("ATLAS está controlando el teléfono. Presiona aquí para pararlo");stop.setTextColor(Color.WHITE);stop.setTextSize(13);stop.setAllCaps(false);stop.setPadding(26,0,26,0);
+        GradientDrawable background=new GradientDrawable();background.setColor(0xffe13b48);background.setCornerRadius(dp(28));stop.setBackground(background);stop.setOnClickListener(v->stopControl());
+        FrameLayout.LayoutParams button=new FrameLayout.LayoutParams(-1,dp(58),Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL);button.setMargins(dp(32),0,dp(32),dp(42));guard.addView(stop,button);
+        guardParams=new WindowManager.LayoutParams(-1,-1,WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE|WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN|WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,PixelFormat.TRANSLUCENT);guardParams.gravity=Gravity.TOP|Gravity.START;windows.addView(guard,guardParams);
+    }
+    private int dp(float value){return Math.round(value*getResources().getDisplayMetrics().density);}
+    private JSONObject ok()throws JSONException{return new JSONObject().put("ok",true);}
+
+    private static final class AuraView extends View {
+        private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);
+        AuraView(Context context){super(context);setLayerType(View.LAYER_TYPE_SOFTWARE,null);paint.setStyle(Paint.Style.STROKE);paint.setMaskFilter(new BlurMaskFilter(22,BlurMaskFilter.Blur.NORMAL));}
+        @Override protected void onDraw(Canvas canvas){super.onDraw(canvas);for(int i=0;i<4;i++){paint.setStrokeWidth(7+i*8);paint.setColor(Color.argb(115-i*22,20,143,255));float inset=3+i*4;canvas.drawRoundRect(inset,inset,getWidth()-inset,getHeight()-inset,28,28,paint);}}
+    }
+}

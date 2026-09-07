@@ -1,26 +1,34 @@
 # ATLAS App
 
-`atlas-app` reports the Android companion service, connected clients, voice
-ownership, terminal count and relay connectivity. `atlas-app status --json`
-returns the same information without pairing secrets.
+`atlas-app` reports the Android Companion service, single paired device, live
+socket, resumable terminals and private Tailscale transport. Use
+`atlas-app status --json` for structured diagnostics without secrets.
 
-- `atlas-app pair`: print a **private administration code** for the phone. Only
-  do this when the owner asks to pair; never put the code in memory, logs or Git.
-- `atlas-app revoke`: interactively revoke all phones by rotating the key.
-- `atlas-app start|stop|restart|logs`: manage `atlas-companion.service`.
-- `atlas-app relay wss://HOST/connect`: configure the owner's independent relay.
-- `atlas-app relay-credentials`: private relay provisioning data, not model auth.
+- `atlas-app pair`: open the 120-second BLE flow and show the private six-digit
+  code. Never place the code or returned `atlas1:` payload in memory or logs.
+- `atlas-app unpair`: rotate the administration key and remove the paired phone.
+- `atlas-app tailscale|endpoint`: inspect the private transport.
+- `atlas-app start|stop|restart|logs`: operate `atlas-companion.service`.
+- `atlas-app control OP ...`: call a permission-backed native phone operation.
+- `atlas-app legacy-relay ...`: compatibility only, not the default path.
 
-The app's voice/text brain is direct `gpt-realtime-2.1`, with the same core
-Markdown context, shell and Tavily as WebScreen. Never route it to the legacy
-OpenClaw preamble agent. Opening a conversation takes the WebScreen lease;
-closing it returns the A1. Merely opening Status does not take the lease.
+Prefer native operations for calls, SMS, contacts, calendar, notifications,
+location, files, media, Wi-Fi, camera and sensors. Use the generic form
+`atlas-app control OP [key=value ...] [--params JSON]`. If the phone is not
+online, report `Error: Android device not connected`; do not invent a result or
+replay the request after reconnecting.
 
-The companion is separate from WebScreen. Do not expose port 5000 publicly.
-Port 5010 uses a pinned certificate and encrypted authenticated requests;
-Internet mode uses a self-hosted blind relay, **not Tailscale**. A public server
-must actually be configured before claiming access from outside the LAN.
+The app's text/voice brain remains direct `gpt-realtime-2.1` with the same core
+Markdown, memory, shell and Tavily path as WebScreen. Opening a conversation
+takes the WebScreen lease; reading status does not. The persistent Companion
+WebSocket is independent from that model lease.
 
-For system failures use `atlas-rafas` and its bounded `doctor`. Technical
-installation and security limits: `.atlas/companion/README.md` in the source
-repository or `/home/atlas/.atlas/companion/README.md` on A1.
+The default endpoint is `wss://<A1 MagicDNS>:5010/app` inside the owner's
+tailnet. TLS pinning and encrypted AES-GCM boxes remain mandatory. Tailscale
+membership and ATLAS BLE pairing are separate trust layers. Never expose
+WebScreen/5000 or pairing material.
+
+For screen automation read `ATLAS-ANDROIDUSE.md`; for Pi failures use
+`atlas-rafas`. Full protocol and installation notes live in
+`.atlas/companion/README.md` in source or `/home/atlas/.atlas/companion/README.md`
+on A1.

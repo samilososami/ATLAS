@@ -272,6 +272,20 @@ class ClapProfileTests(unittest.TestCase):
                 self.assertEqual(app.clap_profile_snapshot()['profile']['privacy'], 'summary-features-only-no-audio')
                 self.assertEqual(oct(target.stat().st_mode & 0o777), '0o600')
 
+    def test_profile_accepts_legacy_onsetratio_keys(self):
+        payload = self.payload()
+        payload['trials'][0]['first'] = {**payload['trials'][0]['first']}
+        payload['trials'][1]['first'] = {**payload['trials'][1]['first']}
+        payload['trials'][0]['first']['onsetratio'] = payload['trials'][0]['first'].pop('onsetRatio')
+        payload['trials'][1]['first']['onsetratio'] = payload['trials'][1]['first'].pop('onsetRatio')
+        expected_ratio = 6.2
+        with tempfile.TemporaryDirectory() as temporary:
+            target = app.Path(temporary) / "clap-profile.json"
+            with patch.object(app, 'CLAP_DIR', target.parent), patch.object(app, 'CLAP_PROFILE_FILE', target):
+                saved = app.save_clap_profile(payload)
+            self.assertEqual(saved['profile']['trials'][0]['first']['onsetRatio'], expected_ratio)
+            self.assertEqual(saved['profile']['trials'][1]['first']['onsetRatio'], expected_ratio)
+
     def test_profile_rejects_audio_and_invalid_pair_window(self):
         payload = self.payload()
         payload['audio'] = 'not accepted by the normalizer'

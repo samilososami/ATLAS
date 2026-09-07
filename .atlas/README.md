@@ -18,8 +18,10 @@ live here; OpenClaw keeps your identity and memory in its own workspace.
 - `routines/`: validated deterministic automations shared by WebScreen and
   `atlas-chat`. Exact phrases run locally before a model response; the live
   registry, results and logs remain private on A1.
-- `companion/`: authenticated Android service and independent, self-hostable
-  encrypted relay. `atlas-app` manages pairing and reports client/relay state.
+- `companion/`: authenticated Android service with a persistent encrypted
+  WebSocket over the owner's Tailscale network. `atlas-app` manages BLE pairing,
+  native phone tools and connection state; `atlas-androiduse` is the bounded
+  Accessibility fallback. The old blind relay is compatibility-only.
   Private pairing keys and certificates live only in its ignored `state/`.
 - `desktop/`: the separate virtual desktop, Openbox configuration and
   shared wallpapers. It is not the physical screen's desktop.

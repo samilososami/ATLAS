@@ -33,17 +33,42 @@ def variant(signature, value):
     return Variant(signature, value)
 
 
+def tailscale_identity():
+    try:
+        process = subprocess.run(["tailscale", "status", "--json"], text=True,
+                                 capture_output=True, timeout=5)
+        raw = json.loads(process.stdout)
+        own = raw.get("Self") or {}
+        addresses = own.get("TailscaleIPs") or []
+        ipv4 = next((value for value in addresses if "." in value), "")
+        hostname = own.get("HostName") or os.uname().nodename
+        if raw.get("BackendState") != "Running" or not own.get("Online") or not (hostname or ipv4):
+            return None
+        return {"host": hostname or ipv4, "ip": ipv4}
+    except (OSError, subprocess.TimeoutExpired, ValueError, TypeError):
+        return None
+
+
 def pairing_payload(config):
-    addresses = subprocess.check_output(["hostname", "-I"], text=True).split()
+    identity = tailscale_identity()
+    if not identity:
+        raise SystemExit("Tailscale no está autenticado en ATLAS A1. Ejecuta sudo tailscale up antes de emparejar.")
     certificate = ssl.PEM_cert_to_DER_cert((STATE / "certificate.pem").read_text())
+    endpoint = f"wss://{identity['host']}:5010/app"
+    direct = f"https://{identity['host']}:5010/rpc"
     value = {
-        "v": 1,
+        "v": 2,
         "name": os.uname().nodename,
-        "url": "https://" + (addresses[0] if addresses else "atlas-a1.local") + ":5010",
+        "transport": "tailscale",
+        "tailscale": identity["host"],
+        "tailscaleIp": identity["ip"],
+        "endpoint": endpoint,
+        "direct": direct,
+        "url": direct,
         "pin": hashlib.sha256(certificate).hexdigest(),
         "key": config["key"],
         "room": config["room"],
-        "relay": config.get("relay", ""),
+        "relay": config.get("legacyRelay", config.get("relay", "")),
     }
     encoded = base64.urlsafe_b64encode(json.dumps(value, separators=(",", ":")).encode()).decode().rstrip("=")
     return ("atlas1:" + encoded).encode()

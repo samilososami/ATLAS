@@ -9,21 +9,35 @@ ROOT=pathlib.Path(os.environ.get('ATLAS_HOME','/home/atlas'))
 STATE=ROOT/'.atlas/companion/state'
 CONFIG=STATE/'config.json'
 WEB='http://127.0.0.1:5000'
+VERSION='0.2.0'
 
 class Companion:
     def __init__(self, config):
         self.config=config; self.cipher=Cipher(config['key'],'pi')
         self.http=None; self.access=None; self.owner=None; self.touched=0
         self.terminals={}; self.pending={}; self.clients={}; self.relay='disabled'
+        self.sockets={}; self.mobile_pending={}
         self.lock=asyncio.Lock(); self.health_cache=(0,{})
         self.paired_device=config.get('pairedDevice')
+    def save_config(self):
+        tmp=CONFIG.with_suffix('.tmp'); tmp.write_text(json.dumps(self.config,separators=(',',':')))
+        tmp.chmod(0o600); os.replace(tmp,CONFIG)
     def remember_device(self,name):
         if not isinstance(name,str): return
         name=''.join(ch for ch in name.strip()[:40] if ch.isalnum() or ch in ' ._+-')
         if not name or name==self.paired_device: return
         self.paired_device=name; self.config['pairedDevice']=name; self.config['pairedAt']=int(time.time())
-        tmp=CONFIG.with_suffix('.tmp'); tmp.write_text(json.dumps(self.config,separators=(',',':')))
-        tmp.chmod(0o600); os.replace(tmp,CONFIG)
+        self.save_config()
+    async def revoke_pairing(self):
+        self.config['key']=__import__('base64').urlsafe_b64encode(secrets.token_bytes(32)).decode().rstrip('=')
+        self.config.pop('pairedDevice',None); self.config.pop('pairedAt',None)
+        self.paired_device=None; self.save_config()
+        sockets=list(self.sockets.values()); self.sockets.clear()
+        for ws in sockets:
+            with contextlib.suppress(Exception): await ws.close(code=4001,message=b'pairing revoked')
+        for future in self.mobile_pending.values():
+            if not future.done(): future.set_exception(ValueError('Android device not connected'))
+        self.mobile_pending.clear(); self.cipher=Cipher(self.config['key'],'pi')
     async def request(self,path,data=None):
         headers={'X-Atlas-Access':'1'}
         if self.access: headers['X-Atlas-Client']=self.access
@@ -75,17 +89,42 @@ class Companion:
             q=normalize_usage(raw)
             return {**q,'available':bool(q['fiveHour'] or q['weekly'])}
         except Exception: return {'available':False,'message':'Cuota no disponible; no significa cero'}
+    async def tailscale(self):
+        result=await self.command('tailscale status --json',5)
+        try:
+            raw=json.loads(result['output'][result['output'].index('{'):])
+            own=raw.get('Self') or {}; ips=own.get('TailscaleIPs') or []
+            ipv4=next((value for value in ips if '.' in value),'')
+            host=own.get('HostName') or ipv4
+            peer=next((value for value in (raw.get('Peer') or {}).values()
+                       if str(value.get('HostName','')).lower()==str(self.paired_device or '').lower()),None)
+            if peer and peer.get('CurAddr'): path='direct'
+            elif peer and peer.get('Active') and peer.get('Relay'): path='derp:'+peer['Relay']
+            elif peer and peer.get('Online'): path='idle'
+            else: path='not-connected'
+            return {'installed':True,'state':raw.get('BackendState','Unknown'),'online':bool(own.get('Online')),
+                    'host':host,'ip':ipv4,'endpoint':f'wss://{host}:5010/app' if host else '',
+                    'deviceOnline':bool(peer and peer.get('Online')),'path':path}
+        except Exception:
+            installed=bool(__import__('shutil').which('tailscale'))
+            return {'installed':installed,'state':'Unavailable' if installed else 'NotInstalled','online':False,
+                    'host':'','ip':'','endpoint':'','deviceOnline':False,'path':'not-connected'}
     async def status(self):
         if time.monotonic()-self.health_cache[0]<10: return self.health_cache[1]
         result=await self.command('atlas-rafas --json',15)
         try: h=json.loads(result['output'])
         except ValueError: h={'ok':False,'issues':['No se pudo ejecutar atlas-rafas']}
-        h['companion']={'version':'0.1.0','relay':self.relay,'clients':len(self.clients),
+        tailscale=await self.tailscale()
+        h['companion']={'version':VERSION,'transport':self.config.get('transport','tailscale'),
+                        'tailscale':tailscale,'legacyRelay':self.relay,'clients':len(self.sockets),
                         'pairedDevice':self.paired_device,
                         'voiceActive':bool(self.owner),'terminalCount':len(self.terminals)}
         h['usage']=await self.quota()
         self.health_cache=(time.monotonic(),h); return h
-    def open_terminal(self,client,cols,rows):
+    def open_terminal(self,client,cols,rows,resume=None):
+        if resume and resume in self.terminals:
+            terminal=self.terminals[resume]; terminal['client']=client; terminal['touched']=time.monotonic()
+            self.resize(resume,cols,rows); return {'terminal':resume,'resumed':True}
         if len(self.terminals)>=3: raise ValueError('Máximo tres terminales activas')
         fd,slave=pty.openpty()
         # Start a fresh interpreter before TIOCSCTTY/exec. No Python preexec_fn
@@ -100,7 +139,7 @@ class Companion:
         os.set_blocking(fd,False)
         key=secrets.token_hex(12)
         self.terminals[key]={'pid':process.pid,'process':process,'fd':fd,'client':client,'touched':time.monotonic()}
-        self.resize(key,cols,rows); return {'terminal':key}
+        self.resize(key,cols,rows); return {'terminal':key,'resumed':False}
     def resize(self,key,cols,rows):
         cols=max(20,min(300,int(cols))); rows=max(5,min(150,int(rows)))
         fcntl.ioctl(self.terminals[key]['fd'],termios.TIOCSWINSZ,struct.pack('HHHH',rows,cols,0,0))
@@ -113,14 +152,38 @@ class Companion:
             except subprocess.TimeoutExpired:
                 with contextlib.suppress(OSError):os.killpg(t['pid'],signal.SIGKILL)
                 t['process'].wait(timeout=1)
-    async def rpc(self,msg,peer):
+    async def send_mobile(self,method,params,timeout=35):
+        live=[(self.clients.get(client,{}).get('lastSeen',0),client,ws)
+              for client,ws in self.sockets.items() if not ws.closed]
+        if not live: raise ValueError('Android device not connected')
+        _,client,ws=max(live)
+        request_id=secrets.token_hex(16); future=asyncio.get_running_loop().create_future()
+        self.mobile_pending[request_id]=future
+        message={'id':request_id,'method':method,'params':params,'serverRequest':True}
+        try:
+            await ws.send_json({'box':self.cipher.seal(message)})
+            reply=await asyncio.wait_for(future,timeout)
+        except (asyncio.TimeoutError,ConnectionError,OSError):
+            raise ValueError('Android device not connected')
+        finally: self.mobile_pending.pop(request_id,None)
+        if reply.get('error'): raise ValueError(str(reply['error'])[:240])
+        return reply.get('result',{})
+    async def rpc(self,msg,peer,ws=None):
         if not isinstance(msg,dict): raise ValueError('Petición inválida')
         client=msg.get('client','')
         if not isinstance(client,str) or not 8<=len(client)<=80: raise ValueError('Cliente inválido')
         self.remember_device(msg.get('device'))
         self.clients[client]={'lastSeen':time.time(),'transport':peer,'device':self.paired_device}
+        if ws is not None: self.sockets[client]=ws
         method=msg.get('method'); p=msg.get('params') or {}
         if not isinstance(method,str) or not isinstance(p,dict): raise ValueError('Petición inválida')
+        if method=='app.reply':
+            request_id=p.get('requestId',''); future=self.mobile_pending.get(request_id)
+            if future and not future.done(): future.set_result({'result':p.get('result',{}),'error':p.get('error')})
+            return {'ok':bool(future)}
+        if method=='pairing.unpair':
+            asyncio.get_running_loop().call_later(.6,lambda: asyncio.create_task(self.revoke_pairing()))
+            return {'ok':True,'paired':False}
         if method=='ping':
             if self.owner==client: self.touched=time.monotonic()
             return {'ok':True,'voiceOwner':self.owner==client}
@@ -150,29 +213,37 @@ class Companion:
             if not prepared or prepared['client']!=client or time.monotonic()-prepared['time']>60:
                 raise ValueError('Confirmación inexistente o caducada')
             return await self.command(prepared['command'])
-        if method=='terminal.open': return self.open_terminal(client,p.get('cols',80),p.get('rows',24))
+        if method=='terminal.list':
+            now=time.monotonic()
+            return {'terminals':[{'terminal':key,'idleSeconds':round(now-value['touched'],1)}
+                                 for key,value in self.terminals.items()]}
+        if method=='terminal.open':
+            return self.open_terminal(client,p.get('cols',80),p.get('rows',24),p.get('resume'))
+        if method=='terminal.resume':
+            return self.open_terminal(client,p.get('cols',80),p.get('rows',24),p.get('terminal'))
         if method.startswith('terminal.'):
             key=p.get('terminal',''); t=self.terminals.get(key)
             if not t or t['client']!=client: raise ValueError('Terminal cerrada')
-            t['touched']=time.monotonic()
             if method=='terminal.close': self.close_terminal(key); return {'ok':True}
-            if method=='terminal.resize': self.resize(key,p['cols'],p['rows']); return {'ok':True}
+            if method=='terminal.resize':
+                t['touched']=time.monotonic(); self.resize(key,p['cols'],p['rows']); return {'ok':True}
             if method=='terminal.write':
                 data=p.get('data','').encode()
                 if len(data)>8192: raise ValueError('Entrada demasiado larga')
-                os.write(t['fd'],data); return {'ok':True}
+                t['touched']=time.monotonic(); os.write(t['fd'],data); return {'ok':True}
             if method=='terminal.read':
                 chunks=[]
                 try:
                     for _ in range(16): chunks.append(os.read(t['fd'],4096))
                 except BlockingIOError: pass
                 except OSError: self.close_terminal(key)
+                if chunks: t['touched']=time.monotonic()
                 return {'data':b''.join(chunks).decode(errors='replace'),'closed':key not in self.terminals}
         raise ValueError('Operación desconocida')
-    async def dispatch(self,box,peer):
+    async def dispatch(self,box,peer,ws=None):
         msg=self.cipher.open(box)
         if not isinstance(msg,dict) or not isinstance(msg.get('id'),str): raise ValueError('Petición inválida')
-        try: result=await self.rpc(msg,peer); response={'id':msg['id'],'result':result}
+        try: result=await self.rpc(msg,peer,ws); response={'id':msg['id'],'result':result}
         except Exception as e:
             # Don't serialize traceback, auth headers or upstream session material.
             response={'id':msg.get('id'),'error':str(e)[:240] if isinstance(e,ValueError) else 'No se pudo completar la operación'}
@@ -189,20 +260,23 @@ class Companion:
                         if not state.get('owner',True): self.access=None; self.owner=None
                     except Exception: await self.release()
             for key,t in list(self.terminals.items()):
-                if now-t['touched']>90: self.close_terminal(key)
+                if now-t['touched']>300: self.close_terminal(key)
             self.clients={k:v for k,v in self.clients.items() if time.time()-v['lastSeen']<60}
+            self.sockets={k:v for k,v in self.sockets.items() if k in self.clients and not v.closed}
             self.pending={k:v for k,v in self.pending.items() if now-v['time']<60}
             tmp=STATE/'status.tmp'
-            tmp.write_text(json.dumps({'updatedAt':time.time(),'relay':self.relay,'clients':self.clients,
+            tmp.write_text(json.dumps({'updatedAt':time.time(),'transport':self.config.get('transport','tailscale'),
+                'legacyRelay':self.relay,'clients':self.clients,'connections':len(self.sockets),
                 'voiceActive':bool(self.owner),'terminals':len(self.terminals)}))
             os.replace(tmp,STATE/'status.json')
     async def relay_loop(self):
         delay=1
-        while self.config.get('relay'):
+        relay_url=self.config.get('legacyRelay') or self.config.get('relay','')
+        while self.config.get('transport')=='legacy-relay' and relay_url:
             tasks=set()
             try:
                 self.relay='connecting'
-                async with self.http.ws_connect(self.config['relay'],heartbeat=20,max_msg_size=2_000_000) as ws:
+                async with self.http.ws_connect(relay_url,heartbeat=20,max_msg_size=2_000_000) as ws:
                     await ws.send_json({'role':'pi','room':self.config['room'],'password':self.config['relayPassword']})
                     hello=await ws.receive_json(timeout=10)
                     if not hello.get('ok'): raise ValueError('Relay authentication failed')
@@ -230,10 +304,39 @@ def application(config):
         if request.content_length and request.content_length>2_000_000: raise web.HTTPRequestEntityTooLarge(max_size=2_000_000,actual_size=request.content_length)
         try:
             data=await request.json()
-            return web.json_response({'box':await c.dispatch(data['box'],'lan')},headers={'Cache-Control':'no-store'})
+            return web.json_response({'box':await c.dispatch(data['box'],'direct')},headers={'Cache-Control':'no-store'})
         except Exception: raise web.HTTPUnauthorized(text='Invalid or expired encrypted request')
-    async def health(request): return web.json_response({'service':'atlas-companion','version':'0.1.0'})
+    async def socket(request):
+        ws=web.WebSocketResponse(heartbeat=20,max_msg_size=2_000_000,autoping=True)
+        await ws.prepare(request); remote=request.remote or ''; peer='tailscale' if remote.startswith('100.') or remote.startswith('fd7a:115c:a1e0:') else 'direct'
+        try:
+            async for event in ws:
+                if event.type==WSMsgType.TEXT:
+                    try:
+                        data=json.loads(event.data); box=await c.dispatch(data['box'],peer,ws)
+                        await ws.send_json({'box':box})
+                    except Exception: await ws.send_json({'error':'Invalid or expired encrypted request'})
+                elif event.type in (WSMsgType.CLOSE,WSMsgType.ERROR): break
+        finally:
+            disconnected=[client for client,value in c.sockets.items() if value is ws]
+            c.sockets={client:value for client,value in c.sockets.items() if value is not ws}
+            for client in disconnected: c.clients.pop(client,None)
+        return ws
+    async def local_control(request):
+        if request.remote not in ('127.0.0.1','::1'): raise web.HTTPForbidden()
+        try:
+            data=await request.json(); method=data.get('method',''); params=data.get('params') or {}
+            if not isinstance(method,str) or not (method.startswith('control.') or method.startswith('androiduse.')):
+                raise ValueError('Operación de control inválida')
+            timeout=max(1,min(120,float(data.get('timeout',35))))
+            return web.json_response({'result':await c.send_mobile(method,params,timeout)})
+        except ValueError as error: return web.json_response({'error':str(error)},status=409)
+        except Exception: return web.json_response({'error':'No se pudo completar la operación'},status=500)
+    async def health(request):
+        return web.json_response({'service':'atlas-companion','version':VERSION,
+                                  'transport':config.get('transport','tailscale')})
     app.router.add_get('/health',health); app.router.add_post('/rpc',rpc)
+    app.router.add_get('/app',socket); app.router.add_post('/local/control',local_control)
     async def lifecycle(app):
         c.http=ClientSession(timeout=ClientTimeout(total=35))
         jobs=[asyncio.create_task(c.housekeeping()),asyncio.create_task(c.relay_loop())]

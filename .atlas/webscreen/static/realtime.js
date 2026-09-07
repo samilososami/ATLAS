@@ -49,6 +49,56 @@
   const FACE_INSTRUCTIONS = `EXPRESIÓN VISUAL LOCAL (solo esta pantalla):
 Dispones de atlas_face. Tú, el mismo modelo Realtime, eliges semánticamente la expresión cartoon según el contexto y el tono; no hay clasificador aparte. Si una reacción aporta algo, llama a atlas_face una sola vez por petición, antes o cerca de tu respuesta. Un elogio puede dar delighted; un insulto, angry suave y juguetón; algo sorprendente, surprised. También puedes elegir curious, skeptical, sad, worried, sleepy, wink, laughing, focused o shy cuando encaje. Son recursos gráficos, no sentimientos reales: no afirmes consciencia, sufrimiento o enfado real; nada de sermones, represalias ni cambiar las decisiones de seguridad. Mantén la respuesta oral breve y útil. Si no hace falta reacción, conserva neutral; usa neutral para volver explícitamente a la cara base. No anuncies la herramienta ni expliques el cambio de cara. No encadenes llamadas cosméticas: después de su confirmación continúa la respuesta o las herramientas útiles. Su resultado solo confirma un cambio visual local y no autoriza ninguna acción.`;
 
+  const PHONE_OPERATIONS = Object.freeze([
+    "capabilities", "get_location", "calls.place", "calls.recent",
+    "sms.send", "sms.unread", "sms.list",
+    "contacts.search", "calendar.list", "calendar.create", "calendar.update", "calendar.delete", "location.get",
+    "notifications.list", "notifications.show", "wifi.panel", "wifi.connect",
+    "files.list", "files.read", "files.move", "files.delete",
+    "media.list", "media.recent", "media.delete",
+    "camera.photo", "camera.video", "sensors.summary",
+  ]);
+  const ANDROID_OPERATIONS = Object.freeze([
+    "androiduse.status", "androiduse.start", "androiduse.stop",
+    "androiduse.screenshot", "androiduse.tree", "androiduse.tap",
+    "androiduse.long_press", "androiduse.swipe", "androiduse.text",
+    "androiduse.back", "androiduse.home", "androiduse.recents",
+    "androiduse.launch", "androiduse.wait",
+  ]);
+  const PHONE_TOOL = {
+    type: "function",
+    name: "atlas_phone",
+    description: "Usa una API nativa y directa del S23U emparejado. Es la vía prioritaria para ubicación, llamadas, SMS, contactos, calendario, notificaciones, Wi-Fi, archivos, medios, cámara y sensores; no toca ni observa la pantalla.",
+    parameters: {
+      type: "object", additionalProperties: false,
+      properties: {
+        operation: { type: "string", enum: PHONE_OPERATIONS,
+          description: "Operación nativa exacta. Usa capabilities para consultar disponibilidad y permisos." },
+        params: { type: "object", additionalProperties: true,
+          description: "Parámetros de la operación; por ejemplo number/text, query, title/begin/end, id o path." },
+      },
+      required: ["operation"],
+    },
+  };
+  const ANDROID_TOOL = {
+    type: "function",
+    name: "atlas_android",
+    description: "Control visual por Accessibility del S23U emparejado. Úsalo solo si atlas_phone no puede resolver la acción. Las acciones visuales adjuntan una captura nueva para decidir el siguiente paso.",
+    parameters: {
+      type: "object", additionalProperties: false,
+      properties: {
+        operation: { type: "string", enum: ANDROID_OPERATIONS },
+        params: { type: "object", additionalProperties: true,
+          description: "Coordenadas x/y o x1/y1/x2/y2, duration, text, package, uri o ms según la operación." },
+        inspectAfter: { type: "boolean",
+          description: "Por defecto true: tras una acción correcta adjunta una captura actual. Usa false solo si de verdad no necesitas inspeccionarla." },
+      },
+      required: ["operation"],
+    },
+  };
+  const ANDROID_TOOL_INSTRUCTIONS = `CONTROL DEL TELÉFONO EMPAREJADO:
+Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques. Consulta capabilities si no conoces el permiso disponible. Usa atlas_android únicamente cuando no exista una operación nativa adecuada. En control visual: llama a androiduse.start, actúa sobre la captura más reciente, inspecciona el resultado tras cada paso y llama siempre a androiduse.stop al terminar, ante un bloqueo o antes de responder al usuario. La captura llega como imagen separada del resultado de herramienta; debes mirarla y no inventar posiciones ni estados. No afirmes que una acción se completó hasta que el resultado o la pantalla lo confirme. Si aparece "Error: Android device not connected", informa exactamente de que el móvil no está conectado. Si una API devuelve permission_required, unsupported o requires_user_action, dilo brevemente y no lo simules con éxito. No uses atlas_shell para saltarte estas reglas ni para fabricar llamadas al móvil.`;
+
   const REALTIME_TOOLS = [
     {
       type: "function",
@@ -98,6 +148,8 @@ Dispones de atlas_face. Tú, el mismo modelo Realtime, eliges semánticamente la
         required: ["action"],
       },
     },
+    PHONE_TOOL,
+    ANDROID_TOOL,
   ];
 
   const normalized = (value) => String(value || "")
@@ -484,6 +536,7 @@ Dispones de atlas_face. Tú, el mismo modelo Realtime, eliges semánticamente la
             channelInstructions || ATLAS_REALTIME_FALLBACK_INSTRUCTIONS,
             workspaceContext,
             this.faceToolEnabled ? FACE_INSTRUCTIONS : "",
+            ANDROID_TOOL_INSTRUCTIONS,
           ].filter(Boolean).join("\n\n");
           this.send({
             type: "session.update",
@@ -1820,6 +1873,10 @@ Dispones de atlas_face. Tú, el mismo modelo Realtime, eliges semánticamente la
         await this.handleRoutineTool(callId, args);
         return;
       }
+      if (name === "atlas_phone" || name === "atlas_android") {
+        await this.handleDeviceTool(name, callId, args);
+        return;
+      }
       if (name !== "atlas_shell") {
         this.submitToolResult(callId, { error: `Herramienta Realtime no disponible: ${name}` });
         return;
@@ -1863,6 +1920,86 @@ Dispones de atlas_face. Tú, el mismo modelo Realtime, eliges semánticamente la
           ? { status: "cancelled", message: "La persona interrumpió el trabajo." }
           : { error: error.message || String(error) });
         if (!aborted) this.callbacks.addLog?.(`Shell fallida: ${error.message}`, null, "error");
+      } finally {
+        if (this.consultController === controller) {
+          this.toolActive = false;
+          this.consultController = null;
+        }
+      }
+    }
+
+    async handleDeviceTool(name, callId, args) {
+      const isVisual = name === "atlas_android";
+      const operation = String(args.operation || "").trim().toLowerCase();
+      this.toolActive = true;
+      this.callbacks.setScreen?.(isVisual ? "ANDROID" : "TELÉFONO",
+        isVisual ? "ATLAS está usando la pantalla" : "ATLAS está usando una API nativa",
+        operation || "Preparando operación", "working");
+      this.postEvent(isVisual ? "android.started" : "phone.started",
+        isVisual ? "OpenAI Realtime inició una acción visual en Android"
+          : "OpenAI Realtime inició una acción nativa en Android", { text: operation });
+      this.consultController = new AbortController();
+      const controller = this.consultController;
+      const generation = this.toolGeneration;
+      const lifecycle = this.lifecycle;
+      const current = () => !this.closed && this.lifecycle === lifecycle
+        && this.toolGeneration === generation && !controller.signal.aborted;
+      const started = performance.now();
+      try {
+        const response = await this.fetch(isVisual ? "/api/realtime/android" : "/api/realtime/phone", {
+          method: "POST", cache: "no-store", signal: controller.signal,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            args,
+            requestId: this.currentRequestId || requestId(),
+            interactionId: this.currentInteractionId || requestId(),
+          }),
+        });
+        if (!current()) {
+          if (isVisual && operation === "androiduse.start") this.stopAndroidControlSilently(true);
+          return;
+        }
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error ||
+          `${isVisual ? "Android Use" : "El teléfono"} respondió con HTTP ${response.status}`);
+        if (!current()) {
+          if (isVisual && operation === "androiduse.start") this.stopAndroidControlSilently(true);
+          return;
+        }
+        if (isVisual && operation === "androiduse.start" && payload.result?.ok !== false) {
+          this.androidControlActive = true;
+        } else if (isVisual && operation === "androiduse.stop") {
+          this.androidControlActive = false;
+        }
+        const toolResult = { operation: payload.operation || operation, result: payload.result || {} };
+        if (payload.screenshot) {
+          toolResult.screenshot = {
+            attached: true, mime: "image/png",
+            width: payload.screenshot.width, height: payload.screenshot.height,
+          };
+        }
+        this.callbacks.addLog?.(`${isVisual ? "Android Use" : "Teléfono"}: ${operation}`,
+          performance.now() - started);
+        this.postEvent(isVisual ? "android.completed" : "phone.completed",
+          isVisual ? "Android devolvió la acción y su captura" : "Android devolvió la operación nativa",
+          { durationMs: performance.now() - started, text: operation });
+        this.submitToolResultWithImage(callId, toolResult, payload.screenshot);
+      } catch (error) {
+        if (!current()) {
+          if (isVisual && (this.androidControlActive || operation === "androiduse.start")) {
+            this.stopAndroidControlSilently(operation === "androiduse.start");
+          }
+          return;
+        }
+        const aborted = error?.name === "AbortError";
+        if (isVisual && (this.androidControlActive || operation === "androiduse.start")) {
+          this.stopAndroidControlSilently(operation === "androiduse.start");
+        }
+        this.submitToolResult(callId, aborted
+          ? { status: "cancelled", message: "La persona interrumpió el control del teléfono." }
+          : { error: error.message || String(error) });
+        if (!aborted) this.callbacks.addLog?.(`${isVisual ? "Android Use" : "Teléfono"} falló: ${error.message}`,
+          null, "error");
       } finally {
         if (this.consultController === controller) {
           this.toolActive = false;
@@ -1974,6 +2111,39 @@ Dispones de atlas_face. Tú, el mismo modelo Realtime, eliges semánticamente la
         item: { type: "function_call_output", call_id: callId, output: JSON.stringify(result) },
       });
       this.requestToolContinuation();
+    }
+
+    submitToolResultWithImage(callId, result, screenshot) {
+      this.send({
+        type: "conversation.item.create",
+        item: { type: "function_call_output", call_id: callId, output: JSON.stringify(result) },
+      });
+      const encoded = String(screenshot?.pngBase64 || "");
+      if (encoded && Number(screenshot?.width) > 0 && Number(screenshot?.height) > 0) {
+        this.send({
+          type: "conversation.item.create",
+          item: {
+            type: "message", role: "user",
+            content: [
+              { type: "input_text", text: `Captura actual del teléfono tras ${result.operation}. Analízala para decidir el siguiente paso; no des por completada la tarea solo por recibirla.` },
+              { type: "input_image", image_url: `data:image/png;base64,${encoded}` },
+            ],
+          },
+        });
+      }
+      this.requestToolContinuation();
+    }
+
+    stopAndroidControlSilently(force = false) {
+      if (!force && !this.androidControlActive) return;
+      this.androidControlActive = false;
+      void sendAcknowledgement(this.fetch, "/api/realtime/android", {
+        method: "POST", cache: "no-store", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          args: { operation: "androiduse.stop", params: {}, inspectAfter: false },
+          interactionId: this.currentInteractionId || requestId(),
+        }),
+      });
     }
 
     handleFaceTool(event, callId, args) {
@@ -2276,6 +2446,7 @@ Dispones de atlas_face. Tú, el mismo modelo Realtime, eliges semánticamente la
       if (this.awaitingWakeRequest || this.localWakeRequestPending) return;
       // Retire admission even if a late ambient VAD/transcription is pending.
       // Such a fragment cannot extend the completed turn without a new wake.
+      this.stopAndroidControlSilently();
       this.returnToWake();
       if (this.contextCompactionQueued) {
         this.contextCompactionQueued = false;
@@ -2297,6 +2468,7 @@ Dispones de atlas_face. Tú, el mismo modelo Realtime, eliges semánticamente la
 
     interruptLocalWork() {
       this.toolGeneration += 1;
+      this.stopAndroidControlSilently();
       this.faceToolResponseId = "";
       if (this.faceToolEnabled) {
         try { window.AtlasFaceBridge?.expression?.({ expression: "neutral", source: "model", durationMs: 1000 }); } catch {}
@@ -2409,6 +2581,7 @@ Dispones de atlas_face. Tú, el mismo modelo Realtime, eliges semánticamente la
     stop(notify = true) {
       this.lifecycle += 1;
       this.toolGeneration += 1;
+      this.stopAndroidControlSilently();
       if (this.faceToolEnabled) {
         try { window.AtlasFaceBridge?.expression?.({ expression: "neutral", source: "model", durationMs: 1000 }); } catch {}
       }
@@ -2505,6 +2678,7 @@ Dispones de atlas_face. Tú, el mismo modelo Realtime, eliges semánticamente la
     voice: DEFAULT_VOICE,
     _test: { normalized, wakeInvocation, wakeHasRequest, silenceInvocation, withTurnSeparator,
       commandLabel, responseExpectsReply, benignRealtimeError, likelyAssistantEcho, captureConstraints, speechChunkLength,
-      realtimeTools: REALTIME_TOOLS, faceTool: FACE_TOOL, faceInstructions: FACE_INSTRUCTIONS },
+      realtimeTools: REALTIME_TOOLS, faceTool: FACE_TOOL, faceInstructions: FACE_INSTRUCTIONS,
+      phoneTool: PHONE_TOOL, androidTool: ANDROID_TOOL, androidInstructions: ANDROID_TOOL_INSTRUCTIONS },
   };
 })();

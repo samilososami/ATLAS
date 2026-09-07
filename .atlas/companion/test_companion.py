@@ -44,6 +44,32 @@ class CompanionTests(unittest.IsolatedAsyncioTestCase):
             response=await client.post('/rpc',json={'box':box});self.assertEqual(response.status,200)
             self.assertTrue(a.open((await response.json())['box'])['result']['ok'])
             response=await client.post('/rpc',json={'box':box});self.assertEqual(response.status,401)
+    async def test_direct_websocket_starts_encrypted_and_supports_server_requests(self):
+        configuration=cfg();configuration['pairedDevice']='s23u'
+        app=application(configuration);app.cleanup_ctx.clear();companion=app['companion']
+        async with TestClient(TestServer(app)) as client:
+            ws=await client.ws_connect('/app');phone=Cipher(configuration['key'],'app')
+            await ws.send_json({'box':phone.seal({
+                'id':'connect-test','client':'direct-test-client','device':'s23u',
+                'method':'ping','params':{},
+            })})
+            hello=phone.open((await ws.receive_json(timeout=2))['box'])
+            self.assertEqual(hello['id'],'connect-test');self.assertTrue(hello['result']['ok'])
+            pending=asyncio.create_task(companion.send_mobile(
+                'control.phone.capabilities',{'probe':True},timeout=2,
+            ))
+            request=phone.open((await ws.receive_json(timeout=2))['box'])
+            self.assertTrue(request['serverRequest'])
+            self.assertEqual(request['method'],'control.phone.capabilities')
+            await ws.send_json({'box':phone.seal({
+                'id':'reply-test','client':'direct-test-client','device':'s23u',
+                'method':'app.reply','params':{
+                    'requestId':request['id'],'result':{'available':True},
+                },
+            })})
+            acknowledgement=phone.open((await ws.receive_json(timeout=2))['box'])
+            self.assertTrue(acknowledgement['result']['ok'])
+            self.assertEqual(await pending,{'available':True})
     async def test_owner_conflict(self):
         self.c.owner='first-client'
         with self.assertRaises(ValueError):await self.c.acquire('another-client')

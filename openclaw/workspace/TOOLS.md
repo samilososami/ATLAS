@@ -18,8 +18,11 @@ keep installation-specific device identities in private records, not here.
   bounded Bluetooth connection and the headless WirePlumber configuration.
 - [`ADB.md`](ADB.md): authorised Android transports, shared user/root identity,
   private read-only inventories and per-device notes.
-- [`ATLAS-APP.md`](atlas-commands/ATLAS-APP.md): paired Android companion and
-  relay state. Companion pairing is not Bluetooth audio pairing or ADB approval.
+- [`ATLAS-APP.md`](atlas-commands/ATLAS-APP.md): paired Android companion,
+  Tailscale transport and permission-backed native phone tools.
+- [`ATLAS-ANDROIDUSE.md`](atlas-commands/ATLAS-ANDROIDUSE.md): explicit,
+  screenshot-driven Accessibility fallback with owner-visible start/stop state.
+  Companion pairing is not Bluetooth audio pairing or ADB approval.
 - [`ATLAS-RAFAS.md`](atlas-commands/ATLAS-RAFAS.md): broader Pi health and
   interactive recovery when the fault is below the browser/model layer.
 

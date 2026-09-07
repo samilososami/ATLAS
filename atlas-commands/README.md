@@ -61,18 +61,41 @@ sudo atlas-rafas doctor
 
 ## `atlas-app`
 
-Estado del servicio Android, clientes, conversación, terminales y relay propio.
-El código de emparejamiento es privado y concede administración del dispositivo.
+Estado del servicio Android, dispositivo emparejado, conversación, terminales y
+conexión privada por Tailscale. El código BLE es privado y concede administración.
 
 ```bash
 atlas-app
 atlas-app pair
+atlas-app tailscale
+atlas-app endpoint
+atlas-app control get_location
 atlas-app logs
 atlas-app restart
-atlas-app revoke
+atlas-app unpair
 ```
 
 Instalación y conexión por Internet: [ATLAS Companion](../.atlas/companion/README.md).
+
+## `atlas-androiduse`
+
+Fallback visual para controlar, mediante el servicio de accesibilidad de la app,
+una pantalla Android ya emparejada. Las APIs nativas de `atlas-app control` se
+priorizan para llamadas, SMS, calendario, ubicación, archivos y notificaciones.
+
+```bash
+atlas-androiduse start
+atlas-androiduse screenshot
+atlas-androiduse tap 540 1200
+atlas-androiduse swipe 800 1600 800 500 300
+atlas-androiduse text 'esp32'
+atlas-androiduse key ENTER
+atlas-androiduse stop
+```
+
+Una captura se guarda como PNG privado y devuelve su ruta, no una cadena base64.
+Cada flujo visual debe terminar con `stop`; no se repiten acciones tras perder la
+conexión. [Manual operativo](../openclaw/workspace/atlas-commands/ATLAS-ANDROIDUSE.md).
 
 ## `atlas-chat`
 
