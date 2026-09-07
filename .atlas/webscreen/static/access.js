@@ -20,7 +20,7 @@
   // Stop before the server's 20s lease expires, but tolerate one lost packet.
   const CONTROL_GRACE_MS = 8000;
   const PROTECTED_READS = new Set(['/api/settings', '/api/codex-usage',
-    '/api/realtime/context', '/api/wake/profiles']);
+    '/api/realtime/context', '/api/wake/profiles', '/api/clap/profile']);
   const hasControl = () => owner && performance.now() - lastReply < CONTROL_GRACE_MS;
   function discardResponse(response) {
     // Ignored fetch bodies can keep Chrome's shared-memory data pipes alive

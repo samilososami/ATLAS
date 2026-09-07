@@ -3,8 +3,10 @@
 These PNGs are **screenshots of the actual WebScreen SVG/CSS renderer** in
 Chromium at **1591 × 989**, not the image-generated concept art. Each expression
 was selected internally with `AtlasFace.expression(...)` after loading the real
-presentation assets. The approved neutral sizing, spacing, palette and HUD are
-shared by every expression. The delighted eyes use the revised, higher cutouts.
+presentation assets, except `defiant`, which uses the production-only local
+`AtlasFace.clap()` gesture entry point. The approved neutral sizing, spacing,
+palette and HUD are shared by every expression. The delighted eyes use the
+revised, higher cutouts.
 
 The motion revision brings eye centers another 5% closer together, adds a
 progressive happy reaction and a decorative sleep cycle. The asleep screenshot
@@ -28,7 +30,8 @@ installed sleep and upper-face petting cycle, captured in real time.
 | Sad ![Sad](06-sad.png) | Worried ![Worried](07-worried.png) |
 | Sleepy ![Sleepy](08-sleepy.png) | Wink ![Wink](09-wink.png) |
 | Laughing ![Laughing](10-laughing.png) | Focused ![Focused](11-focused.png) |
-| Shy ![Shy](12-shy.png) | Asleep (inactivity) ![Asleep](13-asleep.png) |
+| Shy ![Shy](12-shy.png) | Defiant (local double applause) ![Defiant](13-defiant.png) |
+| Asleep (inactivity) ![Asleep](13-asleep.png) | |
 
 ## Reproduce the screenshots
 
@@ -41,7 +44,8 @@ node .atlas/webscreen/capture_face_expressions.cjs
 Set `ATLAS_CHROME` to a local Chrome executable if not using Playwright's
 bundled Chromium; `NODE_PATH` may point to an already-installed Playwright.
 The fixture binds an ephemeral **loopback-only** port, serves the production
-presentation files, captures all thirteen expressions plus sleep and closes the browser.
+presentation files, captures all thirteen model expressions plus the local
+defiant gesture and sleep, then closes the browser.
 `--serve` leaves the isolated presentation preview on `127.0.0.1:5059` for visual
 inspection. Neither mode changes the real A1 kiosk or bypasses its access lease.
 

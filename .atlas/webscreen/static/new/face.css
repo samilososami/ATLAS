@@ -87,6 +87,7 @@ body[data-design="new"] .face-happy-cutout { transform: translateY(160px); trans
 body[data-design="new"] .face-stage[data-expression="delighted"] .face-happy-cutout { transform: translateY(0); }
 body[data-design="new"] .face-stage[data-expression="neutral"] .face-eye-neutral,
 body[data-design="new"] .face-stage[data-expression="angry"] .face-eye-angry,
+body[data-design="new"] .face-stage[data-expression="defiant"] .face-eye-defiant,
 body[data-design="new"] .face-stage[data-expression="delighted"] .face-eye-neutral,
 body[data-design="new"] .face-stage[data-expression="surprised"] .face-eye-surprised,
 body[data-design="new"] .face-stage[data-expression="curious"] .face-eye-curious,
@@ -103,6 +104,12 @@ body[data-design="new"] .face-mouth-previous { opacity: 0; }
 body[data-design="new"] .face-stage[data-expression-transition="true"] .face-mouth { animation: face-expression-in .26s ease both; }
 body[data-design="new"] .face-stage[data-expression-transition="true"] .face-mouth-previous { animation: face-expression-out .26s ease both; }
 body[data-design="new"] .face-stage[data-happy-bounce="true"] .face-affect-bounce { animation: face-happy-bounce .26s var(--face-ease) both; }
+/* The double-clap acknowledgement is intentionally brief: enough continuity to
+   feel physical, never a long animation that delays wake listening. */
+body[data-design="new"] .face-stage[data-clap-activated="true"] .face-eye-variant { transition-duration: .12s; }
+body[data-design="new"] .face-stage[data-clap-activated="true"] .face-mouth,
+body[data-design="new"] .face-stage[data-clap-activated="true"] .face-mouth-previous { animation-duration: .12s; }
+body[data-design="new"] .face-stage[data-clap-activated="true"] .face-affect-bounce { animation: face-clap-arrival .16s var(--face-ease) both; }
 body[data-design="new"] .face-petting-zone { display: block; width: 100%; height: 100%; border-radius: 50%; clip-path: circle(50% at 50% 50%); pointer-events: auto; touch-action: none; }
 body[data-design="new"] .face-glow { opacity: .16; transition: opacity .35s ease; }
 body[data-design="new"] .face-glow ellipse:nth-child(3) { transform: translateY(26.58222px); }
@@ -225,6 +232,7 @@ body[data-design="new"][data-face-paused="true"] .face-stage * { animation: none
 @keyframes face-expression-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes face-expression-out { from { opacity: 1; } to { opacity: 0; } }
 @keyframes face-happy-bounce { 0%, 100% { transform: translateY(0); } 42% { transform: translateY(-5px); } }
+@keyframes face-clap-arrival { 0% { transform: translateY(2px) scale(.985); } 60% { transform: translateY(-3px) scale(1.012); } 100% { transform: translateY(0) scale(1); } }
 @keyframes face-doze-eyes { from { transform: scaleY(1); } 55% { transform: scaleY(.55); } to { transform: scaleY(.075); } }
 @keyframes face-doze-mouth { from { d: path("M 737.5 527 Q 795.5 575 853.5 527"); stroke-width: 26; } 45% { d: path("M 765 539 Q 795.5 539 826 539"); stroke-width: 17; } to { d: path("M 765 545 Q 795.5 531 826 545"); stroke-width: 14; } }
 @keyframes face-sleep-breathe { 0%, 100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-4px) scale(1.03); } }

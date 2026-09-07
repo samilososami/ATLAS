@@ -8,7 +8,7 @@
     <meta name="google" content="notranslate" />
     <title>ATLAS WebScreen</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/styles.css?v=2026-09-07-design-navigation-1" />
+    <link rel="stylesheet" href="/styles.css?v=2026-09-07-clap-1" />
   </head>
   <body>
     <section class="access-blocked" id="access-blocked" aria-labelledby="access-title">
@@ -38,6 +38,7 @@
         <button class="tool-tab" type="button" data-view="transcription" aria-selected="false">Transcripción</button>
         <button class="tool-tab" type="button" data-view="tts" aria-selected="false">Texto a voz</button>
         <button class="tool-tab" type="button" data-view="wakeword" aria-selected="false">Wake word</button>
+        <button class="tool-tab" type="button" data-view="clap" aria-selected="false">Doble aplauso</button>
         <button class="tool-tab" type="button" data-view="settings" aria-selected="false">Ajustes</button>
         <a class="tool-tab webscreen-design-switch" data-webscreen-design-switch href="/new/" target="_self">New Webscreen</a>
       </nav>
@@ -211,6 +212,34 @@
       </main>
     </section>
 
+    <section class="app-view" id="view-clap" data-view-panel="clap" hidden>
+      <main class="tool-shell compact-tool">
+        <header class="tool-header">
+          <span class="brand">Doble aplauso</span>
+          <span>Gesto local calibrado</span>
+        </header>
+        <section class="clap-enrollment" aria-labelledby="clap-title">
+          <h1 id="clap-title">Mapear dos aplausos</h1>
+          <p>Harás cinco pruebas. En cada una, aplaude dos veces de forma natural cuando ATLAS te lo pida. Solo se guardan medidas resumidas de sonido; nunca audio.</p>
+          <div class="clap-progress" aria-live="polite">
+            <span id="clap-step">Cargando el mapeo local…</span>
+            <progress id="clap-progress" max="5" value="0" aria-label="Progreso de calibración del doble aplauso"></progress>
+          </div>
+          <div class="actions clap-actions">
+            <button class="primary" id="clap-start" type="button">Empezar calibración</button>
+            <button class="secondary" id="clap-capture" type="button" hidden disabled>Registrar prueba</button>
+            <button class="danger" id="clap-cancel" type="button" hidden>Cancelar</button>
+            <button class="primary" id="clap-save" type="button" hidden disabled>Guardar mapeo</button>
+          </div>
+          <output class="tool-result" id="clap-result" aria-live="polite">El detector se activa solo en la pantalla de espera de ATLAS.</output>
+          <section class="clap-profile" aria-labelledby="clap-profile-title">
+            <h2 id="clap-profile-title">Mapeo guardado</h2>
+            <dl id="clap-profile-list"><div><dt>Estado</dt><dd>Cargando…</dd></div></dl>
+          </section>
+        </section>
+      </main>
+    </section>
+
     <section class="app-view" id="view-settings" data-view-panel="settings" hidden>
       <main class="tool-shell compact-tool">
         <header class="tool-header">
@@ -236,7 +265,8 @@
     <script src="/navigation.js?v=2026-09-07-design-navigation-1"></script>
     <script src="/kiosk.js?v=2026-08-28-kiosk-1"></script>
     <script src="/realtime.js?v=2026-09-07-routines-1"></script>
-    <script src="/app.js?v=2026-09-07-connection-4"></script>
+    <script src="/clap.js?v=2026-09-07-clap-1"></script>
+    <script src="/app.js?v=2026-09-07-clap-1"></script>
     <script src="/wakeword.js?v=2026-08-31-wake-enrollment-1"></script>
     <script src="/quota.js?v=2026-08-31-persistent-context-1"></script>
     <script src="/context.js?v=2026-09-01-wake-session-2"></script>

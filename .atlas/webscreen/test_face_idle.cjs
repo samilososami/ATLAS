@@ -156,7 +156,7 @@ test('unchanged recognized text does not rewrite the caption or transcript', () 
   assert.equal(p.node('.face-caption').textContent, '', 'actionable errors remain in original drawer and connection dot, not primary face');
 });
 
-test('all thirteen expressions are strict, native geometry and independent from voice state', () => {
+test('all model expressions and the local defiant gesture are native geometry and independent from voice state', () => {
   const p = setup(), face = p.window.AtlasFace;
   const names = ['neutral', 'angry', 'delighted', 'surprised', 'curious', 'skeptical', 'sad', 'worried', 'sleepy', 'wink', 'laughing', 'focused', 'shy'];
   for (const expression of names) {
@@ -168,12 +168,31 @@ test('all thirteen expressions are strict, native geometry and independent from 
     assert.ok(p.stage.innerHTML.includes(`face-eye-${expression === 'delighted' ? 'neutral' : expression}`), expression);
     assert.ok(css.includes(`[data-expression="${expression}"] .face-eye-${expression === 'delighted' ? 'neutral' : expression}`));
   }
+  assert.equal(face.expression({ expression: 'defiant' }), false, 'Realtime cannot pick the clap-only face');
+  assert.equal(face.clap(), true);
+  assert.equal(p.stage.dataset.expression, 'defiant');
+  assert.equal(p.stage.dataset.expressionSource, 'clap');
+  assert.ok(p.stage.innerHTML.includes('face-eye-defiant'));
+  assert.ok(css.includes('[data-expression="defiant"] .face-eye-defiant'));
   for (const payload of [null, {}, { expression: 'happy' }, { expression: '__proto__' }, { expression: 'sad', source: 'remote' }, { expression: 'angry', source: 'petting' }]) {
     assert.equal(face.expression(payload), false);
-    assert.equal(p.stage.dataset.expression, 'shy');
+    assert.equal(p.stage.dataset.expression, 'defiant');
   }
   assert.equal(p.rafRequests, 0, 'expression transitions use finite CSS, no render loop');
   assert.doesNotMatch(p.stage.innerHTML, /<image\b/);
+});
+
+test('double clap is a ready-only three-second expression and never changes a realtime state', () => {
+  const p = setup(), face = p.window.AtlasFace;
+  face.update({ state: 'listening' });
+  assert.equal(face.clap(), false);
+  face.update({ state: 'idle' });
+  assert.equal(face.clap(), true);
+  assert.equal(p.stage.dataset.state, 'idle');
+  p.advance(2999); assert.equal(p.stage.dataset.expression, 'defiant');
+  p.advance(1); assert.equal(p.stage.dataset.expression, 'neutral');
+  face.update({ state: 'speaking' });
+  assert.equal(face.clap(), false);
 });
 
 test('model expressions expire after default15s, bounded1s minimum and30s maximum', () => {

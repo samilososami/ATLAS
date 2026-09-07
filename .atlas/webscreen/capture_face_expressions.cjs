@@ -10,7 +10,7 @@ const assert = require('node:assert/strict');
 const root = path.join(__dirname, 'static');
 const output = path.resolve(__dirname, '../../docs/images/webscreen-expressions');
 const expressions = ['neutral', 'angry', 'delighted', 'surprised', 'curious',
-  'skeptical', 'sad', 'worried', 'sleepy', 'wink', 'laughing', 'focused', 'shy'];
+  'skeptical', 'sad', 'worried', 'sleepy', 'wink', 'laughing', 'focused', 'shy', 'defiant'];
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8')
   .replace('<body>', '<body data-design="new">')
   .replace('id="webscreen-content" hidden inert', 'id="webscreen-content"')
@@ -57,7 +57,10 @@ async function main() {
       await page.evaluate(expression => {
         AtlasFaceBridge.update({ state: 'idle', phase: 'EN ESPERA' });
         AtlasFaceBridge.connection({ healthy: true, label: 'ATLAS A1 conectado' });
-        if (!AtlasFace.expression({ expression, source: 'model', durationMs: 30000 })) {
+        const accepted = expression === 'defiant'
+          ? AtlasFace.clap()
+          : AtlasFace.expression({ expression, source: 'model', durationMs: 30000 });
+        if (!accepted) {
           throw new Error(`Expression rejected: ${expression}`);
         }
       }, expression);

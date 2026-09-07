@@ -16,6 +16,7 @@ Source paths below are relative to the repository. Live voice files are under
 | HTTP service and provider readiness | `.atlas/webscreen/server.py`, `.atlas/webscreen/gateway_bridge.mjs`, `system/systemd/atlas-webscreen.service` | [WebScreen](atlas-commands/ATLAS-WEBSCREEN.md), [runtime source guide](../../.atlas/webscreen/README.md) |
 | One active browser | `.atlas/webscreen/access_control.py`, `.atlas/webscreen/static/access.js` | [WebScreen ownership](atlas-commands/ATLAS-WEBSCREEN.md#one-screen-at-the-wheel) |
 | Wake, turns, playback and recovery | `.atlas/webscreen/static/app.js`, `.atlas/webscreen/static/realtime.js`, `.atlas/webscreen/REALTIME_INSTRUCTIONS.md` | [WebScreen voice](atlas-commands/ATLAS-WEBSCREEN.md#voice-follow-up-and-recovery) |
+| Calibrated double applause | `.atlas/webscreen/static/clap.js`, shared `app.js` analyser hook, `.atlas/webscreen/server.py` profile endpoint | [Double applause](../../.atlas/webscreen/CLAP.md) |
 | Minimal face, waveform and mouth | `.atlas/webscreen/static/new/`, shared `app.js` / `realtime.js` hooks | [New design](../../.atlas/webscreen/NEW_DESIGN.md), `atlas-screen --atlas-new` |
 | Same model without voice | `.atlas/chat/atlas_chat.py`, `.atlas/chat/TERMINAL_INSTRUCTIONS.md` | [atlas-chat](atlas-commands/ATLAS-CHAT.md), [chat runtime](../../.atlas/chat/README.md) |
 | Shared conversational memory | `.atlas/webscreen/server.py`, `system/libexec/atlas-contextctl`, `atlas-commands/atlas-context` | [Context](atlas-commands/ATLAS-CONTEXT.md) |
@@ -30,6 +31,13 @@ tools. The archived starter/Whisper pipeline is not an automatic fallback.
 `atlas-chat` shares that model/context/tool path but not browser ownership or
 microphone/playback. Companion pairing, Bluetooth speaker pairing and Android
 ADB authorisation are three independent relationships.
+
+Double applause is also independent from the wake word: it is a local visual
+gesture, not an authentication or turn trigger. The detector only receives
+temporary analyser frames from the microphone already controlled by WebScreen;
+its five-trial profile stores summary metrics privately and is ignored if absent
+or corrupt. It runs only while the ATLAS view is waiting, so it cannot add a
+second audio capture path or interfere with Realtime recovery.
 
 ## Connection and turn contract
 
@@ -105,7 +113,8 @@ smallest repair supported by the observed fault and verify its result.
 - `sudo bash system/install-webscreen-resilience.sh`: the shared WebScreen files
   `server.py`, `access_control.py`, `gateway_bridge.mjs`, `static/access.js`,
   `static/app.js`, `static/index.html`, `static/realtime.js` and
-  `static/styles.css`, plus the new presentation assets in `static/new/`.
+  `static/styles.css`, `static/clap.js`, `CLAP.md`, plus the new presentation
+  assets in `static/new/`.
   It also installs `atlas-screen`, the kiosk session launcher and its private-pipe
   browser watchdog. Restart `atlas-screen-kiosk.service` once to activate the
   helper; later visible-design changes can reuse the running browser.

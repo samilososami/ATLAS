@@ -152,6 +152,11 @@ a full-face circular caress region. Sleep never disables wake recognition,
 audio or the computer. The two WebScreen presentations link to one another
 inside their tools drawer; the new presentation omits live transcript/status
 captions, while the original retains its debugging output.
+Both drawers also expose a local **Doble aplauso** calibration. Read
+`/home/atlas/.atlas/webscreen/CLAP.md` before changing it: it observes only the
+existing analyser, saves summary metrics (never audio) privately, and two
+calibrated claps while idle show the three-second local `defiant` face. It is
+not a Realtime command, wake word, shell tool or a way to interrupt a turn.
 `/home/atlas/.atlas/chat/README.md` explains the text-only Realtime client,
 its terminal presentation layer, persistent/ephemeral modes and diagnostics.
 `/home/atlas/.atlas/routines/README.md` defines deterministic routines, exact

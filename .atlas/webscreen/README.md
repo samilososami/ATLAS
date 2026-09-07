@@ -16,7 +16,7 @@ for switching in the same tab, with the ordinary access revalidation after
 navigation. `atlas-webscreen status` lists both sets of LAN URLs.
 The original `/` and `--atlas`
 remain the debugging interface. Both render the same underlying DOM and load
-the same access, Realtime, wake, settings, quota and context controllers.
+the same access, Realtime, wake, clap, settings, quota and context controllers.
 
 The new design lives in `static/new/`: blue vector face, quiet header, occasional
 blinks, wake-to-waveform transition and audio-driven mouth. Transcriptions and
@@ -30,6 +30,13 @@ through the `/new/`-only `atlas_face` presentation tool. Deliberate repeated
 back-and-forth caresses on the face trigger a six-second delighted expression
 locally, without opening a voice turn. See the [expression contract](NEW_DESIGN.md#semantic-expressions-and-touchscreen-caresses)
 and [implemented-face screenshot gallery](../../docs/images/webscreen-expressions/README.md).
+
+Both tool drawers also include **Doble aplauso**. Five local two-clap trials
+create a private summary-only calibration, then two calibrated transients while
+ATLAS is waiting temporarily show the local `defiant` face. It neither uploads
+audio nor opens a Realtime turn, and it is disabled outside the ready ATLAS
+surface. See [`CLAP.md`](CLAP.md) for the detector, privacy model and required
+physical verification after calibration.
 
 The awake face uses a single 320 ms blink with a random 13–16 second interval.
 After 35–45 seconds without interaction it becomes drowsy; after one minute it

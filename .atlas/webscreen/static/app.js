@@ -1,5 +1,5 @@
 const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
-const CLIENT_BUILD = "2026-09-07-connection-4";
+const CLIENT_BUILD = "2026-09-07-clap-1";
 const REALTIME_PRIMARY = Boolean(window.AtlasRealtime);
 const PHYSICAL_ATLAS_A1 = /(?:^|[?&])kiosk=1(?:&|$)/u.test(String(window.location?.search || ""));
 const accessFetch = (url, options) => window.atlasAccess.fetch(url, options);
@@ -108,6 +108,7 @@ let voiceAudioContext = null;
 let voiceAnalyser = null;
 let voiceMonitorTimer = 0;
 let voiceSamples = null;
+let voiceFrequencySamples = null;
 let voiceGateReady = false;
 let voiceActive = false;
 let voiceCandidateStartedAt = 0;
@@ -253,6 +254,7 @@ function switchView(view) {
     stopRecognition();
   }
   window.AtlasWakeEnrollment?.onViewChanged?.(view);
+  window.AtlasClap?.onViewChanged?.(view);
   setPanelOpen(false);
 }
 
@@ -615,6 +617,20 @@ function sampleVoiceActivity() {
   voiceLastPeak = peak;
   voiceLastThreshold = threshold;
   window.AtlasFaceBridge?.inputLevel({ rms, peak });
+  // The clap module has no stream of its own. It receives one synchronous,
+  // short-lived FFT frame only while mapping or while an already-calibrated
+  // detector is armed on the waiting ATLAS surface.
+  if (window.AtlasClap?.needsFrames?.()) {
+    if (!voiceFrequencySamples || voiceFrequencySamples.length !== voiceAnalyser.frequencyBinCount) {
+      voiceFrequencySamples = new Uint8Array(voiceAnalyser.frequencyBinCount);
+    }
+    voiceAnalyser.getByteFrequencyData(voiceFrequencySamples);
+    window.AtlasClap.inputFrame({
+      spectrum: voiceFrequencySamples,
+      sampleRate: voiceAudioContext?.sampleRate || 48000,
+      rms, peak, at: now,
+    });
+  }
   if (!voiceActive) {
     if (!looksLikeNearbySpeech) {
       // Los sonidos continuos y moderados alimentan el suelo de ruido en vez
@@ -648,6 +664,7 @@ function stopVoiceActivityGate() {
   voiceAudioContext = null;
   voiceAnalyser = null;
   voiceSamples = null;
+  voiceFrequencySamples = null;
   voiceGateReady = false;
   voiceActive = false;
   voiceCandidateStartedAt = 0;
@@ -662,6 +679,7 @@ function stopVoiceActivityGate() {
   voiceLastPeak = 0;
   voiceLastThreshold = VOICE_MIN_RMS;
   window.AtlasFaceBridge?.inputLevel({ rms: 0, peak: 0 });
+  window.AtlasClap?.microphone?.({ available: false });
 }
 
 function startVoiceActivityGate(stream) {
@@ -677,7 +695,9 @@ function startVoiceActivityGate(stream) {
     voiceAnalyser.smoothingTimeConstant = 0;
     source.connect(voiceAnalyser);
     voiceSamples = new Float32Array(voiceAnalyser.fftSize);
+    voiceFrequencySamples = new Uint8Array(voiceAnalyser.frequencyBinCount);
     voiceGateReady = true;
+    window.AtlasClap?.microphone?.({ available: true, sampleRate: voiceAudioContext.sampleRate });
     void voiceAudioContext.resume?.().catch(() => {});
     voiceMonitorTimer = window.setInterval(sampleVoiceActivity, VOICE_SAMPLE_MS);
   } catch (error) {

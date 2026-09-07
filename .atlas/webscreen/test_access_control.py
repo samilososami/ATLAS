@@ -12,6 +12,18 @@ from access_control import AccessControl, AccessError
 import server as app
 
 
+def valid_clap_payload():
+    event = {"rms": .08, "peak": .25, "highBandRatio": .38, "flatness": .46}
+    return {
+        "version": 1, "createdAt": "2026-09-07T17:00:00Z", "trialCount": 5,
+        "privacy": "summary-features-only-no-audio",
+        "detector": {"minPeak": .12, "minRms": .03, "minRmsDb": -30.4,
+                     "minHighBandRatio": .21, "minFlatness": .24, "noiseMultiplier": 4.2,
+                     "minPairGapMs": 140, "maxPairGapMs": 900},
+        "trials": [{"first": event, "second": event, "pairGapMs": 420, "noiseFloorRms": .006} for _ in range(5)],
+    }
+
+
 class AccessTests(unittest.TestCase):
     def setUp(self):
         self.now = 100
@@ -138,13 +150,13 @@ class HTTPAccessTests(unittest.TestCase):
         return status, json.loads(data)
 
     def test_all_control_routes_reject_other_client_before_work(self):
-        for path in ('text', 'voice', 'starter', 'cancel', 'settings', 'tts', 'client-event', 'wake/sample',
+        for path in ('text', 'voice', 'starter', 'cancel', 'settings', 'tts', 'client-event', 'wake/sample', 'clap/profile',
                      'tts/stream-ticket', 'realtime/session', 'realtime/consult',
                      'realtime/shell', 'realtime/web-search', 'realtime/event'):
             for token, status in ((self.b, 423), ('', 401)):
                 with self.subTest(path=path, token=bool(token)):
                     self.assertEqual(self.request('/api/' + path, token)[0], status)
-        for path in ('settings', 'codex-usage', 'wake/profiles'):
+        for path in ('settings', 'codex-usage', 'wake/profiles', 'clap/profile'):
             self.assertEqual(self.request('/api/' + path, self.b, method='GET')[0], 423)
 
     def test_real_http_direct_takeover(self):
@@ -193,6 +205,18 @@ class HTTPAccessTests(unittest.TestCase):
             empty.assert_called_once()
         connection.close()
 
+    def test_clap_profile_is_owner_protected_and_round_trips_without_audio(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            target = app.Path(temporary) / "clap-profile.json"
+            with patch.object(app, 'CLAP_DIR', target.parent), patch.object(app, 'CLAP_PROFILE_FILE', target):
+                status, saved = self.request('/api/clap/profile', self.a, valid_clap_payload())
+                self.assertEqual(status, 200)
+                self.assertEqual(saved['profile']['privacy'], 'summary-features-only-no-audio')
+                status, fetched = self.request('/api/clap/profile', self.a, method='GET')
+                self.assertEqual(status, 200)
+                self.assertEqual(fetched['profile']['trialCount'], 5)
+                self.assertNotIn('"audio":', target.read_text(encoding='utf-8'))
+
     def test_oversized_json_closes_socket_without_executing(self):
         connection = http.client.HTTPConnection(*self.server.server_address, timeout=2)
         connection.request('POST', '/api/realtime/context-empty', 'x' * 3000,
@@ -226,6 +250,30 @@ class WakeProfileTests(unittest.TestCase):
             self.assertEqual(snapshot['phrase'], 'Atlas')
             self.assertEqual(snapshot['profiles'][0]['profile'], 'sami')
             self.assertTrue(snapshot['profiles'][0]['readyForVerifier'])
+
+
+class ClapProfileTests(unittest.TestCase):
+    def payload(self):
+        return valid_clap_payload()
+
+    def test_profile_is_summary_only_and_atomically_round_trips(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            target = app.Path(temporary) / "clap-profile.json"
+            with patch.object(app, 'CLAP_DIR', target.parent), patch.object(app, 'CLAP_PROFILE_FILE', target):
+                saved = app.save_clap_profile(self.payload())
+                self.assertEqual(saved['profile']['trialCount'], 5)
+                self.assertEqual(app.clap_profile_snapshot()['profile']['privacy'], 'summary-features-only-no-audio')
+                self.assertEqual(oct(target.stat().st_mode & 0o777), '0o600')
+
+    def test_profile_rejects_audio_and_invalid_pair_window(self):
+        payload = self.payload()
+        payload['audio'] = 'not accepted by the normalizer'
+        # Unknown data never survives the normalized persistent representation.
+        self.assertNotIn('audio', app.validate_clap_profile(payload))
+        payload['detector']['minPairGapMs'] = 950
+        payload['detector']['maxPairGapMs'] = 400
+        with self.assertRaises(ValueError):
+            app.validate_clap_profile(payload)
 
 
 if __name__ == '__main__':

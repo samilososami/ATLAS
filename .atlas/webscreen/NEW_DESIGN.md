@@ -89,6 +89,16 @@ concave lower eye cutouts so they read as lifted cheeks, not tiny bottom notches
 Expression geometry and fixed-center vertical blink transforms are separate;
 changing or blinking an expression must not move the eyes apart.
 
+`defiant` is a separate, local-only acknowledgement for a calibrated double
+applause: it reuses the restrained angry-eye geometry and flips only the mouth
+into a subtle upward smile at the approved lower position. It is not included
+in the Realtime `atlas_face` tool and cannot be selected from conversation.
+`AtlasFace.clap()` accepts only the idle face, swaps it with a quick finite
+transition, holds it for three seconds and cannot interrupt voice I/O. The
+shared **Doble aplauso** drawer maps five pairs through the existing analyser;
+the private summary-only profile and detector contract are in
+[`CLAP.md`](CLAP.md).
+
 On `/new/`, the existing Realtime controller advertises a presentation-only
 `atlas_face` function when the visual bridge is available. The same
 `gpt-realtime-2.1` decides whether an expression fits the conversation; there is

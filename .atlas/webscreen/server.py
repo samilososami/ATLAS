@@ -39,7 +39,7 @@ HOST = os.environ.get("ATLAS_WEBSCREEN_HOST", "0.0.0.0")
 PORT = int(os.environ.get("ATLAS_WEBSCREEN_PORT", "5000"))
 ROOT_DIR = Path(__file__).resolve().parent
 STATIC_DIR = ROOT_DIR / "static"
-NEW_DESIGN_BUILD = "2026-09-07-face-motion-1"
+NEW_DESIGN_BUILD = "2026-09-07-clap-1"
 ROUTINES_DIR = ROOT_DIR.parent / "routines"
 if str(ROUTINES_DIR) not in sys.path:
     sys.path.insert(0, str(ROUTINES_DIR))
@@ -81,6 +81,9 @@ CONTEXT_REVISION_FILE = CONTEXT_DIR / "REVISION"
 CONTEXT_COMPACT_REQUEST_FILE = CONTEXT_DIR / "COMPACT_REQUEST"
 WAKEWORD_DIR = Path(os.environ.get("ATLAS_WAKEWORD_DIR", Path.home() / ".atlas" / "wakeword"))
 WAKEWORD_PROFILES_DIR = WAKEWORD_DIR / "profiles"
+CLAP_DIR = Path(os.environ.get("ATLAS_CLAP_DIR", Path.home() / ".atlas" / "webscreen"))
+CLAP_PROFILE_FILE = CLAP_DIR / "clap-profile.json"
+CLAP_PROFILE_MAX_BYTES = 8 * 1024
 WAKEWORD_SAMPLE_RATE = 16_000
 WAKEWORD_MAX_UPLOAD_BYTES = 2 * 1024 * 1024
 WHISPER_MODEL_NAME = os.environ.get("ATLAS_WHISPER_MODEL", "tiny")
@@ -1936,6 +1939,96 @@ def wake_profiles_snapshot() -> dict[str, Any]:
     return {"phrase": "Atlas", "productionDetector": "chrome", "profiles": profiles}
 
 
+def _clap_number(value: Any, minimum: float, maximum: float, label: str) -> float:
+    """Accept only finite calibration metrics inside deliberate browser bounds."""
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{label} inválido") from error
+    if not number == number or number in {float("inf"), float("-inf")} or not minimum <= number <= maximum:
+        raise ValueError(f"{label} fuera de rango")
+    return number
+
+
+def _clap_event(value: Any, label: str) -> dict[str, float]:
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} inválido")
+    return {
+        "rms": _clap_number(value.get("rms"), 0, 1, f"{label}.rms"),
+        "peak": _clap_number(value.get("peak"), 0, 1, f"{label}.peak"),
+        "highBandRatio": _clap_number(value.get("highBandRatio"), 0, 1, f"{label}.highBandRatio"),
+        "flatness": _clap_number(value.get("flatness"), 0, 1, f"{label}.flatness"),
+    }
+
+
+def validate_clap_profile(payload: Any) -> dict[str, Any]:
+    """Normalize a summary-only double-clap calibration; never accept audio."""
+    if not isinstance(payload, dict) or payload.get("version") != 1:
+        raise ValueError("Formato de mapeo inválido")
+    if payload.get("privacy") != "summary-features-only-no-audio":
+        raise ValueError("El mapeo no declara privacidad de medidas")
+    created_at = str(payload.get("createdAt") or "").strip()
+    if not created_at or len(created_at) > 80:
+        raise ValueError("Fecha de mapeo inválida")
+    trials = payload.get("trials")
+    if not isinstance(trials, list) or len(trials) != 5 or payload.get("trialCount") != 5:
+        raise ValueError("Se necesitan exactamente cinco pruebas")
+    detector = payload.get("detector")
+    if not isinstance(detector, dict):
+        raise ValueError("Detector inválido")
+    normalized_detector = {
+        "minPeak": _clap_number(detector.get("minPeak"), .03, .8, "Pico mínimo"),
+        "minRms": _clap_number(detector.get("minRms"), .003, .4, "Energía mínima"),
+        "minRmsDb": _clap_number(detector.get("minRmsDb"), -80, 0, "Umbral dB"),
+        "minHighBandRatio": _clap_number(detector.get("minHighBandRatio"), .03, .9, "Banda alta"),
+        "minFlatness": _clap_number(detector.get("minFlatness"), .03, .95, "Planitud espectral"),
+        "noiseMultiplier": _clap_number(detector.get("noiseMultiplier"), 2, 8, "Multiplicador de ruido"),
+        "minPairGapMs": _clap_number(detector.get("minPairGapMs"), 80, 1000, "Separación mínima"),
+        "maxPairGapMs": _clap_number(detector.get("maxPairGapMs"), 250, 1500, "Separación máxima"),
+    }
+    if normalized_detector["minPairGapMs"] >= normalized_detector["maxPairGapMs"]:
+        raise ValueError("La ventana de aplausos no es válida")
+    normalized_trials = []
+    for index, trial in enumerate(trials, start=1):
+        if not isinstance(trial, dict):
+            raise ValueError(f"Prueba {index} inválida")
+        normalized_trials.append({
+            "first": _clap_event(trial.get("first"), f"Prueba {index}.primer aplauso"),
+            "second": _clap_event(trial.get("second"), f"Prueba {index}.segundo aplauso"),
+            "pairGapMs": _clap_number(trial.get("pairGapMs"), 80, 1500, f"Prueba {index}.separación"),
+            "noiseFloorRms": _clap_number(trial.get("noiseFloorRms"), 0, .2, f"Prueba {index}.ruido"),
+        })
+    return {
+        "version": 1, "createdAt": created_at, "trialCount": 5,
+        "detector": normalized_detector, "trials": normalized_trials,
+        "privacy": "summary-features-only-no-audio",
+    }
+
+
+def clap_profile_snapshot() -> dict[str, Any]:
+    try:
+        raw = CLAP_PROFILE_FILE.read_bytes()
+        if len(raw) > CLAP_PROFILE_MAX_BYTES:
+            raise ValueError("El mapeo guardado es demasiado grande")
+        profile = validate_clap_profile(json.loads(raw.decode("utf-8")))
+    except FileNotFoundError:
+        profile = None
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
+        # Do not feed an incomplete/corrupt local file back into a detector.
+        profile = None
+    return {"profile": profile}
+
+
+def save_clap_profile(payload: Any) -> dict[str, Any]:
+    profile = validate_clap_profile(payload)
+    CLAP_DIR.mkdir(parents=True, exist_ok=True)
+    replacement = CLAP_PROFILE_FILE.with_name(f".{CLAP_PROFILE_FILE.name}.{uuid4().hex}.tmp")
+    replacement.write_text(json.dumps(profile, ensure_ascii=False, separators=(",", ":")) + "\n", encoding="utf-8")
+    replacement.chmod(0o600)
+    replacement.replace(CLAP_PROFILE_FILE)
+    return {"profile": profile}
+
+
 def convert_wake_sample(input_path: Path, wav_path: Path) -> float:
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
@@ -2593,7 +2686,7 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
         if parsed.path.startswith("/api/tts/stream/"):
             self.handle_tts_stream(parsed.path.rsplit("/", 1)[-1])
             return
-        if parsed.path in {"/api/settings", "/api/codex-usage", "/api/realtime/context", "/api/wake/profiles"}:
+        if parsed.path in {"/api/settings", "/api/codex-usage", "/api/realtime/context", "/api/wake/profiles", "/api/clap/profile"}:
             try:
                 ACCESS.authorize(self.headers.get("X-Atlas-Client", ""))
             except AccessError as error:
@@ -2608,6 +2701,9 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
             return
         if parsed.path == "/api/wake/profiles":
             self.send_json(200, wake_profiles_snapshot())
+            return
+        if parsed.path == "/api/clap/profile":
+            self.send_json(200, clap_profile_snapshot())
             return
         if parsed.path == "/api/resident/wait":
             if self.headers.get("Sec-Fetch-Site") is not None or self.headers.get("Origin"):
@@ -2784,6 +2880,8 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
             self.handle_realtime_event()
         elif self.path == "/api/wake/sample":
             self.handle_wake_sample()
+        elif self.path == "/api/clap/profile":
+            self.handle_clap_profile()
         elif self.path == "/api/text":
             self.handle_text()
         elif self.path == "/api/voice":
@@ -2885,6 +2983,16 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
                                  "profile": summary})
         except (OSError, RuntimeError) as error:
             self.send_json(400, {"error": str(error)[:500]})
+
+    def handle_clap_profile(self) -> None:
+        """Persist calibration metrics only; browser audio is never uploaded."""
+        try:
+            payload = self.read_json_payload(CLAP_PROFILE_MAX_BYTES)
+            self.send_json(200, save_clap_profile(payload))
+        except ValueError as error:
+            self.send_json(400, {"error": str(error)[:300]})
+        except OSError as error:
+            self.send_json(500, {"error": f"No se pudo guardar el mapeo: {error}"[:500]})
 
     def handle_tts_preview(self) -> None:
         try:

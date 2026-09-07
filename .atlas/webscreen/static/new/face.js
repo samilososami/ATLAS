@@ -26,6 +26,10 @@
   const expressions = Object.freeze({
     neutral: { eyes: null, mouth: smile, stroke: 26, speech: "smile" },
     angry: { eyes: [angryEye, { ...angryEye, mirrored: true }], mouth: "M 740 555 Q 795.5 502 851 555", stroke: 24, speech: "frown" },
+    // Same restrained eyes as angry. Only the curve is inverted, retaining the
+    // approved lower mouth position: a quiet, challenging smile rather than an
+    // exaggerated new character.
+    defiant: { eyes: [angryEye, { ...angryEye, mirrored: true }], mouth: "M 740 555 Q 795.5 608 851 555", stroke: 24, speech: "smile" },
     delighted: { eyes: [delightedEye, delightedEye], mouth: "M 727.5 521 Q 795.5 588 863.5 521", stroke: 28, speech: "happy" },
     surprised: { eyes: [eye(oval(58, 104)), eye(oval(58, 104))], mouth: "M 795.5 521 A 21 30 0 1 1 795.5 581 A 21 30 0 1 1 795.5 521 Z", stroke: 0, fill: blue, speech: "round" },
     curious: { eyes: [eye(oval(56, 112)), eye(oval(50, 84))], mouth: "M 764 540 Q 795.5 565 827 526", stroke: 21, speech: "curious" },
@@ -43,10 +47,12 @@
   const expressionNames = Object.keys(expressions);
   let modelExpression = null;
   let pettingExpression = null;
+  let clapExpression = null;
   let activeExpression = "neutral";
   let activeExpressionSource = "neutral";
   let expressionTimer = 0;
   let expressionTransitionTimer = 0;
+  let clapPulseTimer = 0;
   let state = "idle";
   let frame = 0;
   let lastFrame = 0;
@@ -169,6 +175,9 @@
     expressionTransitionTimer = 0;
     if (stage.hasAttribute("data-expression-transition")) stage.removeAttribute("data-expression-transition");
     if (stage.hasAttribute("data-happy-bounce")) stage.removeAttribute("data-happy-bounce");
+    clearTimeout(clapPulseTimer);
+    clapPulseTimer = 0;
+    if (stage.hasAttribute("data-clap-activated")) stage.removeAttribute("data-clap-activated");
   }
   function restMouth() {
     const profile = expressions[activeExpression];
@@ -221,7 +230,7 @@
     if (animate && !suspended && !reducedMotion.matches) {
       stage.setAttribute("data-expression-transition", "true");
       if (name === "delighted") stage.setAttribute("data-happy-bounce", "true");
-      expressionTransitionTimer = setTimeout(clearExpressionTransition, 280);
+      expressionTransitionTimer = setTimeout(clearExpressionTransition, name === "defiant" ? 160 : 280);
     }
   }
   function syncExpression() {
@@ -230,22 +239,24 @@
     const now = performance.now();
     if (modelExpression && modelExpression.expiresAt <= now) modelExpression = null;
     if (pettingExpression && pettingExpression.expiresAt <= now) pettingExpression = null;
-    const selected = pettingExpression || modelExpression;
-    renderExpression(selected?.expression || "neutral", pettingExpression ? "petting" : modelExpression ? "model" : "neutral");
-    const deadlines = [modelExpression, pettingExpression].filter(Boolean).map(item => item.expiresAt);
+    if (clapExpression && clapExpression.expiresAt <= now) clapExpression = null;
+    const selected = clapExpression || pettingExpression || modelExpression;
+    renderExpression(selected?.expression || "neutral", clapExpression ? "clap" : pettingExpression ? "petting" : modelExpression ? "model" : "neutral");
+    const deadlines = [modelExpression, pettingExpression, clapExpression].filter(Boolean).map(item => item.expiresAt);
     if (deadlines.length && !suspended) expressionTimer = setTimeout(syncExpression, Math.max(1, Math.min(...deadlines) - now));
   }
   function resetExpression() {
     clearTimeout(expressionTimer);
     expressionTimer = 0;
-    modelExpression = pettingExpression = null;
+    modelExpression = pettingExpression = clapExpression = null;
     clearExpressionTransition();
     renderExpression("neutral", "neutral", false);
   }
   function expression(payload = {}) {
     if (!payload || typeof payload !== "object" || suspended || document.hidden || view.hidden || content.hidden || pageSuspended) return false;
     const { expression: name, source = "model", durationMs = 15000 } = payload;
-    if (!expressionNames.includes(name) || !["model", "petting"].includes(source)) return false;
+    // Defiant is deliberately local: Realtime cannot pick it opportunistically.
+    if (!expressionNames.includes(name) || !["model", "petting"].includes(source) || name === "defiant") return false;
     if (source === "petting") {
       if (name !== "delighted") return false;
       interact({ source: "petting" });
@@ -330,7 +341,7 @@
     }
   }
   function interact({ source = "controls" } = {}) {
-    if (!["wake", "petting", "controls"].includes(source) || suspended || document.hidden || view.hidden || content.hidden || pageSuspended) return false;
+    if (!["wake", "petting", "controls", "clap"].includes(source) || suspended || document.hidden || view.hidden || content.hidden || pageSuspended) return false;
     const wasAsleep = sleepPhase === "asleep";
     clearSleepDeadline();
     clearWake();
@@ -344,6 +355,18 @@
     }
     syncSleepClock();
     syncBlink();
+    return true;
+  }
+  function clap() {
+    // A pair is a ready-state gesture only. It cannot interrupt recognition,
+    // a request or playback, and has no effect in the diagnostics surfaces.
+    if (state !== "idle" || suspended || document.hidden || view.hidden || content.hidden || pageSuspended) return false;
+    if (!interact({ source: "clap" })) return false;
+    clapExpression = { expression: "defiant", expiresAt: performance.now() + 3000 };
+    syncExpression();
+    stage.setAttribute("data-clap-activated", "true");
+    clearTimeout(clapPulseTimer);
+    clapPulseTimer = setTimeout(() => stage.removeAttribute("data-clap-activated"), 170);
     return true;
   }
   // A display gain, not an invented signal: -55 dBFS is visually still, -14 dBFS
@@ -455,6 +478,7 @@
   window.AtlasFace = Object.freeze({
     update,
     interact,
+    clap,
     expression,
     reset() { resetExpression(); clearWake(); clearSleepDeadline(); idleWasEligible = false; setSleepPhase("awake"); syncSleepClock(); },
     transcript() { setText(transcript, ""); },

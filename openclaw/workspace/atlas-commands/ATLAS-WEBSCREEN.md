@@ -78,6 +78,11 @@ the old interface offers **New Webscreen** to return. Waiting screens also
 offer the link. This reloads/revalidates the page using normal access rules;
 it is not an automatic takeover or seamless WebRTC handoff.
 Read `/home/atlas/.atlas/webscreen/NEW_DESIGN.md` for its layout/audio source map.
+The shared tools drawer also has **Doble aplauso**: five local two-clap trials
+save only a private metrics profile, then a calibrated pair while waiting shows
+the local `defiant` face for three seconds. It never records/uploads audio,
+opens a Realtime turn or replaces the wake word. Read
+`/home/atlas/.atlas/webscreen/CLAP.md` before diagnosing or modifying it.
 The ready face blinks for 320 ms at randomized 13–16 second intervals.
 Visual drowsiness starts after 35–45 seconds without interaction and sleep after
 one minute, with slow breathing and rising blue sleep symbols. The wake word

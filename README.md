@@ -60,7 +60,7 @@ La versión mostrada utiliza:
 
 ### WebScreen y conversación por voz
 
-El código de [`ATLAS WebScreen`](.atlas/webscreen) conserva la interfaz de depuración con ATLAS, Transcripción, Texto a voz, Wake word y Ajustes.
+El código de [`ATLAS WebScreen`](.atlas/webscreen) conserva la interfaz de depuración con ATLAS, Transcripción, Texto a voz, Wake word, Doble aplauso y Ajustes.
 
 The new [minimal face design](.atlas/webscreen/NEW_DESIGN.md) is available at
 `/new/` and with `atlas-screen --atlas-new`. Its browser-rendered blue face
@@ -77,8 +77,17 @@ visual tool. Repeated back-and-forth touchscreen caresses over a full-face
 circle make it delighted with a soft lift/settle animation. Randomized blinks
 and a progressive drowsy/sleep cycle give the idle face gentle movement;
 sleep is decorative and never switches off wake recognition or delays input.
-Browse the thirteen [implemented expressions and sleep state](docs/images/webscreen-expressions/README.md):
+Browse the [implemented expressions and sleep state](docs/images/webscreen-expressions/README.md):
 these are native WebScreen browser captures, not generated design mockups.
+
+El drawer compartido permite calibrar un doble aplauso en cinco pruebas locales.
+El navegador deriva solo umbrales resumidos de transitorios y espectro a partir
+del analizador del micrófono existente: no almacena ni sube audio. Dos aplausos
+válidos mientras la cara espera muestran la expresión local `defiant` durante
+tres segundos, sin abrir ni interrumpir una conversación de Realtime. El perfil
+es privado del A1 y se puede recalibrar si cambian la sala o el micrófono; el
+diseño, límites y verificación física están en
+[`.atlas/webscreen/CLAP.md`](.atlas/webscreen/CLAP.md).
 
 Browser previews: [ready](docs/images/webscreen-new/idle.png),
 [listening](docs/images/webscreen-new/listening.png),
