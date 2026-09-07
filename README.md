@@ -65,14 +65,19 @@ El código de [`ATLAS WebScreen`](.atlas/webscreen) conserva la interfaz de depu
 The new [minimal face design](.atlas/webscreen/NEW_DESIGN.md) is available at
 `/new/` and with `atlas-screen --atlas-new`. Its browser-rendered blue face
 blinks while waiting, transforms into an input-level waveform after ATLAS,
-shows live recognized words and animates its mouth during actual playback.
+and animates its mouth during actual playback, without transcript/status text.
 The quiet HUD keeps only the brand, connection indicator and settings access.
 The original `/` and `--atlas` remain the debugging presentation; both share
-the same Realtime session logic, tools, context and access controls.
+the same Realtime session logic, tools, context and access controls. Their
+drawers link to **New Webscreen** / **Debugging Webscreen** on the same host,
+including trusted LAN devices.
 
 The same Realtime model chooses the face's cartoon expression through a local
-visual tool. Repeated back-and-forth touchscreen caresses make it delighted.
-Browse all thirteen [implemented expressions](docs/images/webscreen-expressions/README.md):
+visual tool. Repeated back-and-forth touchscreen caresses over a full-face
+circle make it delighted with a soft lift/settle animation. Randomized blinks
+and a progressive drowsy/sleep cycle give the idle face gentle movement;
+sleep is decorative and never switches off wake recognition or delays input.
+Browse the thirteen [implemented expressions and sleep state](docs/images/webscreen-expressions/README.md):
 these are native WebScreen browser captures, not generated design mockups.
 
 Browser previews: [ready](docs/images/webscreen-new/idle.png),

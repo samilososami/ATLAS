@@ -38,12 +38,14 @@ HOST = os.environ.get("ATLAS_WEBSCREEN_HOST", "0.0.0.0")
 PORT = int(os.environ.get("ATLAS_WEBSCREEN_PORT", "5000"))
 ROOT_DIR = Path(__file__).resolve().parent
 STATIC_DIR = ROOT_DIR / "static"
-NEW_DESIGN_BUILD = "2026-09-07-face-expressions-1"
+NEW_DESIGN_BUILD = "2026-09-07-face-motion-1"
 
 
 def render_new_design_shell(source: str) -> bytes:
     """Reuse the complete debug DOM and controller; add presentation only."""
     source = source.replace('<body>', '<body data-design="new">', 1)
+    source = source.replace('data-webscreen-design-switch href="/new/" target="_self">New Webscreen</a>',
+        'data-webscreen-design-switch href="/" target="_self">Debugging Webscreen</a>')
     source = source.replace('</head>',
         f'<link rel="stylesheet" href="/new/face.css?v={NEW_DESIGN_BUILD}" />\n  </head>', 1)
     source = source.replace('    <script src="/access.js',

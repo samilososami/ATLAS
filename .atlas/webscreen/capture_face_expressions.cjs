@@ -17,7 +17,7 @@ const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8')
   .replace('class="access-blocked"', 'class="access-blocked" hidden')
   .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
   .replace('</head>', '<link rel="stylesheet" href="/new/face.css"></head>')
-  .replace('</body>', '<script src="/new/face.js"></script><script src="/new/audio.js"></script><script src="/new/petting.js"></script></body>');
+  .replace('</body>', '<script src="/new/face.js"></script><script src="/new/audio.js"></script><script src="/new/petting.js"></script><script src="/navigation.js"></script></body>');
 const mime = { '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml',
   '.png': 'image/png', '.ico': 'image/x-icon' };
 const server = http.createServer((request, response) => {
@@ -69,6 +69,26 @@ async function main() {
       await page.screenshot({ path: path.join(output, file), animations: 'allow' });
       captures.push({ expression, file });
     }
+    // Exercise the real inactivity deadline in browser time instead of adding
+    // a public "sleep now" query flag or altering production controller state.
+    await page.clock.install();
+    await page.goto(url);
+    await page.evaluate(() => {
+      AtlasFaceBridge.update({ state: 'idle', phase: 'EN ESPERA' });
+      AtlasFaceBridge.connection({ healthy: true, label: 'ATLAS A1 conectado' });
+    });
+    await page.clock.runFor(61000);
+    assert.equal(await page.locator('.face-stage').getAttribute('data-sleep'), 'asleep');
+    // Choose settled frames of the real CSS animations for a reproducible
+    // static sleep illustration (the live browser continues to animate them).
+    await page.evaluate(() => {
+      for (const animation of document.getAnimations()) {
+        animation.pause();
+        animation.currentTime = 2200;
+      }
+    });
+    await page.screenshot({ path: path.join(output, '13-asleep.png'), animations: 'allow' });
+    captures.push({ expression: 'asleep (inactivity)', file: '13-asleep.png' });
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({ viewport: [1591, 989], captures, errors,
       note: 'Native WebScreen CSS/SVG in Chromium. State/connection indicator forced locally; no live voice/model claim.' }, null, 2));

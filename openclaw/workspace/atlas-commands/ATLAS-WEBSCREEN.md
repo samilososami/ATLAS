@@ -43,6 +43,7 @@ atlas-webscreen restart
 - main PID
 - local URL
 - network URLs
+- new face URLs (`/new/`) on localhost and the LAN
 - listener
 - health JSON when available
 
@@ -72,11 +73,17 @@ Append `/new/` for the minimal animated face. On the physical A1 use
 debugging surface. They share the backend, voice/context and exclusive control
 lease: changing the presentation is not a new model or another microphone.
 The new face's settings button reveals the existing controls and tools.
+Choose **Debugging Webscreen** there to open the old interface in the same tab;
+the old interface offers **New Webscreen** to return. Waiting screens also
+offer the link. This reloads/revalidates the page using normal access rules;
+it is not an automatic takeover or seamless WebRTC handoff.
 Read `/home/atlas/.atlas/webscreen/NEW_DESIGN.md` for its layout/audio source map.
-The ready face blinks once for 350 ms every 8.7 seconds; it has no permanent
-idle CSS animation or drawing-frame loop. Hidden/non-idle pages and reduced
-motion cancel the blink timers. Repeated unchanged status/transcript updates
-do not rewrite the face DOM. This changes rendering work, not voice ownership.
+The ready face blinks for 320 ms at randomized 13–16 second intervals.
+Visual drowsiness starts after 35–45 seconds without interaction and sleep after
+one minute, with slow breathing and rising blue sleep symbols. The wake word
+still works; its brief surprised pose never delays microphone capture. The new
+face has no transcription or thinking text. Hidden views and reduced motion
+cancel animations; there is no permanent idle JavaScript drawing loop.
 
 If HTTPS is enabled in the current version, `status` will show HTTPS URLs.
 

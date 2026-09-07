@@ -10,12 +10,17 @@ un fallback ejecutable del flujo actual.
 ## Minimal face design
 
 `atlas-screen --atlas-new` opens the new face presentation at `/new/?kiosk=1`.
-Remote trusted-LAN browsers can open `/new/`. The original `/` and `--atlas`
+Remote trusted-LAN browsers can open `/new/` on the same Pi address and port.
+The drawer has **Debugging Webscreen** on `/new/` and **New Webscreen** on `/`
+for switching in the same tab, with the ordinary access revalidation after
+navigation. `atlas-webscreen status` lists both sets of LAN URLs.
+The original `/` and `--atlas`
 remain the debugging interface. Both render the same underlying DOM and load
 the same access, Realtime, wake, settings, quota and context controllers.
 
 The new design lives in `static/new/`: blue vector face, quiet header, occasional
-blinks, wake-to-waveform transition, live recognized text and audio-driven mouth.
+blinks, wake-to-waveform transition and audio-driven mouth. Transcriptions and
+thinking/status captions are not drawn over the face.
 Controls and diagnostics remain available in the settings/tools panel rather
 than filling the idle screen. No second microphone, agent or credentials flow
 is introduced. See [design and source map](NEW_DESIGN.md).
@@ -26,13 +31,14 @@ back-and-forth caresses on the face trigger a six-second delighted expression
 locally, without opening a voice turn. See the [expression contract](NEW_DESIGN.md#semantic-expressions-and-touchscreen-caresses)
 and [implemented-face screenshot gallery](../../docs/images/webscreen-expressions/README.md).
 
-The ready face uses a single 350 ms blink every 8.7 seconds, not a continuously
-running CSS animation. Blink timers stop outside idle, while the page/view is
-hidden, on page exit and under reduced motion. Identical telemetry does not
-rewrite the face DOM, and idle does not request drawing frames. Real Chromium
-checks found zero animations at rest, two during the blink and zero afterward;
-this is an efficiency check, not proof that the physical renderer memory issue
-or audible microcuts have been resolved.
+The awake face uses a single 320 ms blink with a random 13–16 second interval.
+After 35–45 seconds without interaction it becomes drowsy; after one minute it
+visually sleeps with closed eyes, slow breathing and rising blue sleep symbols.
+The wake detector stays active. The short surprised wake animation is visual
+only and does not defer audio capture or a model request. Caresses cover a
+circle around the whole face, and the delighted reaction has a short lift and
+soft settling motion. Hidden views and reduced motion suppress animation;
+heartbeats and ambient sound do not reset the visual inactivity clock.
 
 `atlas-chat` es la superficie hermana de terminal: usa el mismo modelo
 `gpt-realtime-2.1`, las mismas instrucciones y Markdown, las mismas herramientas

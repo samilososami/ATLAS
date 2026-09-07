@@ -6,10 +6,19 @@ was selected internally with `AtlasFace.expression(...)` after loading the real
 presentation assets. The approved neutral sizing, spacing, palette and HUD are
 shared by every expression. The delighted eyes use the revised, higher cutouts.
 
+The motion revision brings eye centers another 5% closer together, adds a
+progressive happy reaction and a decorative sleep cycle. The asleep screenshot
+uses the real inactivity deadline with an accelerated test clock; selected
+CSS animation frames are paused only for the static capture. It is not a
+fourteenth emotion exposed to the model.
+
 The capture fixture sets idle state and a green connection indicator locally;
 these gallery shots demonstrate appearance, not a live Internet connection,
 model response, microphone or physical speaker test. No voice session is opened
 and no user conversation is included in the published images.
+
+The separate [actual A1 display sequence](../webscreen-motion/) shows the
+installed sleep and upper-face petting cycle, captured in real time.
 
 | Expression | Expression |
 | --- | --- |
@@ -19,7 +28,7 @@ and no user conversation is included in the published images.
 | Sad ![Sad](06-sad.png) | Worried ![Worried](07-worried.png) |
 | Sleepy ![Sleepy](08-sleepy.png) | Wink ![Wink](09-wink.png) |
 | Laughing ![Laughing](10-laughing.png) | Focused ![Focused](11-focused.png) |
-| Shy ![Shy](12-shy.png) | |
+| Shy ![Shy](12-shy.png) | Asleep (inactivity) ![Asleep](13-asleep.png) |
 
 ## Reproduce the screenshots
 
@@ -32,7 +41,7 @@ node .atlas/webscreen/capture_face_expressions.cjs
 Set `ATLAS_CHROME` to a local Chrome executable if not using Playwright's
 bundled Chromium; `NODE_PATH` may point to an already-installed Playwright.
 The fixture binds an ephemeral **loopback-only** port, serves the production
-presentation files, captures all thirteen expressions and closes the browser.
+presentation files, captures all thirteen expressions plus sleep and closes the browser.
 `--serve` leaves the isolated presentation preview on `127.0.0.1:5059` for visual
 inspection. Neither mode changes the real A1 kiosk or bypasses its access lease.
 

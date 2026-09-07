@@ -85,6 +85,15 @@ voice session, so do not switch designs midway through a requested action.
 after browser recovery or a hidden-mode boot. Returning with `--atlas-new`
 shows the new design; returning with `--atlas` deliberately selects debug.
 
+The drawers also offer **Debugging Webscreen** / **New Webscreen** links.
+They switch the same tab immediately, including on LAN clients, and use normal
+lease release/reconnect. In the physical kiosk, the watchdog accepts both fixed
+local presentation URLs and remembers the last healthy view for recovery.
+Menu navigation does not change the persisted boot/mode preference. An explicit
+`atlas-screen --atlas` or `--atlas-new` selection still takes priority, even when
+the same command is repeated after switching with a link. Re-selecting the
+already healthy view does not reload its microphone/session.
+
 The kiosk uses software compositing (`--disable-gpu --disable-gpu-compositing`)
 instead of forcing GLES. This contains the observed renderer shared-buffer
 exhaustion/`TransferBuffer::Initialize` loop; it does not disable WebRTC or audio.
@@ -110,7 +119,7 @@ independent black overlay in place during browser-only recovery. Look for
 Install Node.js on a fresh image (`apt install nodejs`); the scoped installer
 `system/install-webscreen-resilience.sh` installs this helper and both launch
 commands alongside the public static assets, with backups. A one-time kiosk
-restart is needed when upgrading from the old launcher.
+restart is needed when upgrading the running launcher/watchdog.
 
 To keep ATLAS listening and speaking while hiding the physical image, use:
 

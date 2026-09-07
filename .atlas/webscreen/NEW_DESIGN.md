@@ -5,6 +5,16 @@ agent. `atlas-screen --atlas-new` selects `/new/?kiosk=1` on the physical A1.
 The original `/` and `atlas-screen --atlas` remain available for debugging.
 Both use the same access lease, Realtime controller, settings, tools, context,
 voice output and recovery rules. Every new spoken request requires **ATLAS**.
+The settings drawer links the two presentations using **Debugging Webscreen**
+on `/new/` and **New Webscreen** on `/`. The same links appear on the access
+waiting screen. They navigate in the same tab and host (including trusted LAN
+hosts), preserving only the non-secret `kiosk`/`remote` flags. Navigation uses
+the existing release/reconnect flow, not a seamless WebRTC-session transfer;
+no ownership credential is stored or added to the URL.
+The physical-kiosk watchdog accepts both fixed local presentation URLs. A link
+change is not a crashed page; recovery follows the last healthy view. Explicit
+`atlas-screen` selections retain priority, including repeated selection of the
+same saved mode after a menu switch. Menu links do not change the boot policy.
 
 ## Approved visual specification
 
@@ -14,21 +24,23 @@ top right and the central face appear while ready. The first visual revision
 removed “Di «Atlas» para hablar” and enlarged the `.face-character` group to
 1.25×. The latest revision adds **50% relative to that 1.25× version**, giving
 **1.875× the original size**, including the thinking state. The waveform,
-conversation logic, measured audio response and blink cadence are unchanged.
-In portrait, the canvas uses 150% width with a -25% left offset to limit clipping;
-speaking-state copy moves to 84% height to clear the larger open mouth.
+conversation logic and measured audio response are unchanged. The separate
+motion revision below updates blink cadence and adds decorative sleep.
+In portrait, the canvas uses 150% width with a -25% left offset to limit clipping.
 No permanent dock, transcript history, quota cards or debug labels are added.
 Existing controls stay available inside the tools/settings surface.
 
 - Background: almost-black blue, approximately `#02060d`; no decorative panels.
 - Face: vivid `#00a8ff`/`#009bff`/`#008cee` with a restrained blue luminous gradient.
-- Text: muted off-white, regular sans serif for non-idle status; normal idle
-  has no caption. Recognized words still appear in white while listening.
+- No captions, thinking labels or recognized words on the face surface, in any
+  conversation state. The controller still receives transcription; details and
+  recovery controls stay in the drawer/debugging interface. The connection dot
+  retains its accessible status rather than showing a floating error sentence.
 - Base vector geometry before the current 1.875× group scale: two tall ovals,
-  112 × 208 units, centered at x=631.45/959.55 and y=425. Positions are native
+  112 × 208 units, centered at x=639.6525/951.3475 and y=425. Positions are native
   SVG coordinates, not CSS translations, so blink scaling cannot reset spacing.
-  The latest refinement reduces center spacing by 15% relative to the previous
-  386-unit gap and lowers the mouth another 20 screen pixels at 1024 × 600
+  Center spacing was reduced by 15% relative to the previous 386-unit gap,
+  then by another 5% (311.695 units). The mouth was lowered another 20 screen pixels at 1024 × 600
   (total mouth translation 26.58222 SVG units). Eye sizes remain unchanged.
 - The larger face occupies the center with generous negative space. Header
   touch targets remain usable even though their visible icons are small.
@@ -44,17 +56,17 @@ Existing controls stay available inside the tools/settings surface.
 `app.js`/`realtime.js` remain the only conversation controllers.
 
 `window.AtlasFace` exposes `update`, `transcript`, `inputLevel`, `outputLevel`,
-`connection`, `speechBoundary`, `expression` and `reset`. A visual callback must never send a prompt,
+`connection`, `speechBoundary`, `expression`, `interact` and `reset`. A visual callback must never send a prompt,
 take ownership, enable a microphone, change an audio route or replay a tool.
 
 1. Ready: the larger smiling face without an instruction label, with occasional
    soft blinks. Explicit mute/error status is not removed. Each blink
-   closes/reopens in approximately 350 ms, with an 8.7 s start-to-start interval.
+   closes/reopens in approximately 320 ms, with a fresh random 13–16 s interval.
    A sparse timer starts one CSS animation; there is no permanent idle
    animation or idle animation-frame loop. Leaving idle, hiding the page/view,
    `pagehide` and reduced-motion preference cancel the blink timers.
 2. Wake accepted: face transforms into a horizontal blue waveform. It follows
-   measured microphone RMS/dBFS; recognized words appear below in white.
+   measured microphone RMS/dBFS; no words are drawn on the presentation.
 3. Input ended / processing: face returns with a restrained thinking motion.
 4. Actual playback: mouth opens in time with the output envelope or browser
    speech boundaries. Text generation alone is not audible speech.
@@ -63,8 +75,8 @@ take ownership, enable a microphone, change an audio route or replay a tool.
 RMS is a relative digital level, not a calibrated sound-pressure reading.
 Silence must produce a quiet waveform/closed mouth, not invented audio.
 Animation work is bounded, stops on hidden pages and honors reduced motion.
-Unchanged captions, transcripts, connection indicators and drawing values do
-not rewrite the DOM. The blink timing and visual geometry are independent of
+Unchanged connection indicators and drawing values do not rewrite the DOM.
+The blink timing and visual geometry are independent of
 the voice session and never trigger a reconnect.
 
 ## Semantic expressions and touchscreen caresses
@@ -94,8 +106,11 @@ answer. A visual-only response can continue once; repeated cosmetic calls,
 invalid expression names and stale/cancelled response events cannot create a
 response loop or affect a replacement turn.
 
-`static/new/petting.js` recognizes deliberate back-and-forth strokes only over
-the face. A tap, one or two swipes, small jitter, multitouch and cancelled
+`static/new/petting.js` recognizes deliberate back-and-forth strokes inside a
+generous circle covering the whole face, including the top of the eyes and
+cheeks. Its geometry is derived from the neutral sockets, not an animated
+mouth or blink; the surrounding rectangular corners are not touch targets.
+A tap, one or two swipes, small jitter, multitouch and cancelled
 gestures do not qualify. A completed caress temporarily selects `delighted`
 for six seconds; a still-valid model expression returns afterward. This is
 entirely local: no prompt, recording, network request or speech is started.
@@ -103,11 +118,97 @@ Listening, hidden/blocked views and the settings panel are excluded. Touch
 handling is limited to the face hit region, so the header/settings remain
 usable. The listening waveform and actual audio playback remain authoritative.
 
+## Motion and decorative sleep
+
+The sleep reference was generated first with the built-in image tool, then
+recreated in native SVG/CSS. It is a design reference, not a full-screen bitmap.
+Closed downward-bowed eyelids, a small gently downturned mouth and three blue
+sleep symbols on the right preserve the existing face palette and sparse HUD.
+
+- **Happy reaction:** brief upward movement of the eyes and smile, then a soft
+  settle. The lower eye cutouts rise progressively and reverse on returning to
+  neutral; blink, emotion, bounce and breathing transforms have separate owners.
+- **Drowsiness:** after a newly randomized 35–45 seconds without interaction,
+  eyelids gradually lower and the smile softens through neutral to a small
+  frown. Drowsy blinks use a randomized 6–8 second interval.
+- **Asleep:** after more than one minute without interaction, eyes close and
+  slow breathing begins; small blue `z` symbols rise/fade on the right. There
+  is no snoring sound, microphone suspension, OS sleep or network change.
+- **Wake:** an accepted wake word resets the visual idle clock. Only a fully
+  asleep face shows a brief surprised pose before the waveform; an awake or
+  merely drowsy face goes straight to listening. Recording, recognition and model
+  processing continue immediately; the visual animation does not delay them.
+  A caress can also wake the face locally without sending speech or a prompt.
+- **Timing:** fast reactions use perceptible short transitions (roughly
+  180–300 ms), not a literal 1–2 ms which is shorter than one display frame.
+  Repeated idle updates, heartbeat and ambient input levels are not interaction.
+- **Efficiency:** sparse deadlines handle idle progression; CSS handles slow
+  breathing and sleep-symbol motion. Hidden/blocked views and reduced-motion
+  preferences suppress animation. No continuous idle JavaScript drawing loop.
+
+Research: the [Sleepy animation by Sawyer](https://lottiefiles.com/free-animation/sleepy-twV5XMs4zd)
+is a reference for the conventional sleeping-emoji visual language, not a
+downloaded/reused asset. The timing and geometry here are original. Motion uses
+the [MDN performance guidance](https://developer.mozilla.org/en-US/docs/Learn_web_development/Extensions/Performance/CSS)
+to favor transforms/opacity and avoid layout work, and honors
+[reduced motion](https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/At-rules/@media/prefers-reduced-motion).
+
 All expression previews in the [browser screenshot gallery](../../docs/images/webscreen-expressions/README.md)
 are captures of the implemented WebScreen renderer, not generated concept
 images. The gallery describes the deterministic capture method and its limits.
 
-### Expression verification · 2026-09-07
+### Motion revision verification · 2026-09-07
+
+- Generated the sleep concept first with the built-in image tool, using the
+  previous neutral **native WebScreen capture** as the reference. The concept
+  and generation prompt remain local under `output/imagegen/sleep-2026-09-07/`;
+  they are not runtime assets or the public screenshot gallery.
+- Compared the concept and the native `13-asleep.png` in five respects: the
+  sparse HUD/layout, near-black navy and electric-blue palette, closed curved
+  eyelids, small downturned mouth, and three rising/fading sleep symbols. The
+  implementation keeps the approved mouth anchor and the exact additional 5%
+  reduction in eye separation, rather than copying the concept's larger change
+  in eye spacing. It uses real SVG geometry/CSS, not a full-screen bitmap.
+- Regenerated and inspected all thirteen model expressions plus decorative
+  sleep at 1591 × 989. No browser console errors in the capture harness.
+- The complete JavaScript suite passes 297 tests, including 27 renderer tests;
+  the Python WebScreen suite passes 78. Three additional installer/status tests
+  verify runtime file coverage and both local/LAN presentation URLs.
+  The separate kiosk watchdog passes 22 tests, including repeated CLI choices,
+  both menu directions and a fast menu switch before the next watchdog poll.
+- Chromium desktop (1024 × 600) and mobile/touch (390 × 844) accept repeated
+  upper-face caresses and reject points outside the circular zone. Touching the
+  upper face wakes a sleeping idle face; four valid passes select `delighted`.
+- Browser-clock integration with the real face/audio/petting assets confirms
+  that repeated healthy/idle telemetry and ambient RMS do not postpone sleep.
+  Five virtual minutes asleep add no JavaScript timer callbacks or animation
+  frames; only the CSS breathing and symbols continue animating.
+- A real bridge wake event switches the logical state to `listening`
+  synchronously. Nonzero input changes waveform geometry by the 34 ms test
+  frame, before the 180 ms visual surprise ends. Silence-to-thinking and
+  playback-driven mouth updates remain intact. These are deterministic bridge
+  tests, **not** a physical microphone/model latency measurement.
+- Same-tab classic → new → classic navigation passes on desktop and mobile,
+  including the blocked-access page and preservation of `kiosk`/`remote`
+  flags. The fixture recorded ten releases and ten connects, no automatic
+  takeover, no credential storage, and no external requests. Live LAN HTTP
+  delivery is verified separately from this mocked access-lifecycle test.
+- **Installed A1:** both LAN pages return HTTP 200. Initial visual deployment
+  reused Chrome after a reload. Actual X11 captures at 0.7 / 50.3 / 63.5 /
+  65.9 / 72.4 seconds show neutral → drowsy → asleep → upper-face petting delight
+  → neutral. The [unedited physical-display screenshots](../../docs/images/webscreen-motion/)
+  describe the X11 mouse test and its limits. Realtime source and saved settings
+  retained their pre-deployment SHA-256 hashes; public docs and the private
+  source-map paragraph were updated with backups.
+- The accompanying kiosk-watchdog update requires restarting the kiosk service
+  to load the new supervisor. Live menu navigation subsequently remained on
+  each selected presentation for more than two watchdog polls, without page
+  recovery or an automatic return to the previous design. No launcher, saved
+  audio settings or Realtime source changes were needed.
+  A repeated `atlas-screen --atlas-new` after switching to debugging also
+  selected the new view successfully; the watchdog did not replay user actions.
+
+### Initial expression verification · 2026-09-07 (before motion revision)
 
 - All thirteen real renderer states were captured at 1591 × 989 and visually
   reviewed: unchanged HUD, approved neutral proportions/spacing, blue palette,
@@ -225,6 +326,13 @@ rendering-efficiency improvement, not the demonstrated leak fix.
 - [Connection map](../../openclaw/workspace/ATLAS-CONNECTIONS.md).
 - `server.py::render_new_design_shell`: serves the existing DOM at `/new/`
   with presentation assets. No second HTML copy or duplicate credential flow.
+- `static/navigation.js`: exact drawer/waiting-screen labels and same-host
+  links; preserves only the non-secret `kiosk`/`remote` flags.
+- `static/new/face.js`, `face.css`, `petting.js`: native geometry, decorative
+  inactivity clock, bounded motion and whole-face circular gesture handling.
+- `system/libexec/atlas-screen-browser-watchdog.cjs`: private-pipe kiosk
+  health/recovery; accepts either local presentation and honors explicit CLI
+  selections without interpreting a deliberate menu change as a crash.
 
 ## Earlier browser verification
 

@@ -52,6 +52,24 @@
     return Object.freeze({ begin, move, cancel() { stroke = null; } });
   }
 
+  function circleFromEyeSockets(boxes) {
+    const eyes = boxes.filter(box => box && [box.x, box.y, box.width, box.height].every(Number.isFinite)
+      && box.width > 0 && box.height > 0);
+    if (eyes.length < 2) return null;
+    const left = Math.min(...eyes.map(box => box.x));
+    const right = Math.max(...eyes.map(box => box.x + box.width));
+    const top = Math.min(...eyes.map(box => box.y));
+    const bottom = Math.max(...eyes.map(box => box.y + box.height));
+    const halfHeight = (bottom - top) / 2;
+    // A stable circular face, with room above both eyes and around cheeks/chin.
+    // It encloses every neutral eye socket corner; the lower half contains the
+    // entire mouth. Expressions, blinking and speech never shrink this region.
+    const cx = (left + right) / 2;
+    const cy = (top + bottom) / 2 + halfHeight * 0.5;
+    const radius = Math.hypot((right - left) / 2, halfHeight * 1.5) + Math.max(12, halfHeight * 0.18);
+    return { cx, cy, radius };
+  }
+
   function install(win, doc) {
     if (doc.body?.dataset.design !== "new" || win.AtlasPetting) return null;
     const stage = doc.querySelector(".face-stage");
@@ -68,7 +86,9 @@
     // touch drags for scrolling; keep the HTML touch-action region face-only.
     const frame = doc.createElementNS("http://www.w3.org/2000/svg", "foreignObject");
     frame.setAttribute("class", "face-petting-frame");
-    frame.setAttribute("pointer-events", "all");
+    // Only the clipped HTML circle is interactive. The square foreignObject
+    // backing bounds must not take over touches in its four empty corners.
+    frame.setAttribute("pointer-events", "none");
     frame.setAttribute("aria-hidden", "true");
     frame.setAttribute("focusable", "false");
     const zone = doc.createElement("div");
@@ -77,11 +97,18 @@
     frame.append(zone);
     let bounds = null, disposed = false, pageHidden = false;
     let activePointer = null;
+    let lastInteractionAt = -Infinity;
     const heldPointers = new Set();
     const removers = [];
-    const detector = createPettingDetector({ onPet: () => win.AtlasFace?.expression?.({
-      expression: "delighted", source: "petting", durationMs: 6000,
-    }) ?? false });
+    function noteInteraction(at, force = false) {
+      if (!force && at - lastInteractionAt < 1000) return;
+      lastInteractionAt = at;
+      try { win.AtlasFace?.interact?.({ source: "petting" }); } catch {}
+    }
+    const detector = createPettingDetector({ onPet: () => {
+      noteInteraction(win.performance.now());
+      return win.AtlasFace?.expression?.({ expression: "delighted", source: "petting", durationMs: 6000 }) ?? false;
+    } });
 
     function refreshBounds() {
       // At DOMContentLoaded the access lease can still keep the view hidden.
@@ -89,26 +116,12 @@
       // before the first touch so Chromium can see the HTML touch-action region.
       if (!available()) { bounds = null; return; }
       try {
-        const inverse = character.getScreenCTM().inverse();
-        const points = [];
-        for (const node of character.querySelectorAll(".face-eye, .face-mouth")) {
-          const box = node.getBBox();
-          // Neutral eye ellipses already use character-local coordinates. Their
-          // parent blink/working transform is transient, not an input boundary:
-          // measuring its CTM during resize used to leave a permanently cropped
-          // zone until the next resize. The mouth's deliberate CSS offset stays.
-          const matrix = node.classList.contains("face-eye") ? null : inverse.multiply(node.getScreenCTM());
-          for (const [x, y] of [[box.x, box.y], [box.x + box.width, box.y],
-            [box.x, box.y + box.height], [box.x + box.width, box.y + box.height]]) {
-            const point = new win.DOMPoint(x, y);
-            points.push(matrix ? point.matrixTransform(matrix) : point);
-          }
-        }
-        if (!points.length) return;
-        const x = Math.min(...points.map(p => p.x)) - 6, y = Math.min(...points.map(p => p.y)) - 6;
-        const right = Math.max(...points.map(p => p.x)) + 6, bottom = Math.max(...points.map(p => p.y)) + 6;
-        bounds = { x, y, right, bottom };
-        for (const [name, value] of Object.entries({ x, y, width: right - x, height: bottom - y })) {
+        // getBBox is character-local for the neutral ellipses: deliberately do
+        // not incorporate their transient parent blink/working screen matrix.
+        bounds = circleFromEyeSockets([...character.querySelectorAll(".face-eye")].map(node => node.getBBox()));
+        if (!bounds) return;
+        const { cx, cy, radius } = bounds;
+        for (const [name, value] of Object.entries({ x: cx - radius, y: cy - radius, width: radius * 2, height: radius * 2 })) {
           if (frame.getAttribute(name) !== String(value)) frame.setAttribute(name, String(value));
         }
       } catch { bounds = null; }
@@ -128,7 +141,7 @@
       if (!bounds || event.target?.closest?.("button, a, input, select, textarea, summary, #side-panel, .face-header, .face-wave")) return false;
       try {
         const point = new win.DOMPoint(event.clientX, event.clientY).matrixTransform(character.getScreenCTM().inverse());
-        return point.x >= bounds.x && point.x <= bounds.right && point.y >= bounds.y && point.y <= bounds.bottom;
+        return Math.hypot(point.x - bounds.cx, point.y - bounds.cy) <= bounds.radius;
       } catch { return false; }
     }
     function cancel(clearPointers = false) {
@@ -148,6 +161,7 @@
       // an expression change) without polling or any idle animation frame.
       refreshBounds();
       if (!inside(event)) return;
+      noteInteraction(win.performance.now(), true);
       activePointer = event.pointerId;
       const width = canvas.getBoundingClientRect().width;
       detector.begin(event.clientX, event.clientY, win.performance.now(), Math.max(18, Math.min(84, width * 48 / 1024)));
@@ -157,6 +171,7 @@
       if (activePointer === null || event.pointerId !== activePointer) return;
       if (!available() || heldPointers.size !== 1 || !inside(event)
           || (event.pointerType !== "touch" && !(event.buttons & 1))) { cancel(); return; }
+      noteInteraction(win.performance.now());
       detector.move(event.clientX, event.clientY, win.performance.now());
     }
     function up(event) {
@@ -200,7 +215,7 @@
     return api;
   }
 
-  if (typeof module === "object" && module.exports) module.exports = { createPettingDetector, install };
+  if (typeof module === "object" && module.exports) module.exports = { createPettingDetector, circleFromEyeSockets, install };
   if (typeof window !== "undefined" && typeof document !== "undefined" && document.body?.dataset.design === "new") {
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", () => install(window, document), { once: true });
     else install(window, document);

@@ -170,6 +170,18 @@ input { font: inherit; }
   color: var(--cyan);
 }
 
+.webscreen-design-switch {
+  display: block;
+  font: inherit;
+  text-decoration: none;
+  border: 1px solid transparent;
+  border-radius: 12px;
+}
+.tool-tabs > .webscreen-design-switch { grid-column: 1 / -1; margin-top: 6px; }
+.webscreen-design-access { width: fit-content; margin: 14px auto 0; padding: 9px 12px; color: #9ca8ba; font-size: 14px; }
+.webscreen-design-access:hover { color: #fff; background: #111925; }
+.webscreen-design-switch:focus-visible { outline: 2px solid #5dbbff; outline-offset: 4px; }
+
 .shell {
   width: min(980px, calc(100% - 32px));
   margin: 0 auto;

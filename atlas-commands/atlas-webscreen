@@ -151,7 +151,7 @@ disable_webscreen() {
 }
 
 status_webscreen() {
-  local enabled active pid addresses health
+  local enabled active pid addresses new_addresses address health
   enabled="disabled"
   if systemctl is-enabled --quiet "$SERVICE" 2>/dev/null; then
     enabled="enabled"
@@ -162,12 +162,18 @@ status_webscreen() {
   fi
   pid="$(main_pid)"
   addresses="$(hostname -I 2>/dev/null | tr ' ' '\n' | sed '/^$/d' | sed "s#^#${PROTOCOL}://#;s#\$#:${PORT}#" | paste -sd ' ' -)"
+  new_addresses=""
+  for address in $addresses; do
+    new_addresses+="${address}/new/ "
+  done
 
   printf "%satlas-webscreen status%s\n" "$BOLD" "$RESET"
   printf "%sService:%s %s / %s\n" "$BOLD" "$RESET" "$(paint_status "$active")" "$(paint_status "$enabled")"
   printf "%sMain PID:%s %s\n" "$BOLD" "$RESET" "$pid"
   printf "%sLocal URL:%s %s://localhost:%s\n" "$BOLD" "$RESET" "$PROTOCOL" "$PORT"
   printf "%sNetwork URLs:%s %s %s://atlas-a1.local:%s\n" "$BOLD" "$RESET" "${addresses:-unknown}" "$PROTOCOL" "$PORT"
+  printf "%sNew Webscreen:%s %s://localhost:%s/new/\n" "$BOLD" "$RESET" "$PROTOCOL" "$PORT"
+  printf "%sNew network URLs:%s %s%s://atlas-a1.local:%s/new/\n" "$BOLD" "$RESET" "$new_addresses" "$PROTOCOL" "$PORT"
 
   if command -v ss >/dev/null 2>&1; then
     printf "%sListener:%s\n" "$BOLD" "$RESET"

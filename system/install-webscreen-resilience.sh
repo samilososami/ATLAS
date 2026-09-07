@@ -12,10 +12,10 @@ runtime="$atlas_home/.atlas/webscreen"
 [[ -f "$runtime/start.sh" ]] || { echo "Existing WebScreen installation not found" >&2; exit 1; }
 atlas_user=${ATLAS_USER:-$(stat -c %U "$atlas_home")}
 atlas_group=$(id -gn "$atlas_user")
-files=(server.py access_control.py gateway_bridge.mjs static/access.js static/app.js static/index.html static/realtime.js static/styles.css
-  static/new/face.css static/new/face.js static/new/audio.js static/new/logo.png static/new/atlas-wordmark.svg)
-system_sources=(atlas-commands/atlas-screen system/libexec/atlas-screen-kiosk-session system/libexec/atlas-screen-browser-watchdog.cjs)
-system_targets=(usr/local/bin/atlas-screen usr/local/libexec/atlas-screen-kiosk-session usr/local/libexec/atlas-screen-browser-watchdog.cjs)
+files=(server.py access_control.py gateway_bridge.mjs static/access.js static/app.js static/index.html static/navigation.js static/realtime.js static/styles.css
+  static/new/face.css static/new/face.js static/new/audio.js static/new/petting.js static/new/logo.png static/new/atlas-wordmark.svg)
+system_sources=(atlas-commands/atlas-screen atlas-commands/atlas-webscreen system/libexec/atlas-screen-kiosk-session system/libexec/atlas-screen-browser-watchdog.cjs)
+system_targets=(usr/local/bin/atlas-screen usr/local/bin/atlas-webscreen usr/local/libexec/atlas-screen-kiosk-session usr/local/libexec/atlas-screen-browser-watchdog.cjs)
 system_root=${ATLAS_SYSTEM_ROOT:-/}
 command -v node >/dev/null || { echo "Node.js is required by the private-pipe kiosk watchdog." >&2; exit 1; }
 for path in "${files[@]}"; do

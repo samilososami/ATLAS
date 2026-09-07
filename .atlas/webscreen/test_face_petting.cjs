@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { createPettingDetector, install } = require('./static/new/petting.js');
+const { createPettingDetector, circleFromEyeSockets, install } = require('./static/new/petting.js');
 
 function pure() {
   const calls = [];
@@ -90,6 +90,20 @@ test('renderer exceptions never escape into pointer handling', () => {
   const detector = createPettingDetector({ onPet() { throw new Error('renderer unavailable'); } });
   assert.doesNotThrow(() => strokes(detector));
 });
+test('the stable circle encloses both complete neutral eye sockets and the mouth', () => {
+  const eyes = [639.6525, 951.3475].map(cx => ({ x: cx - 56, y: 321, width: 112, height: 208 }));
+  const c = circleFromEyeSockets(eyes);
+  assert.equal(c.cx, 795.5);
+  for (const eye of eyes) for (const [x, y] of [[eye.x, eye.y], [eye.x + eye.width, eye.y],
+    [eye.x, eye.y + eye.height], [eye.x + eye.width, eye.y + eye.height]]) {
+    assert.ok(Math.hypot(x - c.cx, y - c.cy) < c.radius, `${x},${y}`);
+  }
+  for (const [x, y] of [[719.5, 546.6], [871.5, 546.6], [795.5, 636.6]]) {
+    assert.ok(Math.hypot(x - c.cx, y - c.cy) < c.radius);
+  }
+  assert.equal(circleFromEyeSockets([]), null);
+  assert.equal(circleFromEyeSockets([{ x: NaN, y: 0, width: 1, height: 1 }]), null);
+});
 
 class Events {
   constructor() { this.listeners = new Map(); }
@@ -121,10 +135,11 @@ class Node extends Events {
 function dom({ design = 'new', scale = 1, initiallyHidden = false } = {}) {
   let now = 1000;
   let eyeScreenScale = 1;
-  const win = new Events(), doc = new Events(), calls = [], observers = [];
+  const win = new Events(), doc = new Events(), calls = [], interactions = [], observers = [];
   win.performance = { now: () => now }; win.navigator = { onLine: true }; win.DOMPoint = Point;
   for (const name of ['setTimeout', 'setInterval', 'requestAnimationFrame', 'fetch']) win[name] = () => { throw new Error(`Petting must not call ${name}`); };
-  win.AtlasFace = { expression(value) { calls.push(value); return true; } };
+  win.AtlasFace = { expression(value) { calls.push(value); return true; },
+    interact(value) { interactions.push(value); stage.dataset.sleep = 'awake'; return true; } };
   win.MutationObserver = class {
     constructor(fn) { this.fn = fn; this.nodes = []; this.disconnected = false; observers.push(this); }
     observe(...args) { this.nodes.push(args); }
@@ -143,7 +158,7 @@ function dom({ design = 'new', scale = 1, initiallyHidden = false } = {}) {
     return new Matrix(scale);
   };
   character.querySelectorAll = () => [{ x: 240, y: 140, width: 120, height: 220 },
-    { x: 640, y: 140, width: 120, height: 220 }, { x: 450, y: 380, width: 120, height: 40 }]
+    { x: 640, y: 140, width: 120, height: 220 }]
     .map((box, i) => ({ getBBox: () => box,
       classList: { contains: name => name === 'face-eye' && i < 2 },
       getScreenCTM: () => new Matrix(scale * (i < 2 ? eyeScreenScale : 1)) }));
@@ -162,7 +177,7 @@ function dom({ design = 'new', scale = 1, initiallyHidden = false } = {}) {
     event('pointermove', { x: x + 10, y, time: start + 20, type });
     for (let i = 1; i <= count; i++) event('pointermove', { x: x + (i % 2 ? 60 : 0), y, time: start + i * 400, type });
   }
-  return { win, doc, stage, character, view, content, connection, panel, observers, calls, api, event, pet,
+  return { win, doc, stage, character, view, content, connection, panel, observers, calls, interactions, api, event, pet,
     blink(value) { eyeScreenScale = value ? 0.065 : 1; },
     mutate() { observers.forEach(observer => observer.fn([])); } };
 }
@@ -180,8 +195,43 @@ test('the face input region is HTML inside the SVG transform for native touch-ac
   assert.equal(zone.nodeName, 'div');
   assert.equal(zone.getAttribute('class'), 'face-petting-zone');
   assert.equal(frame.getAttribute('aria-hidden'), 'true');
+  assert.equal(frame.getAttribute('pointer-events'), 'none');
+  assert.equal(frame.getAttribute('width'), frame.getAttribute('height'));
   assert.ok(Number(frame.getAttribute('width')) > 0);
   assert.ok(Number(frame.getAttribute('height')) > 0);
+});
+test('upper eyes, the forehead, both cheeks and chin are eligible circle areas', () => {
+  for (const [x, y] of [[275, 145], [650, 145], [350, 65], [190, 270], [750, 270], [470, 600]]) {
+    const p = dom(); p.pet({ x, y });
+    assert.equal(p.calls.length, 1, `${x},${y}`);
+  }
+});
+test('all square backing corners outside the circle reject touch and interaction', () => {
+  const c = circleFromEyeSockets([{ x: 240, y: 140, width: 120, height: 220 }, { x: 640, y: 140, width: 120, height: 220 }]);
+  for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
+    const p = dom(); p.pet({ x: c.cx + sx * c.radius * .88, y: c.cy + sy * c.radius * .88 });
+    assert.equal(p.calls.length, 0);
+    assert.equal(p.interactions.length, 0);
+  }
+});
+test('top, bottom and side boundaries use the circle radius rather than its box', () => {
+  const c = circleFromEyeSockets([{ x: 240, y: 140, width: 120, height: 220 }, { x: 640, y: 140, width: 120, height: 220 }]);
+  for (const [dx, dy] of [[0,-1],[0,1],[-1,0],[1,0]]) for (const factor of [.999,1.001]) {
+    const p = dom(); p.event('pointerdown', { x:c.cx+dx*c.radius*factor, y:c.cy+dy*c.radius*factor });
+    assert.equal(p.interactions.length, factor < 1 ? 1 : 0, `${dx},${dy},${factor}`);
+    assert.equal(p.calls.length, 0);
+  }
+});
+test('eligible face contact wakes local sleep without opening voice or triggering delight', () => {
+  const p = dom(); p.stage.dataset.sleep = 'asleep';
+  p.event('pointerdown');
+  assert.equal(p.stage.dataset.sleep, 'awake');
+  assert.equal(p.stage.dataset.state, 'idle');
+  assert.deepEqual(p.interactions, [{ source: 'petting' }]);
+  assert.equal(p.calls.length, 0);
+  p.pet({ down: false });
+  assert.equal(p.calls.length, 1);
+  assert.ok(p.interactions.length <= 3, 'activity is throttled, not emitted every pointermove');
 });
 test('touch, pen and primary mouse drag call the renderer contract exactly once', () => {
   for (const type of ['touch', 'pen', 'mouse']) {
@@ -239,7 +289,7 @@ test('separate short drags do not combine across pointerup', () => {
   assert.equal(p.calls.length, 0);
 });
 test('header, blank space outside the face and a submenu never accumulate petting', () => {
-  for (const [x, y] of [[50, 40], [500, 550], [850, 240]]) {
+  for (const [x, y] of [[50, 40], [500, 700], [850, 240]]) {
     const p = dom(); p.pet({ x, y }); assert.equal(p.calls.length, 0);
   }
   const p = dom(); p.panel.open = true; p.pet(); assert.equal(p.calls.length, 0);

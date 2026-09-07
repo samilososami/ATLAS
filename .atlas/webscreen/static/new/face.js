@@ -58,8 +58,16 @@
   let blinkTimer = 0;
   let blinkEndTimer = 0;
   let pageSuspended = false;
-  const BLINK_INTERVAL_MS = 8700;
-  const BLINK_DURATION_MS = 350;
+  const BLINK_DURATION_MS = 320;
+  const randomBetween = (minimum, maximum) => Math.round(minimum + Math.random() * (maximum - minimum));
+  let connectionHealthy = false;
+  let sleepPhase = "awake";
+  let sleepTimer = 0;
+  let sleepDeadline = 0;
+  let wakingTimer = 0;
+  let idleWasEligible = false;
+  let lastInteractionAt = performance.now();
+  let drowsyDelay = randomBetween(35000, 45000);
   let outputAvailable = true;
   let suspended = document.hidden;
   const levels = Array(61).fill(0);
@@ -107,8 +115,9 @@
   stage.dataset.state = state;
   stage.dataset.expression = activeExpression;
   stage.dataset.expressionSource = activeExpressionSource;
+  stage.dataset.sleep = sleepPhase;
   stage.setAttribute("aria-label", "ATLAS");
-  const expressiveEyes = (side, cx) => expressionNames.filter(name => expressions[name].eyes).map(name => {
+  const expressiveEyes = (side, cx) => expressionNames.filter(name => expressions[name].eyes && name !== "delighted").map(name => {
     const shape = expressions[name].eyes[side];
     return `<g class="face-eye-variant face-eye-${name}"><path d="${shape.d}" transform="translate(${cx} 425)${shape.mirrored ? " scale(-1 1)" : ""}" fill="${shape.stroke ? "none" : blue}" stroke="${shape.stroke ? blue : "none"}" stroke-width="${shape.stroke}" stroke-linecap="round" stroke-linejoin="round"/></g>`;
   }).join("");
@@ -116,13 +125,20 @@
     <defs>
       <linearGradient id="atlas-face-blue" x1="0" y1="0" x2=".8" y2="1"><stop offset="0" stop-color="#00a8ff"/><stop offset=".52" stop-color="#009bff"/><stop offset="1" stop-color="#008cee"/></linearGradient>
       <radialGradient id="atlas-face-light"><stop stop-color="#008fff" stop-opacity=".45"/><stop offset=".42" stop-color="#008fff" stop-opacity=".14"/><stop offset="1" stop-color="#008fff" stop-opacity="0"/></radialGradient>
+      <mask id="atlas-happy-left" maskUnits="userSpaceOnUse" x="569.6525" y="300" width="140" height="260"><rect x="569.6525" y="300" width="140" height="260" fill="white"/><g transform="translate(639.6525 425)"><path class="face-happy-cutout" d="M -75 56 Q 0 -45 75 56 L 75 230 H -75 Z" fill="black"/></g></mask>
+      <mask id="atlas-happy-right" maskUnits="userSpaceOnUse" x="881.3475" y="300" width="140" height="260"><rect x="881.3475" y="300" width="140" height="260" fill="white"/><g transform="translate(951.3475 425)"><path class="face-happy-cutout" d="M -75 56 Q 0 -45 75 56 L 75 230 H -75 Z" fill="black"/></g></mask>
     </defs>
     <g class="face-character">
-      <g class="face-glow"><ellipse cx="631.45" cy="425" rx="127" ry="172" fill="url(#atlas-face-light)"/><ellipse cx="959.55" cy="425" rx="127" ry="172" fill="url(#atlas-face-light)"/><ellipse cx="795.5" cy="532" rx="125" ry="79" fill="url(#atlas-face-light)"/></g>
-      <g class="face-eye-blink face-eye-left"><g class="face-eye-variant face-eye-neutral"><ellipse class="face-eye" cx="631.45" cy="425" rx="56" ry="104" fill="url(#atlas-face-blue)"/></g>${expressiveEyes(0, 631.45)}</g>
-      <g class="face-eye-blink face-eye-right"><g class="face-eye-variant face-eye-neutral"><ellipse class="face-eye" cx="959.55" cy="425" rx="56" ry="104" fill="url(#atlas-face-blue)"/></g>${expressiveEyes(1, 959.55)}</g>
+      <g class="face-breathe"><g class="face-affect-bounce">
+      <g class="face-glow"><ellipse cx="639.6525" cy="425" rx="127" ry="172" fill="url(#atlas-face-light)"/><ellipse cx="951.3475" cy="425" rx="127" ry="172" fill="url(#atlas-face-light)"/><ellipse cx="795.5" cy="532" rx="125" ry="79" fill="url(#atlas-face-light)"/></g>
+      <g class="face-eye-blink face-eye-left"><g class="face-eye-doze face-eye-left"><g class="face-eye-variant face-eye-neutral"><ellipse class="face-eye" cx="639.6525" cy="425" rx="56" ry="104" fill="url(#atlas-face-blue)" mask="url(#atlas-happy-left)"/></g>${expressiveEyes(0, 639.6525)}</g><path class="face-sleep-eye" d="M -49 3 Q 0 35 49 3" transform="translate(639.6525 425)" fill="none" stroke="url(#atlas-face-blue)" stroke-width="17" stroke-linecap="round"/></g>
+      <g class="face-eye-blink face-eye-right"><g class="face-eye-doze face-eye-right"><g class="face-eye-variant face-eye-neutral"><ellipse class="face-eye" cx="951.3475" cy="425" rx="56" ry="104" fill="url(#atlas-face-blue)" mask="url(#atlas-happy-right)"/></g>${expressiveEyes(1, 951.3475)}</g><path class="face-sleep-eye" d="M -49 3 Q 0 35 49 3" transform="translate(951.3475 425)" fill="none" stroke="url(#atlas-face-blue)" stroke-width="17" stroke-linecap="round"/></g>
       <path class="face-mouth-previous" d="${smile}" fill="none" stroke="url(#atlas-face-blue)" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
       <path class="face-mouth" d="${smile}" fill="none" stroke="url(#atlas-face-blue)" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
+      <path class="face-doze-mouth" d="${smile}" fill="none" stroke="#009dff" stroke-width="26" stroke-linecap="round"/>
+      <path class="face-wake-mouth" d="M 795.5 521 A 21 30 0 1 1 795.5 581 A 21 30 0 1 1 795.5 521 Z" fill="url(#atlas-face-blue)"/>
+      </g></g>
+      <g class="face-sleep-z" fill="url(#atlas-face-blue)" aria-hidden="true"><path class="face-z face-z-one" d="M 1028 404 H 1041 V 408 L 1033 418 H 1041 V 422 H 1028 V 418 L 1036 408 H 1028 Z"/><path class="face-z face-z-two" d="M 1056 363 H 1068 V 366 L 1061 375 H 1068 V 379 H 1056 V 375 L 1063 367 H 1056 Z"/><path class="face-z face-z-three" d="M 1080 327 H 1090 V 330 L 1084 337 H 1090 V 340 H 1080 V 337 L 1086 330 H 1080 Z"/></g>
     </g>
     <g class="face-wave" fill="url(#atlas-face-blue)"></g>
   </svg><div class="face-copy"><p class="face-transcript" aria-live="off"></p><p class="face-caption" role="status" aria-live="polite"></p></div>`;
@@ -152,6 +168,7 @@
     clearTimeout(expressionTransitionTimer);
     expressionTransitionTimer = 0;
     if (stage.hasAttribute("data-expression-transition")) stage.removeAttribute("data-expression-transition");
+    if (stage.hasAttribute("data-happy-bounce")) stage.removeAttribute("data-happy-bounce");
   }
   function restMouth() {
     const profile = expressions[activeExpression];
@@ -203,6 +220,7 @@
     if (state === "speaking") speechMouth(mouthLevel); else restMouth();
     if (animate && !suspended && !reducedMotion.matches) {
       stage.setAttribute("data-expression-transition", "true");
+      if (name === "delighted") stage.setAttribute("data-happy-bounce", "true");
       expressionTransitionTimer = setTimeout(clearExpressionTransition, 280);
     }
   }
@@ -230,6 +248,7 @@
     if (!expressionNames.includes(name) || !["model", "petting"].includes(source)) return false;
     if (source === "petting") {
       if (name !== "delighted") return false;
+      interact({ source: "petting" });
       pettingExpression = { expression: name, expiresAt: performance.now() + 6000 };
     } else {
       const duration = Number.isFinite(Number(durationMs)) ? clamp(durationMs, 1000, 30000) : 15000;
@@ -244,20 +263,88 @@
     blinkTimer = blinkEndTimer = 0;
     if (stage.hasAttribute("data-blinking")) stage.removeAttribute("data-blinking");
   }
-  function syncBlink(delay = BLINK_INTERVAL_MS) {
-    if (suspended || state !== "idle" || reducedMotion.matches) { cancelBlink(); return; }
+  function syncBlink(delay) {
+    if (suspended || state !== "idle" || drawerWasOpen || sleepPhase === "asleep" || reducedMotion.matches) { cancelBlink(); return; }
     if (blinkTimer || blinkEndTimer) return;
+    const interval = sleepPhase === "drowsy" ? randomBetween(6000, 8000) : randomBetween(13000, 16000);
     blinkTimer = setTimeout(() => {
       blinkTimer = 0;
-      if (suspended || state !== "idle" || reducedMotion.matches) return;
+      if (suspended || state !== "idle" || drawerWasOpen || sleepPhase === "asleep" || reducedMotion.matches) return;
       const startedAt = performance.now();
       stage.setAttribute("data-blinking", "true");
       blinkEndTimer = setTimeout(() => {
         blinkEndTimer = 0;
         stage.removeAttribute("data-blinking");
-        syncBlink(Math.max(1000, BLINK_INTERVAL_MS - (performance.now() - startedAt)));
+        const nextInterval = sleepPhase === "drowsy" ? randomBetween(6000, 8000) : randomBetween(13000, 16000);
+        syncBlink(Math.max(1000, nextInterval - (performance.now() - startedAt)));
       }, BLINK_DURATION_MS);
-    }, delay);
+    }, delay ?? interval);
+  }
+  function clearWake() {
+    clearTimeout(wakingTimer);
+    wakingTimer = 0;
+    if (stage.hasAttribute("data-waking")) stage.removeAttribute("data-waking");
+  }
+  function clearSleepDeadline() {
+    clearTimeout(sleepTimer);
+    sleepTimer = sleepDeadline = 0;
+  }
+  function canDoze() {
+    return !suspended && !document.hidden && !view.hidden && !content.hidden
+      && !pageSuspended && connectionHealthy && !drawerWasOpen && state === "idle";
+  }
+  function setSleepPhase(next, remaining = 0) {
+    if (sleepPhase === next) return;
+    sleepPhase = next;
+    if (next === "drowsy") stage.style?.setProperty("--face-doze-duration", `${Math.max(1, remaining)}ms`);
+    stage.dataset.sleep = next;
+    cancelBlink();
+    syncBlink();
+  }
+  // This is decorative inactivity only. It neither pauses the recognizer nor
+  // changes the assistant's real state, microphone, audio or response timing.
+  function syncSleepClock() {
+    if (!canDoze()) {
+      clearSleepDeadline();
+      idleWasEligible = false;
+      setSleepPhase("awake");
+      return;
+    }
+    const now = performance.now();
+    if (!idleWasEligible) {
+      idleWasEligible = true;
+      lastInteractionAt = now;
+      drowsyDelay = randomBetween(35000, 45000);
+    }
+    const elapsed = now - lastInteractionAt;
+    const next = elapsed >= 60001 ? "asleep" : elapsed >= drowsyDelay ? "drowsy" : "awake";
+    setSleepPhase(next, 60001 - elapsed);
+    const deadline = next === "awake" ? lastInteractionAt + drowsyDelay : next === "drowsy" ? lastInteractionAt + 60001 : 0;
+    // Repeated healthy heartbeats/render messages must not move or recreate the
+    // deadline. Only an actual interaction or eligibility change starts it anew.
+    if (deadline === sleepDeadline && (sleepTimer || !deadline)) return;
+    clearSleepDeadline();
+    if (deadline) {
+      sleepDeadline = deadline;
+      sleepTimer = setTimeout(() => { sleepTimer = sleepDeadline = 0; syncSleepClock(); }, Math.max(1, deadline - now));
+    }
+  }
+  function interact({ source = "controls" } = {}) {
+    if (!["wake", "petting", "controls"].includes(source) || suspended || document.hidden || view.hidden || content.hidden || pageSuspended) return false;
+    const wasAsleep = sleepPhase === "asleep";
+    clearSleepDeadline();
+    clearWake();
+    lastInteractionAt = performance.now();
+    drowsyDelay = randomBetween(35000, 45000);
+    idleWasEligible = canDoze();
+    setSleepPhase("awake");
+    if (wasAsleep && source === "wake" && !reducedMotion.matches) {
+      stage.setAttribute("data-waking", "true");
+      wakingTimer = setTimeout(clearWake, 180);
+    }
+    syncSleepClock();
+    syncBlink();
+    return true;
   }
   // A display gain, not an invented signal: -55 dBFS is visually still, -14 dBFS
   // is the top of the useful animation range. Silence always remains still.
@@ -300,6 +387,7 @@
     if (!["idle", "listening", "working", "speaking", "connecting", "error"].includes(nextState)) nextState = "working";
     if (nextState !== state) {
       const previousState = state;
+      if (nextState === "listening" || nextState === "speaking") interact({ source: nextState === "listening" ? "wake" : "controls" });
       state = nextState;
       stage.dataset.state = state;
       clearTimeout(boundaryTimer);
@@ -308,17 +396,13 @@
         setText(transcript, "");
         levels.fill(0);
       }
+      if (["connecting", "error"].includes(state)) clearWake();
     }
-    const muted = /silenciado/i.test(`${next.phase || ""} ${next.title || ""}`);
-    const copy = {
-      idle: muted ? "Micrófono silenciado" : "",
-      listening: transcript.textContent ? "" : "Te escucho…",
-      working: "Pensando…",
-      speaking: "",
-      connecting: "Conectando con ATLAS…",
-      error: next.title || "No he podido conectar. Revisa los ajustes.",
-    };
-    setText(caption, copy[state]);
+    // The primary surface is deliberately silent visually. Shared transcript,
+    // status and actionable errors remain in the original debug drawer and dot.
+    setText(caption, "");
+    setText(transcript, "");
+    syncSleepClock();
     syncBlink();
     scheduleDraw();
   }
@@ -329,9 +413,11 @@
       cancelAnimationFrame(frame);
       frame = 0;
       clearTimeout(boundaryTimer);
+      clearWake();
       resetExpression();
       resetMouth();
     } else scheduleDraw();
+    syncSleepClock();
     syncBlink();
   }
   new MutationObserver(onVisibility).observe(view, { attributes: true, attributeFilter: ["hidden"] });
@@ -339,19 +425,23 @@
   document.addEventListener("visibilitychange", onVisibility);
   window.addEventListener("pagehide", () => { pageSuspended = true; onVisibility(); });
   window.addEventListener("pageshow", () => { pageSuspended = false; onVisibility(); });
-  reducedMotion.addEventListener?.("change", () => { clearExpressionTransition(); syncBlink(); scheduleDraw(); });
+  reducedMotion.addEventListener?.("change", () => { clearExpressionTransition(); if (reducedMotion.matches) clearWake(); syncBlink(); scheduleDraw(); });
   // The original drawer handles open/close; add keyboard focus containment to it.
   let drawerWasOpen = false;
   const panelObserver = new MutationObserver(() => {
     const open = panel.classList.contains("open");
     if (open === drawerWasOpen) return;
     drawerWasOpen = open;
+    interact({ source: "controls" });
+    syncSleepClock();
     panel.inert = !open;
     if (open) $("#panel-close")?.focus({ preventScroll: true });
     else menu?.focus({ preventScroll: true });
   });
   panelObserver.observe(panel, { attributes: true, attributeFilter: ["class"] });
   panel.inert = true;
+  panel.addEventListener("pointerdown", event => { if (event.isTrusted !== false) interact({ source: "controls" }); });
+  panel.addEventListener("keydown", event => { if (event.isTrusted !== false) interact({ source: "controls" }); });
   panel.addEventListener("keydown", (event) => {
     if (event.key !== "Tab" || !drawerWasOpen) return;
     const items = [...panel.querySelectorAll("button:not(:disabled), select:not(:disabled), input:not(:disabled), textarea:not(:disabled), summary, a[href]")].filter(el => el.getClientRects().length);
@@ -364,14 +454,10 @@
 
   window.AtlasFace = Object.freeze({
     update,
+    interact,
     expression,
-    reset: resetExpression,
-    transcript(text) {
-      if (state === "idle" || state === "connecting") return;
-      const cleaned = String(text || "").trim();
-      setText(transcript, /^(Escuchando…|Todavía no hay ninguna transcripción\.)$/.test(cleaned) ? "" : cleaned);
-      if (state === "listening") setText(caption, cleaned ? "" : "Te escucho…");
-    },
+    reset() { resetExpression(); clearWake(); clearSleepDeadline(); idleWasEligible = false; setSleepPhase("awake"); syncSleepClock(); },
+    transcript() { setText(transcript, ""); },
     inputLevel(sample) {
       if (state !== "listening" || suspended) return;
       lastInputAt = performance.now();
@@ -387,10 +473,13 @@
       scheduleDraw();
     },
     connection({ healthy = false, label = "" } = {}) {
+      connectionHealthy = Boolean(healthy);
+      if (!connectionHealthy) clearWake();
       setAttribute(connectionDot, "data-healthy", String(Boolean(healthy)));
       const description = label || (healthy ? "ATLAS A1 conectado" : "Sin conexión con ATLAS A1");
       setAttribute(connectionDot, "aria-label", description);
       setAttribute(connectionDot, "title", description);
+      syncSleepClock();
     },
     speechBoundary({ type, charLength = 4 } = {}) {
       if (state !== "speaking" || suspended) return;

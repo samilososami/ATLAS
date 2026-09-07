@@ -8,10 +8,10 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 PUBLIC = ('server.py', 'access_control.py', 'gateway_bridge.mjs', 'static/access.js',
-          'static/app.js', 'static/index.html', 'static/realtime.js', 'static/styles.css',
+          'static/app.js', 'static/index.html', 'static/navigation.js', 'static/realtime.js', 'static/styles.css',
           'static/new/face.css', 'static/new/face.js', 'static/new/audio.js',
-          'static/new/logo.png', 'static/new/atlas-wordmark.svg')
-SYSTEM = ('atlas-commands/atlas-screen', 'system/libexec/atlas-screen-kiosk-session',
+          'static/new/petting.js', 'static/new/logo.png', 'static/new/atlas-wordmark.svg')
+SYSTEM = ('atlas-commands/atlas-screen', 'atlas-commands/atlas-webscreen', 'system/libexec/atlas-screen-kiosk-session',
           'system/libexec/atlas-screen-browser-watchdog.cjs')
 
 
@@ -59,6 +59,7 @@ class WebScreenInstaller(unittest.TestCase):
             self.assertTrue(helper.is_file())
             self.assertEqual(helper.stat().st_mode & 0o777, 0o755)
             self.assertTrue((system / 'usr/local/bin/atlas-screen').is_file())
+            self.assertTrue((system / 'usr/local/bin/atlas-webscreen').is_file())
             # Root-owned backup descendants are private. Return this *fixture*
             # to the test runner for ordinary TemporaryDirectory cleanup.
             if os.geteuid() != 0:

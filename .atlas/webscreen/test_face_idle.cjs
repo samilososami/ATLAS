@@ -5,7 +5,7 @@ const vm = require('node:vm');
 const source = fs.readFileSync(`${__dirname}/static/new/face.js`, 'utf8');
 const css = fs.readFileSync(`${__dirname}/static/new/face.css`, 'utf8');
 
-function setup() {
+function setup(random = .5) {
   let now = 0, sequence = 0, writes = 0, rafRequests = 0;
   const timers = new Map(), frames = new Map(), nodes = new Map(), observers = new Map();
   class Events {
@@ -18,6 +18,7 @@ function setup() {
       super(); this.attributes = new Map(); this.children = []; this.hidden = false;
       this.dataset = {}; this.classes = new Set();
       this.classList = { contains: name => this.classes.has(name) };
+      this.style = { setProperty: (name, value) => { writes++; this.attributes.set(`style:${name}`, value); } };
       this._text = '';
     }
     get textContent() { return this._text; }
@@ -45,7 +46,7 @@ function setup() {
   class Observer { constructor(fn) { this.fn = fn; } observe(el) { observers.set(el, [...(observers.get(el) || []), this.fn]); } }
   vm.runInNewContext(source, { window, document, MutationObserver: Observer,
     setTimeout, clearTimeout: id => timers.delete(id), requestAnimationFrame,
-    cancelAnimationFrame: id => frames.delete(id), performance: { now: () => now }, console });
+    cancelAnimationFrame: id => frames.delete(id), performance: { now: () => now }, Math: Object.assign(Object.create(Math), { random: () => random }), console });
   const stage = node('#view-atlas').children.find(el => el.className === 'face-stage');
   function advance(ms) {
     const until = now + ms;
@@ -59,24 +60,25 @@ function setup() {
   return { window, document, media, node, stage, timers, frames, advance,
     get writes() { return writes; }, get rafRequests() { return rafRequests; },
     hideContent(hidden) { const el = node('#webscreen-content'); el.hidden = hidden; for (const fn of observers.get(el) || []) fn(); },
+    drawer(open) { const el = node('#side-panel'); open ? el.classes.add('open') : el.classes.delete('open'); for (const fn of observers.get(el) || []) fn(); },
     flushFrame() { now += 34; const batch = [...frames.values()]; frames.clear(); batch.forEach(fn => fn(now)); },
   };
 }
 
-test('idle blink is a sparse 350ms one-shot with 8.7s start-to-start cadence', () => {
+test('idle blink is a sparse320ms one-shot with randomized13–16s start-to-start cadence', () => {
   const p = setup();
   assert.equal(p.stage.hasAttribute('data-blinking'), false);
   assert.equal(p.frames.size, 0);
   assert.equal(p.timers.size, 1);
-  p.advance(8699); assert.equal(p.stage.hasAttribute('data-blinking'), false);
+  p.advance(14499); assert.equal(p.stage.hasAttribute('data-blinking'), false);
   p.advance(1); assert.equal(p.stage.getAttribute('data-blinking'), 'true');
-  p.advance(349); assert.equal(p.stage.getAttribute('data-blinking'), 'true');
+  p.advance(319); assert.equal(p.stage.getAttribute('data-blinking'), 'true');
   p.advance(1); assert.equal(p.stage.hasAttribute('data-blinking'), false);
-  p.advance(8349); assert.equal(p.stage.hasAttribute('data-blinking'), false);
+  p.advance(14179); assert.equal(p.stage.hasAttribute('data-blinking'), false);
   p.advance(1); assert.equal(p.stage.getAttribute('data-blinking'), 'true');
   assert.equal(p.rafRequests, 0);
-  assert.match(css, /data-blinking="true".*animation: face-blink \.35s ease-in-out 1/);
-  assert.doesNotMatch(css, /animation:[^;]*infinite/);
+  assert.match(css, /data-blinking="true".*animation: face-blink \.32s ease-in-out 1/);
+  for (const line of css.split('\n').filter(line => /animation:[^;]*infinite/.test(line))) assert.ok(line.includes('[data-sleep="asleep"]'), 'continuous animation is restricted to actual decorative sleep');
   assert.match(css, /body\[data-design="new"\] \.face-character \{[^}]*transform:\s*scale\(1\.875\)/);
   assert.match(css, /data-state="working"\] \.face-character \{[^}]*transform:[^;}]*scale\(1\.875\)/);
 });
@@ -84,12 +86,12 @@ test('idle blink is a sparse 350ms one-shot with 8.7s start-to-start cadence', (
 test('eye spacing is native geometry so blink cannot reset horizontal translation', () => {
   const eyes = [...source.matchAll(/<ellipse class="face-eye" cx="([\d.]+)" cy="([\d.]+)" rx="([\d.]+)" ry="([\d.]+)"/g)];
   assert.equal(eyes.length, 2);
-  assert.ok(Math.abs(Number(eyes[1][1]) - Number(eyes[0][1]) - 386 * .85) < .00001);
+  assert.ok(Math.abs(Number(eyes[1][1]) - Number(eyes[0][1]) - 386 * .85 * .95) < .00001);
   for (const eye of eyes) assert.deepEqual(eye.slice(2), ['425', '56', '104']);
   assert.doesNotMatch(css, /\.face-eye[^{}]*\{[^}]*translate/);
   assert.match(css, /\.face-eye-blink \{ transform-box: view-box; \}/);
-  assert.match(css, /\.face-eye-left \{ transform-origin: 631\.45px 425px; \}/);
-  assert.match(css, /\.face-eye-right \{ transform-origin: 959\.55px 425px; \}/);
+  assert.match(css, /\.face-eye-left \{ transform-origin: 639\.6525px 425px; \}/);
+  assert.match(css, /\.face-eye-right \{ transform-origin: 951\.3475px 425px; \}/);
   assert.match(css, /@keyframes face-blink \{ 0%, 100% \{ transform: scaleY\(1\); \} 30%, 50% \{ transform: scaleY\(\.065\); \} \}/);
 });
 
@@ -106,12 +108,12 @@ test('unchanged idle telemetry causes no DOM writes or animation frame requests'
   }
   assert.equal(p.writes, baseline);
   assert.equal(p.rafRequests, 0);
-  assert.equal(p.timers.size, 1, 'repeat idle calls do not reset the sparse timer');
+  assert.equal(p.timers.size, 2, 'repeat idle calls do not reset blink or decorative sleep deadlines');
 });
 
 test('content/page hiding cancels blink and queued frames; return resumes only idle blink', () => {
   const p = setup(); const face = p.window.AtlasFace;
-  p.advance(8700); p.hideContent(true);
+  p.advance(14500); p.hideContent(true);
   assert.equal(p.timers.size, 0); assert.equal(p.stage.hasAttribute('data-blinking'), false);
   const count = p.rafRequests;
   face.update({ state: 'listening' }); face.inputLevel({ rms: .2 }); p.advance(20000);
@@ -127,7 +129,7 @@ test('content/page hiding cancels blink and queued frames; return resumes only i
 });
 
 test('nonidle and reduced-motion changes cancel active blink without starting replacements', () => {
-  const p = setup(); p.advance(8700);
+  const p = setup(); p.advance(14500);
   p.window.AtlasFace.update({ state: 'working' });
   assert.equal(p.stage.hasAttribute('data-blinking'), false); assert.equal(p.timers.size, 0);
   p.window.AtlasFace.update({ state: 'idle' }); assert.equal(p.timers.size, 1);
@@ -147,7 +149,11 @@ test('unchanged recognized text does not rewrite the caption or transcript', () 
   assert.equal(p.node('.face-caption').textContent, '', 'returning to idle does not restore the removed instruction');
   assert.equal(p.node('.face-transcript').textContent, '', 'recognized text is not left under the ready face');
   face.update({ state: 'idle', title: 'Micrófono silenciado' });
-  assert.equal(p.node('.face-caption').textContent, 'Micrófono silenciado', 'removing the idle hint does not hide an explicit mute warning');
+  assert.equal(p.node('.face-caption').textContent, '', 'mute status remains in original drawer controls, not the primary face');
+  face.update({ state: 'working' });
+  assert.equal(p.node('.face-caption').textContent, '', 'no thinking caption');
+  face.update({ state: 'error', title: 'Permiso de micrófono denegado' });
+  assert.equal(p.node('.face-caption').textContent, '', 'actionable errors remain in original drawer and connection dot, not primary face');
 });
 
 test('all thirteen expressions are strict, native geometry and independent from voice state', () => {
@@ -159,8 +165,8 @@ test('all thirteen expressions are strict, native geometry and independent from 
     assert.equal(p.stage.dataset.state, 'idle');
     assert.equal(p.node('.face-caption').textContent, '');
     assert.ok(p.node('.face-mouth').getAttribute('d')?.startsWith('M ') || expression === 'neutral');
-    assert.ok(p.stage.innerHTML.includes(`face-eye-${expression}`), expression);
-    assert.ok(css.includes(`[data-expression="${expression}"] .face-eye-${expression}`));
+    assert.ok(p.stage.innerHTML.includes(`face-eye-${expression === 'delighted' ? 'neutral' : expression}`), expression);
+    assert.ok(css.includes(`[data-expression="${expression}"] .face-eye-${expression === 'delighted' ? 'neutral' : expression}`));
   }
   for (const payload of [null, {}, { expression: 'happy' }, { expression: '__proto__' }, { expression: 'sad', source: 'remote' }, { expression: 'angry', source: 'petting' }]) {
     assert.equal(face.expression(payload), false);
@@ -223,7 +229,7 @@ test('listening waveform and transcript take priority over expressions without a
   face.expression({ expression: 'angry' });
   face.expression({ expression: 'delighted', source: 'petting' });
   assert.equal(p.stage.dataset.state, 'listening');
-  assert.equal(p.node('.face-transcript').textContent, 'Atlas, cómo estás');
+  assert.equal(p.node('.face-transcript').textContent, '', 'transcript is confined to shared debug UI');
   assert.deepEqual(p.node('.face-wave').children.map(node => node.getAttribute('height')), bars);
   assert.match(css, /data-state="listening"\] \.face-character \{ opacity: 0;/);
   face.update({ state: 'working' });
@@ -309,4 +315,159 @@ test('focused mouth is a filled nonzero-height capsule so its gradient remains v
   assert.equal(p.node('.face-mouth').getAttribute('fill'), 'url(#atlas-face-blue)');
   assert.equal(p.node('.face-mouth').getAttribute('stroke-width'), '0');
   assert.equal(p.node('.face-mouth').getAttribute('d'), 'M 766 535 H 825 A 9 9 0 0 1 825 553 H 766 A 9 9 0 0 1 766 535 Z');
+});
+
+test('drowsiness starts in35–45s and full decorative sleep only after one minute', () => {
+  for (const [random, dozeAt] of [[0, 35000], [.5, 40000], [1, 45000]]) {
+    const p = setup(random), face = p.window.AtlasFace;
+    face.connection({ healthy: true });
+    p.advance(dozeAt - 1); assert.equal(p.stage.dataset.sleep, 'awake');
+    p.advance(1); assert.equal(p.stage.dataset.sleep, 'drowsy');
+    assert.equal(p.stage.getAttribute('style:--face-doze-duration'), `${60001 - dozeAt}ms`);
+    p.advance(60000 - dozeAt); assert.equal(p.stage.dataset.sleep, 'drowsy');
+    p.advance(1); assert.equal(p.stage.dataset.sleep, 'asleep');
+    assert.equal(p.stage.dataset.state, 'idle', 'decorative sleep never changes the voice state');
+    assert.equal(p.rafRequests, 0); assert.equal(p.timers.size, 0);
+    p.advance(300000); assert.equal(p.rafRequests, 0); assert.equal(p.timers.size, 0);
+  }
+});
+
+test('healthy polling, repeated idle updates and ambient RMS cannot postpone sleep', () => {
+  const p = setup(), face = p.window.AtlasFace;
+  face.connection({ healthy: true });
+  for (let i = 0; i < 60; i++) {
+    p.advance(1000);
+    face.update({ state: 'idle' }); face.connection({ healthy: true });
+    face.inputLevel({ rms: .6 }); face.outputLevel({ rms: .6 });
+    face.transcript('discarded ambient words');
+  }
+  assert.equal(p.stage.dataset.sleep, 'drowsy');
+  p.advance(1); assert.equal(p.stage.dataset.sleep, 'asleep');
+  assert.equal(p.node('.face-transcript').textContent, '');
+  assert.equal(p.node('.face-caption').textContent, '');
+  assert.equal(p.rafRequests, 0);
+});
+
+test('awake blink has13–16s bounds and drowsy blink switches to6–8s', () => {
+  for (const [random, interval, drowsy, tiredInterval] of [[0, 13000, 35000, 6000], [1, 16000, 45000, 8000]]) {
+    const p = setup(random), face = p.window.AtlasFace;
+    face.connection({ healthy: true });
+    p.advance(interval - 1); assert.equal(p.stage.hasAttribute('data-blinking'), false);
+    p.advance(1); assert.equal(p.stage.hasAttribute('data-blinking'), true);
+    p.advance(drowsy - interval); assert.equal(p.stage.dataset.sleep, 'drowsy');
+    assert.equal(p.stage.hasAttribute('data-blinking'), false);
+    p.advance(tiredInterval - 1); assert.equal(p.stage.hasAttribute('data-blinking'), false);
+    p.advance(1); assert.equal(p.stage.hasAttribute('data-blinking'), true);
+    p.advance(320); assert.equal(p.stage.hasAttribute('data-blinking'), false);
+  }
+});
+
+test('wake admits listening and real RMS immediately while surprise lasts only180ms', () => {
+  const p = setup(), face = p.window.AtlasFace;
+  face.connection({ healthy: true }); p.advance(60001);
+  face.update({ state: 'listening', phase: 'ESCUCHANDO' });
+  assert.equal(p.stage.dataset.sleep, 'awake');
+  assert.equal(p.stage.dataset.state, 'listening');
+  assert.equal(p.stage.getAttribute('data-waking'), 'true');
+  face.inputLevel({ rms: .2 }); p.flushFrame();
+  assert.ok(Number(p.node('.face-wave').children[30].getAttribute('height')) > 4);
+  assert.equal(p.stage.getAttribute('data-waking'), 'true', 'wave data updates before the visual surprise finishes');
+  p.advance(145); assert.equal(p.stage.getAttribute('data-waking'), 'true');
+  p.advance(1); assert.equal(p.stage.hasAttribute('data-waking'), false);
+  assert.equal(p.stage.dataset.state, 'listening');
+});
+
+test('awake and merely drowsy wake events never add the asleep surprise pose', () => {
+  for (const idleFor of [1000, 40000]) {
+    const p = setup(), face = p.window.AtlasFace;
+    face.connection({ healthy: true }); p.advance(idleFor);
+    face.update({ state: 'listening', phase: 'ESCUCHANDO' });
+    assert.equal(p.stage.dataset.sleep, 'awake');
+    assert.equal(p.stage.dataset.state, 'listening');
+    assert.equal(p.stage.hasAttribute('data-waking'), false);
+    face.inputLevel({ rms: .2 }); p.flushFrame();
+    assert.ok(Number(p.node('.face-wave').children[30].getAttribute('height')) > 4);
+  }
+});
+
+test('petting contact wakes instantly without changing voice, and restarts inactivity deadline', () => {
+  const p = setup(), face = p.window.AtlasFace;
+  face.connection({ healthy: true }); p.advance(60001);
+  assert.equal(face.interact({ source: 'petting' }), true);
+  assert.equal(p.stage.dataset.sleep, 'awake');
+  assert.equal(p.stage.dataset.state, 'idle');
+  assert.equal(p.stage.hasAttribute('data-waking'), false);
+  assert.equal(p.frames.size, 0);
+  p.advance(39999); assert.equal(p.stage.dataset.sleep, 'awake');
+  p.advance(1); assert.equal(p.stage.dataset.sleep, 'drowsy');
+  face.expression({ expression: 'delighted', source: 'petting' });
+  assert.equal(p.stage.dataset.sleep, 'awake');
+  assert.equal(p.stage.dataset.expression, 'delighted');
+  assert.equal(face.interact({ source: 'heartbeat' }), false);
+});
+
+test('working, speaking and drawer activity keep the mascot awake without a dormant deadline', () => {
+  const p = setup(), face = p.window.AtlasFace;
+  face.connection({ healthy: true }); p.advance(40000);
+  face.update({ state: 'working' });
+  assert.equal(p.stage.dataset.sleep, 'awake');
+  p.advance(120000); assert.equal(p.stage.dataset.sleep, 'awake');
+  face.update({ state: 'speaking' }); p.advance(120000);
+  assert.equal(p.stage.dataset.sleep, 'awake');
+  face.update({ state: 'idle' }); p.advance(40000);
+  assert.equal(p.stage.dataset.sleep, 'drowsy');
+  p.drawer(true);
+  assert.equal(p.stage.dataset.sleep, 'awake');
+  assert.equal(p.timers.size, 0, 'drawer cancels blink and sleep timers');
+  p.advance(120000); assert.equal(p.stage.dataset.sleep, 'awake');
+  p.drawer(false); p.advance(39999);
+  assert.equal(p.stage.dataset.sleep, 'awake');
+  p.advance(1); assert.equal(p.stage.dataset.sleep, 'drowsy');
+});
+
+test('disconnect, hidden content, reset and errors clear sleep and wake-transition resources', () => {
+  const p = setup(), face = p.window.AtlasFace;
+  face.connection({ healthy: true }); p.advance(60001);
+  face.connection({ healthy: false });
+  assert.equal(p.stage.dataset.sleep, 'awake');
+  p.advance(120000); assert.equal(p.stage.dataset.sleep, 'awake');
+  face.connection({ healthy: true }); p.advance(60001);
+  p.hideContent(true);
+  assert.equal(p.stage.dataset.sleep, 'awake'); assert.equal(p.timers.size, 0);
+  assert.equal(face.interact({ source: 'petting' }), false);
+  p.hideContent(false); p.advance(60001);
+  face.update({ state: 'listening' });
+  assert.equal(p.stage.hasAttribute('data-waking'), true);
+  face.update({ state: 'error' });
+  assert.equal(p.stage.hasAttribute('data-waking'), false);
+  assert.equal(p.timers.size, 0);
+  face.update({ state: 'idle' }); p.advance(60001);
+  face.reset(); assert.equal(p.stage.dataset.sleep, 'awake');
+  assert.equal(p.stage.hasAttribute('data-waking'), false);
+});
+
+test('reduced motion preserves inactivity semantics but removes blink, breathing and z drift', () => {
+  const p = setup(), face = p.window.AtlasFace;
+  p.media.matches = true; p.media.emit('change'); face.connection({ healthy: true });
+  p.advance(60001); assert.equal(p.stage.dataset.sleep, 'asleep');
+  assert.equal(p.rafRequests, 0); assert.equal(p.timers.size, 0);
+  face.update({ state: 'listening' });
+  assert.equal(p.stage.dataset.sleep, 'awake');
+  assert.equal(p.stage.hasAttribute('data-waking'), false);
+  assert.match(css, /prefers-reduced-motion: reduce[\s\S]*animation: none !important/);
+});
+
+test('happy uses rising masks on persistent ovals, not a crossfade to replacement eyes', () => {
+  const p = setup(), face = p.window.AtlasFace;
+  assert.match(p.stage.innerHTML, /mask="url\(#atlas-happy-left\)"/);
+  assert.match(p.stage.innerHTML, /mask="url\(#atlas-happy-right\)"/);
+  assert.doesNotMatch(p.stage.innerHTML, /face-eye-variant face-eye-delighted/);
+  assert.match(css, /\.face-happy-cutout \{ transform: translateY\(160px\); transition: transform \.26s/);
+  assert.match(css, /data-expression="delighted"\] \.face-happy-cutout \{ transform: translateY\(0\);/);
+  face.expression({ expression: 'delighted' });
+  assert.equal(p.stage.getAttribute('data-happy-bounce'), 'true');
+  p.advance(280); assert.equal(p.stage.hasAttribute('data-happy-bounce'), false);
+  face.expression({ expression: 'neutral' });
+  assert.equal(p.stage.dataset.expression, 'neutral');
+  assert.equal(p.rafRequests, 0);
 });

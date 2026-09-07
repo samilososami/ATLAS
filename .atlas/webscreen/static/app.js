@@ -67,7 +67,7 @@ const menuToggle = document.querySelector("#menu-toggle");
 const panelBackdrop = document.querySelector("#panel-backdrop");
 const sidePanel = document.querySelector("#side-panel");
 const panelClose = document.querySelector("#panel-close");
-const toolTabs = [...document.querySelectorAll(".tool-tab")];
+const toolTabs = [...document.querySelectorAll(".tool-tab[data-view]")];
 const appViews = [...document.querySelectorAll(".app-view")];
 
 const healthDot = document.querySelector("#health-dot");

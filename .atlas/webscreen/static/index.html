@@ -8,7 +8,7 @@
     <meta name="google" content="notranslate" />
     <title>ATLAS WebScreen</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/styles.css?v=2026-09-06-resilience-1" />
+    <link rel="stylesheet" href="/styles.css?v=2026-09-07-design-navigation-1" />
   </head>
   <body>
     <section class="access-blocked" id="access-blocked" aria-labelledby="access-title">
@@ -17,6 +17,7 @@
         <h1 id="access-title">Conectando con ATLAS…</h1>
         <p id="access-detail" role="status">Comprobando quién tiene el control.</p>
         <button class="primary" id="access-takeover" type="button" disabled>Tomar control</button>
+        <a class="webscreen-design-switch webscreen-design-access" data-webscreen-design-switch href="/new/" target="_self">New Webscreen</a>
       </div>
     </section>
     <audio id="realtime-audio" autoplay playsinline hidden></audio>
@@ -38,6 +39,7 @@
         <button class="tool-tab" type="button" data-view="tts" aria-selected="false">Texto a voz</button>
         <button class="tool-tab" type="button" data-view="wakeword" aria-selected="false">Wake word</button>
         <button class="tool-tab" type="button" data-view="settings" aria-selected="false">Ajustes</button>
+        <a class="tool-tab webscreen-design-switch" data-webscreen-design-switch href="/new/" target="_self">New Webscreen</a>
       </nav>
     </aside>
 
@@ -231,6 +233,7 @@
       <span>Silenciar</span>
     </button>
     <script src="/access.js?v=2026-09-07-connection-4"></script>
+    <script src="/navigation.js?v=2026-09-07-design-navigation-1"></script>
     <script src="/kiosk.js?v=2026-08-28-kiosk-1"></script>
     <script src="/realtime.js?v=2026-09-07-connection-4"></script>
     <script src="/app.js?v=2026-09-07-connection-4"></script>

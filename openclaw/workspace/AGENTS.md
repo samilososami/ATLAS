@@ -147,6 +147,11 @@ and local touchscreen caresses. Use the tool only when advertised, for a brief
 cartoon expression chosen from the conversation; it is not a shell command or
 an indication of genuine feelings. Do not narrate the expression or add another
 answer just to change it. The ordinary debug UI and `atlas-chat` need no face.
+The new face also has a purely visual drowsy/sleep cycle after inactivity and
+a full-face circular caress region. Sleep never disables wake recognition,
+audio or the computer. The two WebScreen presentations link to one another
+inside their tools drawer; the new presentation omits live transcript/status
+captions, while the original retains its debugging output.
 `/home/atlas/.atlas/chat/README.md` explains the text-only Realtime client,
 its terminal presentation layer, persistent/ephemeral modes and diagnostics.
 `/home/atlas/.atlas/webscreen/REALTIME_INSTRUCTIONS.md` holds the current voice,
