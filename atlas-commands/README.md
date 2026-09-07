@@ -98,6 +98,30 @@ El editor ofrece sugerencias `/` y referencias locales `@`, historial y entrada
 multilínea. `/files` muestra su carpeta base, `/expand` despliega herramientas
 truncadas y `/compact` alterna su detalle visual sin alterar la memoria.
 
+## `atlas-routines`
+
+Gestiona automatizaciones deterministas compartidas por WebScreen y
+`atlas-chat`. Las frases se comparan de forma exacta y normalizada antes de
+abrir una respuesta del modelo. El registro activo es
+`/home/atlas/.atlas/routines/ROUTINES.md`; un éxito puede pronunciar su propio
+paso `[SAY]` o terminar en silencio.
+
+```bash
+atlas-routines list
+atlas-routines show hora
+atlas-routines create
+atlas-routines run hora
+atlas-routines validate
+atlas-routines edit
+atlas-routines disable hora
+atlas-routines enable hora
+atlas-routines delete hora
+```
+
+Los fallos se detienen y registran para que Realtime los explique sin repetir
+la acción. El wrapper funciona como `sami` y como root; root delega en el
+usuario de servicio.
+
 ## `atlas-say`
 
 Convierte texto en audio mediante ElevenLabs y lo reproduce por la salida predeterminada.

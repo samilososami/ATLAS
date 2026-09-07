@@ -22,10 +22,10 @@ function loadRealtime() {
   return window.AtlasRealtime;
 }
 
-test('Realtime exposes shell and Tavily, but no OpenClaw agent tool', () => {
+test('Realtime exposes shell, Tavily and routines, but no OpenClaw agent tool', () => {
   const realtime = loadRealtime();
   const names = Array.from(realtime._test.realtimeTools, tool => tool.name);
-  assert.deepEqual(names, ['atlas_shell', 'atlas_web_search']);
+  assert.deepEqual(names, ['atlas_shell', 'atlas_web_search', 'atlas_routine']);
 });
 
 test('Tavily tool calls the dedicated backend and returns evidence to Realtime', async () => {

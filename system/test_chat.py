@@ -42,9 +42,10 @@ class AtlasChatTests(unittest.TestCase):
     def test_tool_contract_matches_webscreen_names(self):
         module = self.load_client()
         tools = {entry["name"]: entry for entry in module.REALTIME_TOOLS}
-        self.assertEqual(set(tools), {"atlas_shell", "atlas_web_search"})
+        self.assertEqual(set(tools), {"atlas_shell", "atlas_web_search", "atlas_routine"})
         self.assertEqual(tools["atlas_shell"]["parameters"]["required"], ["command"])
         self.assertEqual(tools["atlas_web_search"]["parameters"]["required"], ["query"])
+        self.assertEqual(tools["atlas_routine"]["parameters"]["required"], ["action"])
         browser = (ROOT / ".atlas/webscreen/static/realtime.js").read_text()
         for name in tools:
             self.assertIn(f'name: "{name}"', browser)

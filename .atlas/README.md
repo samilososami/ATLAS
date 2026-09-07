@@ -13,6 +13,9 @@ live here; OpenClaw keeps your identity and memory in its own workspace.
 - `chat/`: text-only terminal client for the same `gpt-realtime-2.1`, OAuth,
   Markdown context, persistent conversation and direct tools as WebScreen.
   Its private history and diagnostic logs are created only on the live A1.
+- `routines/`: validated deterministic automations shared by WebScreen and
+  `atlas-chat`. Exact phrases run locally before a model response; the live
+  registry, results and logs remain private on A1.
 - `companion/`: authenticated Android service and independent, self-hostable
   encrypted relay. `atlas-app` manages pairing and reports client/relay state.
   Private pairing keys and certificates live only in its ignored `state/`.
@@ -73,6 +76,10 @@ to `/usr/local/bin`, installs its runtime and terminal instruction layer under
 `/home/atlas/.atlas/chat`, reuses WebScreen's Python environment and safely
 adds any missing command-map references without replacing private workspace
 content.
+
+Install or update the routine engine with `sudo bash system/install-routines.sh`.
+It installs `atlas-routines` for the normal user and root, copies the engine and
+manuals, and deliberately preserves an existing live `ROUTINES.md`.
 
 Install the focused Bluetooth/ADB reliability fixes with
 `sudo bash system/install-device-connections.sh`. It backs up the affected

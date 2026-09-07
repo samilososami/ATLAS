@@ -81,11 +81,30 @@ Dispones de atlas_face. Tú, el mismo modelo Realtime, eliges semánticamente la
         required: ["query"],
       },
     },
+    {
+      type: "function",
+      name: "atlas_routine",
+      description: "Lista, consulta, crea, modifica, activa, desactiva, elimina o ejecuta rutinas deterministas de ATLAS. Para crear o modificar, routine contiene un objeto JSON serializado y validado por el backend. Una acción que ya falló solo se inspecciona con last_result; nunca se repite automáticamente.",
+      parameters: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          action: { type: "string", enum: ["list", "show", "upsert", "delete", "enable", "disable", "run", "last_result"] },
+          name: { type: "string", description: "Nombre o id de la rutina." },
+          routine: { type: "string", description: "Objeto completo de la rutina serializado como JSON." },
+          replace: { type: "boolean", description: "Debe ser true al modificar una rutina existente." },
+          execution_id: { type: "string", description: "Id de un fallo ya ejecutado que se quiere inspeccionar." },
+        },
+        required: ["action"],
+      },
+    },
   ];
 
   const normalized = (value) => String(value || "")
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .toLowerCase().replace(/[^a-z0-9ñ]+/g, " ").trim();
+  const routinePhraseKey = (value) => normalized(value)
+    .replace(/^(?:oye\s+)?atlas(?:\s+|$)/u, "").trim();
 
   function wakeInvocation(text) {
     // Realtime occasionally hears the proper name ATLAS as "Adlas" or
@@ -268,6 +287,7 @@ Dispones de atlas_face. Tú, el mismo modelo Realtime, eliges semánticamente la
       this.a1IgnoredInputItems = new Set();
       this.remoteAudio = null;
       this.session = null;
+      this.routineTriggers = new Set();
       this.state = "idle";
       this.closed = true;
       this.conversationActive = false;
@@ -415,6 +435,10 @@ Dispones de atlas_face. Tú, el mismo modelo Realtime, eliges semánticamente la
           throw new Error("El backend no devolvió una sesión WebRTC válida");
         }
         this.session = session;
+        this.routineTriggers = new Set(
+          (Array.isArray(session.atlasRoutineTriggers) ? session.atlasRoutineTriggers : [])
+            .map(routinePhraseKey).filter(Boolean),
+        );
         const peer = new RTCPeerConnection();
         this.peer = peer;
         peer.addEventListener("track", (event) => { if (current()) this.attachRemoteAudio(event); });
@@ -1028,7 +1052,97 @@ Dispones de atlas_face. Tú, el mismo modelo Realtime, eliges semánticamente la
       this.localWakeRequestPending = false;
     }
 
-    submitLocalWakeRequest() {
+    async checkDirectRoutine(text) {
+      try {
+        const response = await this.fetch("/api/routines/execute", {
+          method: "POST", cache: "no-store", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phrase: text, interactionId: this.currentInteractionId || requestId() }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || `Rutinas respondió con HTTP ${response.status}`);
+        return payload;
+      } catch (error) {
+        this.callbacks.addLog?.(`No se pudo comprobar la rutina local: ${error?.message || error}`, null, "error");
+        return { matched: false, checkFailed: true };
+      }
+    }
+
+    routineMayMatch(text) {
+      return this.routineTriggers.has(routinePhraseKey(text));
+    }
+
+    routineFailureNote(result) {
+      return `\n\n[ESTADO LOCAL DE ATLAS: la rutina «${String(result.routineName || "desconocida")}`
+        + `» coincidió y ya se ejecutó, pero falló. No repitas la acción. Consulta atlas_routine con `
+        + `action=last_result y execution_id=${String(result.executionId || "")} para explicar el fallo y, `
+        + "si es una corrección sencilla y segura, ofrecer actualizar la rutina.]";
+    }
+
+    async completeDirectRoutine(text, result, audioItemId = "") {
+      this.clearResponseCreateTimer();
+      this.responseAfterInput = false;
+      this.turnInputPending = false;
+      this.pendingTranscripts = 0;
+      if (audioItemId) this.deleteAudioItem(audioItemId);
+      this.currentUserText = text;
+      this.currentAssistantText = String(result.spokenText || "").trim();
+      this.persistedTurnKey = "";
+      this.callbacks.setTranscript?.(text);
+      this.callbacks.addLog?.(`Rutina «${result.routineName || "sin nombre"}» ejecutada`, result.durationMs);
+      this.postEvent("routine.direct", "La petición se resolvió sin abrir una respuesta del modelo", {
+        text: String(result.routineName || ""), durationMs: result.durationMs,
+      });
+      if (!this.currentAssistantText) {
+        this.returnToWake();
+        return;
+      }
+      this.callbacks.setResponse?.(this.currentAssistantText);
+      this.rememberAssistantEcho(this.currentAssistantText);
+      this.toolActive = true;
+      this.externalPlaybackActive = true;
+      this.setPhysicalPlaybackActive("routine-direct", true);
+      const provider = ["browser", "elevenlabs"].includes(this.outputMode()) ? this.outputMode() : "browser";
+      try {
+        await this.callbacks.playExternalText?.(this.currentAssistantText, provider, {
+          onStart: () => {
+            this.callbacks.setScreen?.("HABLANDO", "ATLAS está hablando", "Respuesta de rutina local.", "speaking");
+            this.postEvent("routine.playback_started", "Comenzó la respuesta de la rutina");
+          },
+        });
+        void this.persistCompletedTurn();
+      } catch (error) {
+        this.callbacks.addLog?.(`No se pudo reproducir la rutina: ${error?.message || error}`, null, "error");
+      } finally {
+        this.externalPlaybackActive = false;
+        this.toolActive = false;
+        this.setPhysicalPlaybackActive("routine-direct", false);
+        this.returnToWake();
+      }
+    }
+
+    submitTranscriptWithRoutine(text, audioItemId = "") {
+      if (!this.routineMayMatch(text)) {
+        this.scheduleResponseAfterInput();
+        return;
+      }
+      const interactionId = this.currentInteractionId;
+      void this.checkDirectRoutine(text).then(async result => {
+        if (this.closed || interactionId !== this.currentInteractionId || this.currentUserText !== text) return;
+        if (result.matched && result.ok) {
+          await this.completeDirectRoutine(text, result, audioItemId);
+          return;
+        }
+        if (result.matched && !result.ok) {
+          this.send({
+            type: "conversation.item.create",
+            item: { type: "message", role: "user", content: [{ type: "input_text", text: this.routineFailureNote(result) }] },
+          });
+        }
+        this.scheduleResponseAfterInput();
+      });
+    }
+
+    async submitLocalWakeRequest() {
       const text = this.localWakeFallbackText.trim();
       if (!text || this.closed || this.state !== "ready" || this.responseActive || this.toolActive
           || this.speechInputActive) return;
@@ -1051,12 +1165,22 @@ Dispones de atlas_face. Tú, el mismo modelo Realtime, eliges semánticamente la
       this.clearLocalWakeAuthorization();
       this.callbacks.setTranscript?.(text);
       this.callbacks.setScreen?.("PROCESANDO", "ATLAS lo está procesando",
-        "Chrome ha entregado la petición a OpenAI Realtime.", "working");
+        "Comprobando una rutina local antes de Realtime.", "working");
+      let routine = { matched: false };
+      if (this.routineMayMatch(text)) {
+        routine = await this.checkDirectRoutine(text);
+        if (this.closed || this.currentUserText !== text) return;
+        if (routine.matched && routine.ok) {
+          await this.completeDirectRoutine(text, routine);
+          return;
+        }
+      }
+      const modelText = routine.matched && !routine.ok ? text + this.routineFailureNote(routine) : text;
       this.send({
         type: "conversation.item.create",
         item: {
           type: "message", role: "user",
-          content: [{ type: "input_text", text }],
+          content: [{ type: "input_text", text: modelText }],
         },
       });
       this.createResponse();
@@ -1524,7 +1648,9 @@ Dispones de atlas_face. Tú, el mismo modelo Realtime, eliges semánticamente la
       this.beginFaceTurn();
       this.persistedTurnKey = "";
       this.callbacks.setScreen?.("PROCESANDO", "ATLAS lo está procesando", "La conversación sigue en la misma sesión.", "working");
-      this.scheduleResponseAfterInput();
+      this.responseAfterInput = false;
+      this.clearResponseCreateTimer();
+      void this.submitTranscriptWithRoutine(text, event.item_id || "");
     }
 
     restoreActiveOutputScreen() {
@@ -1690,6 +1816,10 @@ Dispones de atlas_face. Tú, el mismo modelo Realtime, eliges semánticamente la
         await this.handleWebSearch(callId, args);
         return;
       }
+      if (name === "atlas_routine") {
+        await this.handleRoutineTool(callId, args);
+        return;
+      }
       if (name !== "atlas_shell") {
         this.submitToolResult(callId, { error: `Herramienta Realtime no disponible: ${name}` });
         return;
@@ -1733,6 +1863,52 @@ Dispones de atlas_face. Tú, el mismo modelo Realtime, eliges semánticamente la
           ? { status: "cancelled", message: "La persona interrumpió el trabajo." }
           : { error: error.message || String(error) });
         if (!aborted) this.callbacks.addLog?.(`Shell fallida: ${error.message}`, null, "error");
+      } finally {
+        if (this.consultController === controller) {
+          this.toolActive = false;
+          this.consultController = null;
+        }
+      }
+    }
+
+    async handleRoutineTool(callId, args) {
+      const action = String(args.action || "list");
+      this.toolActive = true;
+      this.callbacks.setScreen?.("RUTINA", "ATLAS está gestionando rutinas", action, "working");
+      this.postEvent("routine.started", "OpenAI Realtime gestiona una rutina", { text: action });
+      this.consultController = new AbortController();
+      const controller = this.consultController;
+      const generation = this.toolGeneration;
+      const lifecycle = this.lifecycle;
+      const current = () => !this.closed && this.lifecycle === lifecycle
+        && this.toolGeneration === generation && !controller.signal.aborted;
+      const started = performance.now();
+      try {
+        const response = await this.fetch("/api/realtime/routine", {
+          method: "POST", cache: "no-store", signal: controller.signal,
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ args, interactionId: this.currentInteractionId || requestId() }),
+        });
+        if (!current()) return;
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.error || `Rutinas respondió con HTTP ${response.status}`);
+        const triggerKeys = (result.routine?.triggers || []).map(routinePhraseKey).filter(Boolean);
+        if (["delete", "disable"].includes(action)) {
+          for (const key of triggerKeys) this.routineTriggers.delete(key);
+        } else if (["upsert", "enable"].includes(action) && result.routine?.enabled) {
+          for (const key of triggerKeys) this.routineTriggers.add(key);
+        }
+        this.callbacks.addLog?.(`Rutina: ${action}`, performance.now() - started);
+        this.postEvent("routine.tool_completed", "El registro de rutinas devolvió su resultado",
+          { durationMs: performance.now() - started, text: action });
+        this.submitToolResult(callId, result);
+      } catch (error) {
+        if (!current()) return;
+        const aborted = error?.name === "AbortError";
+        this.submitToolResult(callId, aborted
+          ? { status: "cancelled", message: "La persona interrumpió la gestión de rutinas." }
+          : { error: error.message || String(error) });
+        if (!aborted) this.callbacks.addLog?.(`Rutina fallida: ${error.message}`, null, "error");
       } finally {
         if (this.consultController === controller) {
           this.toolActive = false;
@@ -2216,7 +2392,7 @@ Dispones de atlas_face. Tú, el mismo modelo Realtime, eliges semánticamente la
           reasoningEffort: this.session?.atlasReasoningEffort || "default",
           effectiveReasoningEffort: this.session?.atlasEffectiveReasoningEffort || "unreported",
           sinceSpeechStoppedMs: this.lastSpeechEndedAt ? performance.now() - this.lastSpeechEndedAt : undefined,
-          clientBuild: "2026-09-07-connection-4", ...extra }),
+          clientBuild: "2026-09-07-routines-1", ...extra }),
       });
     }
 

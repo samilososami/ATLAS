@@ -154,6 +154,10 @@ inside their tools drawer; the new presentation omits live transcript/status
 captions, while the original retains its debugging output.
 `/home/atlas/.atlas/chat/README.md` explains the text-only Realtime client,
 its terminal presentation layer, persistent/ephemeral modes and diagnostics.
+`/home/atlas/.atlas/routines/README.md` defines deterministic routines, exact
+local trigger matching, `[SAY]` templates, failure records and their SSH flow.
+The live definitions are in `/home/atlas/.atlas/routines/ROUTINES.md`; use
+`atlas-routines` or `atlas_routine` instead of hand-writing unvalidated JSON.
 `/home/atlas/.atlas/webscreen/REALTIME_INSTRUCTIONS.md` holds the current voice,
 brevity and direct-answer rules; edit those sections instead of hiding prompts
 in Python. Routine successful actions need only a short acknowledgement, not
@@ -189,6 +193,7 @@ Use them when they match the task. Detailed command docs live in `atlas-commands
 - `atlas-commands/ATLAS-STATUS.md` — `atlas-status`, quick Raspberry Pi health, physical screen, and service state.
 - `atlas-commands/ATLAS-WEBSCREEN.md` — `atlas-webscreen`, local ATLAS visual/voice web surface.
 - `atlas-commands/ATLAS-CHAT.md` — `atlas-chat`, direct text-only Realtime terminal with visible tools and timings.
+- `atlas-commands/ATLAS-ROUTINES.md` — `atlas-routines`, exact local automations shared by WebScreen and atlas-chat, with validated SSH management.
 - `atlas-commands/ATLAS-DESKTOP.md` — `atlas-desktop`, visual desktop, windows, browser, screenshots, clicks, and wallpapers.
 - `atlas-commands/ATLAS-SCREEN.md` — `atlas-screen`, physical SunFounder power, desktop, root terminal, and touchscreen WebScreen kiosk.
 - `atlas-commands/ATLAS-RAFAS.md` — `atlas-rafas`, system/network diagnostics, safe interactive doctor and local root recovery.
@@ -206,6 +211,13 @@ diagnosis. Use `atlas-chat -p "..."` for one non-interactive turn and
 `atlas-chat --ephemeral -p "..."` when a benchmark must neither read nor alter
 the persistent conversation. It is an interactive client, not a service, so it
 does not belong in `atlas-status` service health.
+
+Routine phrases are checked locally before a Realtime response is created.
+Successful steps therefore do not need a second model acknowledgement: a
+`say` step provides the response, while routines without it intentionally end
+silently. If a routine fails, inspect its recorded result and never repeat the
+operation automatically. Use Realtime to create or repair a definition only
+after its intent, exact phrase and name are clear.
 
 For connection problems, follow [`ATLAS-CONNECTIONS.md`](ATLAS-CONNECTIONS.md)
 and the relevant command manual. Inspect logs before repairs; preserve private

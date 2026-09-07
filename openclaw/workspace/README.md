@@ -19,7 +19,8 @@ Este directorio contiene la base de contexto que convierte una instalación de O
 - [`ATLAS-CONNECTIONS.md`](ATLAS-CONNECTIONS.md): mapa de diagnóstico de WebScreen, voz, permisos de página, audio Bluetooth y ADB; relaciona implementación, manuales y despliegues acotados.
 - `NMAP.md`: descubrimiento acotado de red y uso del informe privado automático.
 - `atlas-commands/`: documentación actual de cada comando para el agente,
-  incluido `ATLAS-CHAT.md` para el cliente Realtime de terminal.
+  incluidos `ATLAS-CHAT.md` para el cliente Realtime de terminal y
+  `ATLAS-ROUTINES.md` para las automatizaciones locales deterministas.
 
 El runtime de voz y pantalla vive en [`../../.atlas`](../../.atlas), separado de la identidad y memoria de OpenClaw.
 

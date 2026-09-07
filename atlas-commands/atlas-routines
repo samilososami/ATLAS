@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ATLAS_USER=${ATLAS_USER:-sami}
+ATLAS_HOME=${ATLAS_HOME:-/home/atlas}
+PYTHON=${ATLAS_PYTHON:-$ATLAS_HOME/.atlas/webscreen/.venv/bin/python}
+CLIENT=$ATLAS_HOME/.atlas/routines/atlas_routines.py
+
+[[ -x $PYTHON ]] || { echo "atlas-routines: no encuentro Python en $PYTHON" >&2; exit 1; }
+[[ -r $CLIENT ]] || { echo "atlas-routines: no encuentro $CLIENT" >&2; exit 1; }
+
+if (( EUID == 0 )); then
+  exec runuser -u "$ATLAS_USER" -- env HOME="$ATLAS_HOME" ATLAS_ROUTINES_DIR="$ATLAS_HOME/.atlas/routines" "$PYTHON" "$CLIENT" "$@"
+fi
+if [[ $(id -un) != "$ATLAS_USER" ]]; then
+  echo "atlas-routines: ejecútalo como $ATLAS_USER o como root" >&2
+  exit 1
+fi
+export ATLAS_ROUTINES_DIR="$ATLAS_HOME/.atlas/routines"
+exec "$PYTHON" "$CLIENT" "$@"

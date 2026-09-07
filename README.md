@@ -96,6 +96,11 @@ shows the actual 1024 × 600 display after deployment.
 Una sola pestaña controla WebScreen a la vez. Las demás muestran **Tomar control**: al pulsarlo, el permiso pasa inmediatamente al nuevo dispositivo, sin solicitud ni confirmación. La pestaña anterior detiene micrófono, audio y trabajo activo y muestra la pantalla bloqueada. La conversación de OpenClaw se conserva; este control de uso no sustituye una futura autenticación.
 
 - `gpt-realtime-2.1` conversa, razona y utiliza `atlas_shell` y `atlas_web_search` (Tavily) directamente. Recibe identidad, Markdown, informes actuales y contexto conversacional; no usa el preámbulo ni `openclaw_agent_consult` del pipeline antiguo.
+- Las rutinas deterministas se guardan en `.atlas/routines/ROUTINES.md`. Una
+  frase exacta se resuelve localmente antes de abrir una respuesta de Realtime,
+  con pasos de shell, variables capturadas y respuesta `[SAY]` opcional. Se
+  crean y administran hablando con ATLAS o por SSH mediante `atlas-routines`;
+  un fallo se entrega al modelo para explicarlo sin repetir la acción.
 - `atlas-chat` abre esa misma ruta Realtime en la terminal, solo por texto, con
   el mismo OAuth, instrucciones, contexto y herramientas. Transmite la respuesta
   en blanco y separa en gris cada comando, búsqueda y salida real, además de
@@ -154,7 +159,7 @@ Los tokens, API keys, sesiones, credenciales, historiales, datos personales y co
 
 ## Comandos de ATLAS
 
-La carpeta [`atlas-commands`](atlas-commands) contiene los comandos `atlas-*` utilizados para gestionar audio, Spotify, pantalla, casting, estado del sistema, TTS, servicios del dispositivo y el cliente Realtime de terminal. Cada comando se acompaña de una descripción breve y ejemplos de uso.
+La carpeta [`atlas-commands`](atlas-commands) contiene los comandos `atlas-*` utilizados para gestionar audio, Spotify, pantalla, casting, estado del sistema, TTS, servicios del dispositivo, rutinas y el cliente Realtime de terminal. Cada comando se acompaña de una descripción breve y ejemplos de uso.
 
 Para instalar o actualizar el chat de terminal en ATLAS A1, conservando copias
 fechadas y dejándolo disponible tanto para `sami` como para root:

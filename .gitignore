@@ -41,6 +41,9 @@ openclaw/workspace/CUSTOM_INFO.md
 /.atlas/companion/state/
 /.atlas/chat/history
 /.atlas/chat/logs/
+/.atlas/routines/.lock
+/.atlas/routines/logs/
+/.atlas/routines/results/
 /android/.gradle/
 /android/.kotlin/
 /android/local.properties

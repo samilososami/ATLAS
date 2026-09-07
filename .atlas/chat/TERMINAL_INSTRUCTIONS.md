@@ -11,6 +11,9 @@ WebScreen, but adapt presentation to a developer terminal:
 - Tool calls and their real output are rendered separately by the client, so do
   not repeat raw commands or output unless the user asks or interpretation is
   necessary.
+- Routine management uses the same `atlas_routine` tool and creation dialogue as
+  WebScreen. A direct match is executed before a model response and appears as a
+  grey RUTINA panel; a successful silent routine needs no invented reply.
 - Keep answers compact by default, while allowing the extra precision expected
   in a terminal debugging session.
 - An @"/absolute/path" reference identifies a file the user selected in the

@@ -39,7 +39,7 @@ CHAT_DIR = Path(os.environ.get("ATLAS_CHAT_DIR", ATLAS_HOME / ".atlas" / "chat")
 TERMINAL_INSTRUCTIONS_FILE = CHAT_DIR / "TERMINAL_INSTRUCTIONS.md"
 HISTORY_FILE = CHAT_DIR / "history"
 LOG_DIR = CHAT_DIR / "logs"
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 
 COMMANDS = {
     "/help": "Ver comandos y atajos",
@@ -266,6 +266,28 @@ REALTIME_TOOLS: list[dict[str, Any]] = [
             "required": ["query"],
         },
     },
+    {
+        "type": "function",
+        "name": "atlas_routine",
+        "description": (
+            "Gestiona rutinas deterministas de ATLAS. Usa routine como JSON serializado. "
+            "Un fallo ya ejecutado se inspecciona con last_result y nunca se repite automáticamente."
+        ),
+        "parameters": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "action": {"type": "string", "enum": [
+                    "list", "show", "upsert", "delete", "enable", "disable", "run", "last_result",
+                ]},
+                "name": {"type": "string"},
+                "routine": {"type": "string", "description": "Objeto completo serializado como JSON."},
+                "replace": {"type": "boolean"},
+                "execution_id": {"type": "string"},
+            },
+            "required": ["action"],
+        },
+    },
 ]
 
 
@@ -294,6 +316,7 @@ class AtlasChat:
         self._interrupted = False
         self.compact = True
         self.tool_details: list[tuple[str, str]] = []
+        self.last_direct_routine_handled = False
         self._prepare_storage()
 
     def _prepare_storage(self) -> None:
@@ -442,6 +465,9 @@ class AtlasChat:
         elif name == "atlas_web_search":
             title = "WEB"
             body = str(args.get("query") or "").strip()
+        elif name == "atlas_routine":
+            title = "RUTINA"
+            body = f"{args.get('action', 'list')} {args.get('name', '')}".strip()
         else:
             title = name or "TOOL"
             body = json.dumps(args, ensure_ascii=False)
@@ -505,6 +531,8 @@ class AtlasChat:
                     args.get("max_results", 5),
                     str(args.get("time_range") or ""),
                 )
+            elif name == "atlas_routine":
+                result = self.webscreen.manage_realtime_routine(args)
             else:
                 result = {"ok": False, "error": f"Herramienta Realtime no disponible: {name}"}
         except Exception as error:
@@ -518,12 +546,38 @@ class AtlasChat:
         prompt = prompt.strip()
         if not prompt:
             return ""
+        self.last_direct_routine_handled = False
         self._interrupted = False
         self.tool_buffers.clear()
         self.tool_details.clear()
+        interaction_id = uuid4().hex
+        routine_executor = getattr(getattr(self, "webscreen", None), "execute_routine_phrase", None)
+        direct = routine_executor(prompt) if callable(routine_executor) else {"matched": False}
+        if direct.get("matched"):
+            self._show_tool("atlas_routine", {"action": "run", "name": direct.get("routineName")})
+            self._show_tool_result(direct)
+            self.log("routine.direct", interactionId=interaction_id, prompt=prompt, result=direct)
+            if direct.get("ok"):
+                self.last_direct_routine_handled = True
+                answer = str(direct.get("spokenText") or "").strip()
+                if answer:
+                    self.console.print(Markdown(answer, style="white"))
+                    if self.persist:
+                        try:
+                            self.context_stats, _ = self.webscreen.append_persistent_turn(prompt, answer)
+                        except Exception as error:
+                            self.log("context.persist_error", error=str(error))
+                return answer
+            prompt_for_model = (
+                f"{prompt}\n\n[ESTADO LOCAL DE ATLAS: la rutina «{direct.get('routineName', 'desconocida')}» "
+                f"ya se ejecutó y falló. No repitas la acción. Consulta atlas_routine con action=last_result "
+                f"y execution_id={direct.get('executionId', '')}; explica el fallo y corrige la rutina solo "
+                "si es sencillo, seguro y está autorizado.]"
+            )
+        else:
+            prompt_for_model = prompt
         if self.ws is None:
             self.connect()
-        interaction_id = uuid4().hex
         started = time.perf_counter()
         first_output_ms: float | None = None
         assistant_parts: list[str] = []
@@ -540,7 +594,7 @@ class AtlasChat:
                 "item": {
                     "type": "message",
                     "role": "user",
-                    "content": [{"type": "input_text", "text": prompt}],
+                    "content": [{"type": "input_text", "text": prompt_for_model}],
                 },
             })
             self._send({"type": "response.create"})
@@ -764,11 +818,11 @@ def main(argv: list[str] | None = None) -> int:
     chat: AtlasChat | None = None
     try:
         chat = AtlasChat(console=console, verbose=args.verbose, persist=not args.ephemeral)
-        chat.connect()
         if args.prompt is not None:
             answer = chat.ask(resolve_mentions(args.prompt))
-            return 130 if chat._interrupted else (0 if answer else 1)
+            return 130 if chat._interrupted else (0 if answer or chat.last_direct_routine_handled else 1)
 
+        chat.connect()
         banner(console, chat)
         editor = input_session(chat) if sys.stdin.isatty() and sys.stdout.isatty() else None
         while True:

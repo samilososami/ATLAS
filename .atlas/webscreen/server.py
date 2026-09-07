@@ -15,6 +15,7 @@ import re
 import shutil
 import socket
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -39,6 +40,10 @@ PORT = int(os.environ.get("ATLAS_WEBSCREEN_PORT", "5000"))
 ROOT_DIR = Path(__file__).resolve().parent
 STATIC_DIR = ROOT_DIR / "static"
 NEW_DESIGN_BUILD = "2026-09-07-face-motion-1"
+ROUTINES_DIR = ROOT_DIR.parent / "routines"
+if str(ROUTINES_DIR) not in sys.path:
+    sys.path.insert(0, str(ROUTINES_DIR))
+import routine_engine as routines
 
 
 def render_new_design_shell(source: str) -> bytes:
@@ -1364,6 +1369,47 @@ def execute_realtime_shell(command: str, request_id: str,
     finally:
         with ACTIVE_RUNS_LOCK:
             ACTIVE_RUNS.pop(request_id, None)
+
+
+def execute_routine_phrase(phrase: str) -> dict[str, Any]:
+    """Resolve and execute an exact routine before opening a model response."""
+    return routines.execute_phrase(str(phrase or ""))
+
+
+def manage_realtime_routine(args: dict[str, Any]) -> dict[str, Any]:
+    """Expose validated routine management to the Realtime model."""
+    action = str(args.get("action") or "list").strip().lower()
+    if action == "list":
+        items = [{
+            "id": item["id"], "name": item["name"],
+            "description": item["description"], "triggers": item["triggers"],
+            "enabled": item["enabled"],
+        } for item in routines.list_routines()]
+        return {"ok": True, "routines": items, "count": len(items)}
+    if action == "show":
+        return {"ok": True, "routine": routines.get_routine(str(args.get("name") or ""))}
+    if action == "upsert":
+        value = args.get("routine")
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except json.JSONDecodeError as error:
+                raise routines.RoutineError(f"JSON de rutina inválido: {error}") from error
+        if not isinstance(value, dict):
+            raise routines.RoutineError("Falta el objeto routine")
+        saved = routines.upsert_routine(value, replace=bool(args.get("replace", False)))
+        return {"ok": True, "routine": saved, "message": f"Rutina {saved['name']} guardada"}
+    if action == "delete":
+        deleted = routines.delete_routine(str(args.get("name") or ""))
+        return {"ok": True, "routine": deleted, "message": f"Rutina {deleted['name']} eliminada"}
+    if action in {"enable", "disable"}:
+        saved = routines.set_enabled(str(args.get("name") or ""), action == "enable")
+        return {"ok": True, "routine": saved}
+    if action == "run":
+        return routines.execute_routine(routines.get_routine(str(args.get("name") or "")))
+    if action == "last_result":
+        return routines.get_result(str(args.get("execution_id") or ""))
+    raise routines.RoutineError(f"Acción de rutinas no disponible: {action}")
 
 
 def raise_if_cancelled(event: threading.Event) -> None:
@@ -2728,6 +2774,10 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
             self.handle_realtime_consult()
         elif self.path == "/api/realtime/shell":
             self.handle_realtime_shell()
+        elif self.path == "/api/realtime/routine":
+            self.handle_realtime_routine()
+        elif self.path == "/api/routines/execute":
+            self.handle_routine_execute()
         elif self.path == "/api/realtime/web-search":
             self.handle_realtime_web_search()
         elif self.path == "/api/realtime/event":
@@ -2998,6 +3048,15 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
         session["atlasInstructions"] = realtime_instructions
         session["atlasContext"] = realtime_context
         session["atlasContextStats"] = context_stats
+        try:
+            session["atlasRoutineTriggers"] = [
+                routines.normalize_phrase(trigger)
+                for routine in routines.list_routines() if routine.get("enabled")
+                for trigger in routine.get("triggers", [])
+            ]
+        except (OSError, routines.RoutineError):
+            # A manually damaged optional registry must not take voice offline.
+            session["atlasRoutineTriggers"] = []
         self.send_json(200, {"session": session, "sessionKey": session_key,
                              "legacyFallback": False})
 
@@ -3130,6 +3189,57 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
             self.send_json(400, {"error": str(error)[:300]})
         except OSError as error:
             self.send_json(502, {"error": f"La shell no pudo iniciar: {error}"[:500]})
+
+    def handle_routine_execute(self) -> None:
+        try:
+            payload = self.read_json_payload(maximum=8 * 1024)
+            phrase = str(payload.get("phrase") or "").strip()
+            interaction_id = safe_identifier(
+                str(payload.get("interactionId") or ""), uuid4().hex,
+            )
+            if not phrase:
+                raise ValueError("Falta la frase de la rutina")
+            result = execute_routine_phrase(phrase)
+            if result.get("matched"):
+                append_realtime_event({
+                    "interactionId": interaction_id,
+                    "stage": "routine.completed" if result.get("ok") else "routine.failed",
+                    "message": "ATLAS ejecutó una rutina local" if result.get("ok")
+                    else "Una rutina local falló y no se repetirá automáticamente",
+                    "text": str(result.get("routineName") or ""),
+                    "status": "ok" if result.get("ok") else "failed",
+                    "durationMs": result.get("durationMs"), "source": "routine-direct",
+                }, self.log_client())
+            self.send_json(200, result)
+        except (ValueError, routines.RoutineError) as error:
+            self.send_json(400, {"error": str(error)[:500]})
+        except OSError as error:
+            self.send_json(502, {"error": f"La rutina no pudo iniciar: {error}"[:500]})
+
+    def handle_realtime_routine(self) -> None:
+        try:
+            payload = self.read_json_payload(maximum=32 * 1024)
+            args = payload.get("args")
+            if isinstance(args, str):
+                args = json.loads(args or "{}")
+            if not isinstance(args, dict):
+                args = payload
+            interaction_id = safe_identifier(
+                str(payload.get("interactionId") or ""), uuid4().hex,
+            )
+            result = manage_realtime_routine(args)
+            append_realtime_event({
+                "interactionId": interaction_id, "stage": "routine.managed",
+                "message": "ATLAS gestionó el registro de rutinas",
+                "text": str(args.get("action") or "list"),
+                "status": "ok" if result.get("ok") else "failed",
+                "durationMs": result.get("durationMs"), "source": "routine-tool",
+            }, self.log_client())
+            self.send_json(200, result)
+        except (ValueError, TypeError, json.JSONDecodeError, routines.RoutineError) as error:
+            self.send_json(400, {"error": str(error)[:500]})
+        except OSError as error:
+            self.send_json(502, {"error": f"La rutina no pudo iniciar: {error}"[:500]})
 
     def handle_realtime_web_search(self) -> None:
         try:

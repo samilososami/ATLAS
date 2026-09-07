@@ -12,6 +12,8 @@ keep installation-specific device identities in private records, not here.
   local HTTP health, direct Realtime voice and bounded session recovery.
 - [`ATLAS-CHAT.md`](atlas-commands/ATLAS-CHAT.md): the same model/context/tools
   from a text terminal. Good for logical checks, not an audio latency test.
+- [`ATLAS-ROUTINES.md`](atlas-commands/ATLAS-ROUTINES.md): deterministic local
+  actions, exact phrases, `[SAY]` variables and validated SSH management.
 - [`ATLAS-AUDIO.md`](atlas-commands/ATLAS-AUDIO.md): physical playback routing,
   bounded Bluetooth connection and the headless WirePlumber configuration.
 - [`ADB.md`](ADB.md): authorised Android transports, shared user/root identity,

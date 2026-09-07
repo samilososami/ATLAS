@@ -8,6 +8,13 @@ context, persistent Realtime conversation and direct tools. A final
 can use concise Markdown, paths, digits and technical units instead of the
 speech-oriented formatting used by WebScreen.
 
+Before opening a model response, the client checks the same exact local routine
+registry as WebScreen. A match appears as a grey `RUTINA` panel. Its `[SAY]`
+text is printed in white; a successful routine without `[SAY]` stays silent.
+Failures are passed to Realtime with their execution id and are never replayed
+automatically. The model also receives `atlas_routine` for list/show/create,
+modify and delete flows.
+
 For cross-surface faults, use the [connection map](../../openclaw/workspace/ATLAS-CONNECTIONS.md). A successful terminal turn checks the model/context/tools, not Chrome wake detection or physical audio; see the [reliability verification](../../docs/WEBSCREEN-RELIABILITY-2026-09-06.md).
 
 ```bash
@@ -46,7 +53,7 @@ The installer makes dated backups, installs the command for the normal user and
 root, reuses WebScreen's virtual environment, installs only missing Python
 dependencies, and safely adds missing cross-references to the live workspace.
 
-## Terminal interface · 1.1
+## Terminal interface · 1.2
 
 The input editor owns the `sami ›` prefix, deletion, wrapping and terminal
 resizing. Type `/h` for command suggestions, or `@` to browse workspace files.
