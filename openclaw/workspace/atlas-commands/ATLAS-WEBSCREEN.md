@@ -84,9 +84,10 @@ the local `defiant` face for three seconds. It never records/uploads audio,
 opens a Realtime turn or replaces the wake word. Read
 `/home/atlas/.atlas/webscreen/CLAP.md` before diagnosing or modifying it.
 The ready face blinks for 320 ms at randomized 13–16 second intervals.
-Visual drowsiness starts after 35–45 seconds without interaction and sleep after
-one minute, with slow breathing and rising blue sleep symbols. The wake word
-still works; its brief surprised pose never delays microphone capture. The new
+Visual drowsiness changes only on coordinated blinks: a first pose at 50–55
+seconds, a second at 75–80 seconds, and sleep at 100–105 seconds, with deeper
+symmetric crescent eyes, slow breathing and larger rising/shrinking blue sleep symbols.
+The wake word still works; its brief surprised pose never delays microphone capture. The new
 face has no transcription or thinking text. Hidden views and reduced motion
 cancel animations; there is no permanent idle JavaScript drawing loop.
 

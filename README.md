@@ -75,15 +75,17 @@ including trusted LAN devices.
 The same Realtime model chooses the face's cartoon expression through a local
 visual tool. Repeated back-and-forth touchscreen caresses over a full-face
 circle make it delighted with a soft lift/settle animation. Randomized blinks
-and a progressive drowsy/sleep cycle give the idle face gentle movement;
-sleep is decorative and never switches off wake recognition or delays input.
+reveal two discrete drowsy poses at 50–55 and 75–80 seconds before sleep at
+100–105 seconds; the idle face never continuously squeezes its eyes shut. Sleep
+is decorative and never switches off wake recognition or delays input.
 Browse the [implemented expressions and sleep state](docs/images/webscreen-expressions/README.md):
 these are native WebScreen browser captures, not generated design mockups.
 
 El drawer compartido permite calibrar un doble aplauso en cinco pruebas locales.
-El navegador deriva solo umbrales resumidos de transitorios y espectro a partir
-del analizador del micrófono existente: no almacena ni sube audio. Dos aplausos
-válidos mientras la cara espera muestran la expresión local `defiant` durante
+El navegador deriva solo umbrales resumidos de envolvente, ataque, transitorios
+y espectro a partir del analizador del micrófono existente: no almacena ni sube
+audio. Dos aplausos completos, separados y acústicamente similares mientras la
+cara espera muestran la expresión local `defiant` durante
 tres segundos, sin abrir ni interrumpir una conversación de Realtime. El perfil
 es privado del A1 y se puede recalibrar si cambian la sala o el micrófono; el
 diseño, límites y verificación física están en

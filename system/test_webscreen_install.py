@@ -7,7 +7,8 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-PUBLIC = ('server.py', 'access_control.py', 'gateway_bridge.mjs', 'static/access.js',
+PUBLIC = ('server.py', 'access_control.py', 'gateway_bridge.mjs', 'README.md',
+          'NEW_DESIGN.md', 'CLAP.md', 'static/access.js', 'static/clap.js',
           'static/app.js', 'static/index.html', 'static/navigation.js', 'static/realtime.js', 'static/styles.css',
           'static/new/face.css', 'static/new/face.js', 'static/new/audio.js',
           'static/new/petting.js', 'static/new/logo.png', 'static/new/atlas-wordmark.svg')

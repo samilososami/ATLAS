@@ -39,7 +39,7 @@ HOST = os.environ.get("ATLAS_WEBSCREEN_HOST", "0.0.0.0")
 PORT = int(os.environ.get("ATLAS_WEBSCREEN_PORT", "5000"))
 ROOT_DIR = Path(__file__).resolve().parent
 STATIC_DIR = ROOT_DIR / "static"
-NEW_DESIGN_BUILD = "2026-09-07-clap-1"
+NEW_DESIGN_BUILD = "2026-09-07-clap-2"
 ROUTINES_DIR = ROOT_DIR.parent / "routines"
 if str(ROUTINES_DIR) not in sys.path:
     sys.path.insert(0, str(ROUTINES_DIR))
@@ -1958,12 +1958,16 @@ def _clap_event(value: Any, label: str) -> dict[str, float]:
         "peak": _clap_number(value.get("peak"), 0, 1, f"{label}.peak"),
         "highBandRatio": _clap_number(value.get("highBandRatio"), 0, 1, f"{label}.highBandRatio"),
         "flatness": _clap_number(value.get("flatness"), 0, 1, f"{label}.flatness"),
+        "crestFactor": _clap_number(value.get("crestFactor"), 1, 20, f"{label}.crestFactor"),
+        "spectralCentroidHz": _clap_number(value.get("spectralCentroidHz"), 200, 12000, f"{label}.spectralCentroidHz"),
+        "onsetRatio": _clap_number(value.get("onsetRatio"), 1, 30, f"{label}.onsetRatio"),
+        "eventDurationMs": _clap_number(value.get("eventDurationMs"), 0, 400, f"{label}.eventDurationMs"),
     }
 
 
 def validate_clap_profile(payload: Any) -> dict[str, Any]:
     """Normalize a summary-only double-clap calibration; never accept audio."""
-    if not isinstance(payload, dict) or payload.get("version") != 1:
+    if not isinstance(payload, dict) or payload.get("version") != 2:
         raise ValueError("Formato de mapeo inválido")
     if payload.get("privacy") != "summary-features-only-no-audio":
         raise ValueError("El mapeo no declara privacidad de medidas")
@@ -1982,6 +1986,16 @@ def validate_clap_profile(payload: Any) -> dict[str, Any]:
         "minRmsDb": _clap_number(detector.get("minRmsDb"), -80, 0, "Umbral dB"),
         "minHighBandRatio": _clap_number(detector.get("minHighBandRatio"), .03, .9, "Banda alta"),
         "minFlatness": _clap_number(detector.get("minFlatness"), .03, .95, "Planitud espectral"),
+        "minCrestFactor": _clap_number(detector.get("minCrestFactor"), 1.2, 12, "Factor de cresta"),
+        "minSpectralCentroidHz": _clap_number(detector.get("minSpectralCentroidHz"), 500, 10000, "Centroide espectral"),
+        "minOnsetRatio": _clap_number(detector.get("minOnsetRatio"), 1.1, 15, "Ataque mínimo"),
+        "maxEventMs": _clap_number(detector.get("maxEventMs"), 60, 400, "Duración máxima"),
+        "releaseMs": _clap_number(detector.get("releaseMs"), 40, 180, "Liberación del evento"),
+        "maxPairLevelRatio": _clap_number(detector.get("maxPairLevelRatio"), 1.2, 8, "Similitud del par"),
+        "maxPairCentroidRatio": _clap_number(detector.get("maxPairCentroidRatio"), 1.05, 4, "Similitud espectral"),
+        "maxPairHighBandDelta": _clap_number(detector.get("maxPairHighBandDelta"), .02, .7, "Diferencia de banda alta"),
+        "maxPairDurationRatio": _clap_number(detector.get("maxPairDurationRatio"), 1.1, 6, "Similitud de duración"),
+        "maxPairCrestRatio": _clap_number(detector.get("maxPairCrestRatio"), 1.1, 6, "Similitud de cresta"),
         "noiseMultiplier": _clap_number(detector.get("noiseMultiplier"), 2, 8, "Multiplicador de ruido"),
         "minPairGapMs": _clap_number(detector.get("minPairGapMs"), 80, 1000, "Separación mínima"),
         "maxPairGapMs": _clap_number(detector.get("maxPairGapMs"), 250, 1500, "Separación máxima"),
@@ -1999,7 +2013,7 @@ def validate_clap_profile(payload: Any) -> dict[str, Any]:
             "noiseFloorRms": _clap_number(trial.get("noiseFloorRms"), 0, .2, f"Prueba {index}.ruido"),
         })
     return {
-        "version": 1, "createdAt": created_at, "trialCount": 5,
+        "version": 2, "createdAt": created_at, "trialCount": 5,
         "detector": normalized_detector, "trials": normalized_trials,
         "privacy": "summary-features-only-no-audio",
     }

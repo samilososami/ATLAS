@@ -32,15 +32,18 @@ locally, without opening a voice turn. See the [expression contract](NEW_DESIGN.
 and [implemented-face screenshot gallery](../../docs/images/webscreen-expressions/README.md).
 
 Both tool drawers also include **Doble aplauso**. Five local two-clap trials
-create a private summary-only calibration, then two calibrated transients while
+create a private summary-only calibration, then two complete, independently
+released and acoustically similar calibrated transients while
 ATLAS is waiting temporarily show the local `defiant` face. It neither uploads
 audio nor opens a Realtime turn, and it is disabled outside the ready ATLAS
 surface. See [`CLAP.md`](CLAP.md) for the detector, privacy model and required
 physical verification after calibration.
 
 The awake face uses a single 320 ms blink with a random 13–16 second interval.
-After 35–45 seconds without interaction it becomes drowsy; after one minute it
-visually sleeps with closed eyes, slow breathing and rising blue sleep symbols.
+At a coordinated blink after 50–55 seconds it becomes slightly drowsy; another
+blink after 75–80 seconds lowers the eyelids and turns the mouth down. A final
+blink after 100–105 seconds puts it to sleep with deeper symmetric crescent eyes, slow
+breathing and larger blue sleep symbols that rise diagonally while shrinking.
 The wake detector stays active. The short surprised wake animation is visual
 only and does not defer audio capture or a model request. Caresses cover a
 circle around the whole face, and the delighted reaction has a short lift and

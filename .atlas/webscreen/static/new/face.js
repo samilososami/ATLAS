@@ -63,17 +63,20 @@
   let boundaryTimer = 0;
   let blinkTimer = 0;
   let blinkEndTimer = 0;
+  let blinkPhaseTimer = 0;
+  let lastBlinkStartedAt = -Infinity;
   let pageSuspended = false;
   const BLINK_DURATION_MS = 320;
+  const SLEEP_PHASE_BLINK_GUARD_MS = 8000;
   const randomBetween = (minimum, maximum) => Math.round(minimum + Math.random() * (maximum - minimum));
   let connectionHealthy = false;
   let sleepPhase = "awake";
   let sleepTimer = 0;
   let sleepDeadline = 0;
+  let sleepPlan = null;
   let wakingTimer = 0;
   let idleWasEligible = false;
   let lastInteractionAt = performance.now();
-  let drowsyDelay = randomBetween(35000, 45000);
   let outputAvailable = true;
   let suspended = document.hidden;
   const levels = Array(61).fill(0);
@@ -137,14 +140,14 @@
     <g class="face-character">
       <g class="face-breathe"><g class="face-affect-bounce">
       <g class="face-glow"><ellipse cx="639.6525" cy="425" rx="127" ry="172" fill="url(#atlas-face-light)"/><ellipse cx="951.3475" cy="425" rx="127" ry="172" fill="url(#atlas-face-light)"/><ellipse cx="795.5" cy="532" rx="125" ry="79" fill="url(#atlas-face-light)"/></g>
-      <g class="face-eye-blink face-eye-left"><g class="face-eye-doze face-eye-left"><g class="face-eye-variant face-eye-neutral"><ellipse class="face-eye" cx="639.6525" cy="425" rx="56" ry="104" fill="url(#atlas-face-blue)" mask="url(#atlas-happy-left)"/></g>${expressiveEyes(0, 639.6525)}</g><path class="face-sleep-eye" d="M -49 3 Q 0 35 49 3" transform="translate(639.6525 425)" fill="none" stroke="url(#atlas-face-blue)" stroke-width="17" stroke-linecap="round"/></g>
-      <g class="face-eye-blink face-eye-right"><g class="face-eye-doze face-eye-right"><g class="face-eye-variant face-eye-neutral"><ellipse class="face-eye" cx="951.3475" cy="425" rx="56" ry="104" fill="url(#atlas-face-blue)" mask="url(#atlas-happy-right)"/></g>${expressiveEyes(1, 951.3475)}</g><path class="face-sleep-eye" d="M -49 3 Q 0 35 49 3" transform="translate(951.3475 425)" fill="none" stroke="url(#atlas-face-blue)" stroke-width="17" stroke-linecap="round"/></g>
+      <g class="face-eye-blink face-eye-left"><g class="face-eye-doze face-eye-left"><g class="face-eye-variant face-eye-neutral"><ellipse class="face-eye" cx="639.6525" cy="425" rx="56" ry="104" fill="url(#atlas-face-blue)" mask="url(#atlas-happy-left)"/></g>${expressiveEyes(0, 639.6525)}</g><path class="face-drowsy-eye face-drowsy-eye-left" d="M -56 -38 H 56 L 56 0 C 56 60 31 104 0 104 C -31 104 -56 60 -56 0 Z" transform="translate(639.6525 425)" fill="url(#atlas-face-blue)"/><path class="face-sleep-eye" d="M -49 3 Q 0 52 49 3" transform="translate(639.6525 425)" fill="none" stroke="url(#atlas-face-blue)" stroke-width="17" stroke-linecap="round"/></g>
+      <g class="face-eye-blink face-eye-right"><g class="face-eye-doze face-eye-right"><g class="face-eye-variant face-eye-neutral"><ellipse class="face-eye" cx="951.3475" cy="425" rx="56" ry="104" fill="url(#atlas-face-blue)" mask="url(#atlas-happy-right)"/></g>${expressiveEyes(1, 951.3475)}</g><path class="face-drowsy-eye face-drowsy-eye-right" d="M -56 -38 H 56 L 56 0 C 56 60 31 104 0 104 C -31 104 -56 60 -56 0 Z" transform="translate(951.3475 425)" fill="url(#atlas-face-blue)"/><path class="face-sleep-eye" d="M -49 3 Q 0 52 49 3" transform="translate(951.3475 425)" fill="none" stroke="url(#atlas-face-blue)" stroke-width="17" stroke-linecap="round"/></g>
       <path class="face-mouth-previous" d="${smile}" fill="none" stroke="url(#atlas-face-blue)" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
       <path class="face-mouth" d="${smile}" fill="none" stroke="url(#atlas-face-blue)" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
       <path class="face-doze-mouth" d="${smile}" fill="none" stroke="#009dff" stroke-width="26" stroke-linecap="round"/>
       <path class="face-wake-mouth" d="M 795.5 521 A 21 30 0 1 1 795.5 581 A 21 30 0 1 1 795.5 521 Z" fill="url(#atlas-face-blue)"/>
       </g></g>
-      <g class="face-sleep-z" fill="url(#atlas-face-blue)" aria-hidden="true"><path class="face-z face-z-one" d="M 1028 404 H 1041 V 408 L 1033 418 H 1041 V 422 H 1028 V 418 L 1036 408 H 1028 Z"/><path class="face-z face-z-two" d="M 1056 363 H 1068 V 366 L 1061 375 H 1068 V 379 H 1056 V 375 L 1063 367 H 1056 Z"/><path class="face-z face-z-three" d="M 1080 327 H 1090 V 330 L 1084 337 H 1090 V 340 H 1080 V 337 L 1086 330 H 1080 Z"/></g>
+      <g class="face-sleep-z" fill="url(#atlas-face-blue)" aria-hidden="true"><path class="face-z face-z-one" d="M 0 0 H 22 V 6 L 8 26 H 22 V 33 H 0 V 27 L 14 7 H 0 Z"/><path class="face-z face-z-two" d="M 0 0 H 22 V 6 L 8 26 H 22 V 33 H 0 V 27 L 14 7 H 0 Z"/><path class="face-z face-z-three" d="M 0 0 H 22 V 6 L 8 26 H 22 V 33 H 0 V 27 L 14 7 H 0 Z"/></g>
     </g>
     <g class="face-wave" fill="url(#atlas-face-blue)"></g>
   </svg><div class="face-copy"><p class="face-transcript" aria-live="off"></p><p class="face-caption" role="status" aria-live="polite"></p></div>`;
@@ -175,6 +178,7 @@
     expressionTransitionTimer = 0;
     if (stage.hasAttribute("data-expression-transition")) stage.removeAttribute("data-expression-transition");
     if (stage.hasAttribute("data-happy-bounce")) stage.removeAttribute("data-happy-bounce");
+    if (stage.hasAttribute("data-clap-returning")) stage.removeAttribute("data-clap-returning");
     clearTimeout(clapPulseTimer);
     clapPulseTimer = 0;
     if (stage.hasAttribute("data-clap-activated")) stage.removeAttribute("data-clap-activated");
@@ -216,6 +220,7 @@
   }
   function renderExpression(name, source, animate = true) {
     if (activeExpression === name && activeExpressionSource === source) return;
+    const previousExpression = activeExpression;
     const changed = activeExpression !== name;
     if (changed) {
       clearExpressionTransition();
@@ -230,7 +235,9 @@
     if (animate && !suspended && !reducedMotion.matches) {
       stage.setAttribute("data-expression-transition", "true");
       if (name === "delighted") stage.setAttribute("data-happy-bounce", "true");
-      expressionTransitionTimer = setTimeout(clearExpressionTransition, name === "defiant" ? 160 : 280);
+      if (previousExpression === "defiant" && name === "neutral") stage.setAttribute("data-clap-returning", "true");
+      expressionTransitionTimer = setTimeout(clearExpressionTransition,
+        previousExpression === "defiant" && name === "neutral" ? 340 : name === "defiant" ? 160 : 280);
     }
   }
   function syncExpression() {
@@ -271,25 +278,47 @@
   function cancelBlink() {
     clearTimeout(blinkTimer);
     clearTimeout(blinkEndTimer);
-    blinkTimer = blinkEndTimer = 0;
+    clearTimeout(blinkPhaseTimer);
+    blinkTimer = blinkEndTimer = blinkPhaseTimer = 0;
     if (stage.hasAttribute("data-blinking")) stage.removeAttribute("data-blinking");
   }
   function syncBlink(delay) {
     if (suspended || state !== "idle" || drawerWasOpen || sleepPhase === "asleep" || reducedMotion.matches) { cancelBlink(); return; }
     if (blinkTimer || blinkEndTimer) return;
-    const interval = sleepPhase === "drowsy" ? randomBetween(6000, 8000) : randomBetween(13000, 16000);
+    const interval = sleepPhase === "drowsy-two" ? randomBetween(10000, 13000)
+      : sleepPhase === "drowsy-one" ? randomBetween(12000, 15000)
+        : randomBetween(13000, 16000);
+    const transition = nextSleepTransition();
+    const now = performance.now();
+    let wait = delay ?? interval;
+    if (transition) {
+      const normalAt = now + wait;
+      if (transition.at <= normalAt + SLEEP_PHASE_BLINK_GUARD_MS) {
+        wait = Math.max(1, transition.at - now, lastBlinkStartedAt + SLEEP_PHASE_BLINK_GUARD_MS - now);
+      }
+    }
     blinkTimer = setTimeout(() => {
       blinkTimer = 0;
       if (suspended || state !== "idle" || drawerWasOpen || sleepPhase === "asleep" || reducedMotion.matches) return;
       const startedAt = performance.now();
+      lastBlinkStartedAt = startedAt;
       stage.setAttribute("data-blinking", "true");
+      const phaseChange = nextSleepTransition();
+      if (phaseChange && startedAt + 1 >= phaseChange.at) {
+        blinkPhaseTimer = setTimeout(() => {
+          blinkPhaseTimer = 0;
+          if (canDoze()) setSleepPhase(phaseChange.phase, true);
+        }, Math.round(BLINK_DURATION_MS * .48));
+      }
       blinkEndTimer = setTimeout(() => {
         blinkEndTimer = 0;
         stage.removeAttribute("data-blinking");
-        const nextInterval = sleepPhase === "drowsy" ? randomBetween(6000, 8000) : randomBetween(13000, 16000);
+        const nextInterval = sleepPhase === "drowsy-two" ? randomBetween(10000, 13000)
+          : sleepPhase === "drowsy-one" ? randomBetween(12000, 15000)
+            : randomBetween(13000, 16000);
         syncBlink(Math.max(1000, nextInterval - (performance.now() - startedAt)));
       }, BLINK_DURATION_MS);
-    }, delay ?? interval);
+    }, wait);
   }
   function clearWake() {
     clearTimeout(wakingTimer);
@@ -300,17 +329,36 @@
     clearTimeout(sleepTimer);
     sleepTimer = sleepDeadline = 0;
   }
+  function createSleepPlan(startedAt) {
+    return {
+      drowsyOneAt: startedAt + randomBetween(50000, 55000),
+      drowsyTwoAt: startedAt + randomBetween(75000, 80000),
+      asleepAt: startedAt + randomBetween(100000, 105000),
+    };
+  }
+  function nextSleepTransition() {
+    if (!sleepPlan || !canDoze()) return null;
+    if (sleepPhase === "awake") return { phase: "drowsy-one", at: sleepPlan.drowsyOneAt };
+    if (sleepPhase === "drowsy-one") return { phase: "drowsy-two", at: sleepPlan.drowsyTwoAt };
+    if (sleepPhase === "drowsy-two") return { phase: "asleep", at: sleepPlan.asleepAt };
+    return null;
+  }
   function canDoze() {
     return !suspended && !document.hidden && !view.hidden && !content.hidden
       && !pageSuspended && connectionHealthy && !drawerWasOpen && state === "idle";
   }
-  function setSleepPhase(next, remaining = 0) {
+  function setSleepPhase(next, duringBlink = false) {
     if (sleepPhase === next) return;
     sleepPhase = next;
-    if (next === "drowsy") stage.style?.setProperty("--face-doze-duration", `${Math.max(1, remaining)}ms`);
     stage.dataset.sleep = next;
-    cancelBlink();
-    syncBlink();
+    // A normal state change can rebuild the blink schedule immediately. A
+    // sleep phase change happens at the closed midpoint of the current blink:
+    // let that blink finish before scheduling another one, otherwise the new
+    // phase would tear down its own transition.
+    if (!duringBlink) {
+      cancelBlink();
+      syncBlink();
+    }
   }
   // This is decorative inactivity only. It neither pauses the recognizer nor
   // changes the assistant's real state, microphone, audio or response timing.
@@ -318,6 +366,7 @@
     if (!canDoze()) {
       clearSleepDeadline();
       idleWasEligible = false;
+      sleepPlan = null;
       setSleepPhase("awake");
       return;
     }
@@ -325,19 +374,24 @@
     if (!idleWasEligible) {
       idleWasEligible = true;
       lastInteractionAt = now;
-      drowsyDelay = randomBetween(35000, 45000);
+      sleepPlan = createSleepPlan(now);
     }
-    const elapsed = now - lastInteractionAt;
-    const next = elapsed >= 60001 ? "asleep" : elapsed >= drowsyDelay ? "drowsy" : "awake";
-    setSleepPhase(next, 60001 - elapsed);
-    const deadline = next === "awake" ? lastInteractionAt + drowsyDelay : next === "drowsy" ? lastInteractionAt + 60001 : 0;
-    // Repeated healthy heartbeats/render messages must not move or recreate the
-    // deadline. Only an actual interaction or eligibility change starts it anew.
-    if (deadline === sleepDeadline && (sleepTimer || !deadline)) return;
-    clearSleepDeadline();
-    if (deadline) {
-      sleepDeadline = deadline;
-      sleepTimer = setTimeout(() => { sleepTimer = sleepDeadline = 0; syncSleepClock(); }, Math.max(1, deadline - now));
+    if (reducedMotion.matches) {
+      const transition = nextSleepTransition();
+      const deadline = transition?.at || 0;
+      if (deadline === sleepDeadline && (sleepTimer || !deadline)) return;
+      clearSleepDeadline();
+      if (deadline) {
+        sleepDeadline = deadline;
+        sleepTimer = setTimeout(() => {
+          sleepTimer = sleepDeadline = 0;
+          if (canDoze()) setSleepPhase(transition.phase);
+          syncSleepClock();
+        }, Math.max(1, deadline - now));
+      }
+    } else {
+      clearSleepDeadline();
+      syncBlink();
     }
   }
   function interact({ source = "controls" } = {}) {
@@ -346,8 +400,8 @@
     clearSleepDeadline();
     clearWake();
     lastInteractionAt = performance.now();
-    drowsyDelay = randomBetween(35000, 45000);
-    idleWasEligible = canDoze();
+    sleepPlan = null;
+    idleWasEligible = false;
     setSleepPhase("awake");
     if (wasAsleep && source === "wake" && !reducedMotion.matches) {
       stage.setAttribute("data-waking", "true");
@@ -480,7 +534,7 @@
     interact,
     clap,
     expression,
-    reset() { resetExpression(); clearWake(); clearSleepDeadline(); idleWasEligible = false; setSleepPhase("awake"); syncSleepClock(); },
+    reset() { resetExpression(); clearWake(); clearSleepDeadline(); sleepPlan = null; idleWasEligible = false; setSleepPhase("awake"); syncSleepClock(); },
     transcript() { setText(transcript, ""); },
     inputLevel(sample) {
       if (state !== "listening" || suspended) return;

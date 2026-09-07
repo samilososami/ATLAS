@@ -132,24 +132,29 @@ usable. The listening waveform and actual audio playback remain authoritative.
 
 The sleep reference was generated first with the built-in image tool, then
 recreated in native SVG/CSS. It is a design reference, not a full-screen bitmap.
-Closed downward-bowed eyelids, a small gently downturned mouth and three blue
-sleep symbols on the right preserve the existing face palette and sparse HUD.
+Deep, symmetric crescent eyelids, a small gently downturned mouth and
+large blue sleep symbols on the right preserve the existing face palette and
+sparse HUD.
 
 - **Happy reaction:** brief upward movement of the eyes and smile, then a soft
   settle. The lower eye cutouts rise progressively and reverse on returning to
   neutral; blink, emotion, bounce and breathing transforms have separate owners.
-- **Drowsiness:** after a newly randomized 35–45 seconds without interaction,
-  eyelids gradually lower and the smile softens through neutral to a small
-  frown. Drowsy blinks use a randomized 6–8 second interval.
-- **Asleep:** after more than one minute without interaction, eyes close and
-  slow breathing begins; small blue `z` symbols rise/fade on the right. There
-  is no snoring sound, microphone suspension, OS sleep or network change.
+- **Drowsiness:** the face does not continuously squeeze its eyes shut. A blink
+  at a randomized 50–55 seconds reveals a slightly lower lid and softer smile;
+  a coordinated blink at 75–80 seconds reveals a lower lid and small frown.
+  Those poses remain stable between sparse 12–15 s / 10–13 s blinks.
+- **Asleep:** a final coordinated blink at a randomized 100–105 seconds closes
+  the eyes and begins slow breathing. Each `z` starts lower and about 170%
+  larger, then travels diagonally upward while shrinking and fading. There is
+  no snoring sound, microphone suspension, OS sleep or network change.
 - **Wake:** an accepted wake word resets the visual idle clock. Only a fully
   asleep face shows a brief surprised pose before the waveform; an awake or
   merely drowsy face goes straight to listening. Recording, recognition and model
   processing continue immediately; the visual animation does not delay them.
   A caress can also wake the face locally without sending speech or a prompt.
-- **Timing:** fast reactions use perceptible short transitions (roughly
+- **Timing:** phase changes occur near the closed midpoint of the 320 ms blink,
+  with an eight-second guard against adjacent blinks. Fast reactions use
+  perceptible short transitions (roughly
   180–300 ms), not a literal 1–2 ms which is shorter than one display frame.
   Repeated idle updates, heartbeat and ambient input levels are not interaction.
 - **Efficiency:** sparse deadlines handle idle progression; CSS handles slow
@@ -179,10 +184,11 @@ images. The gallery describes the deterministic capture method and its limits.
   implementation keeps the approved mouth anchor and the exact additional 5%
   reduction in eye separation, rather than copying the concept's larger change
   in eye spacing. It uses real SVG geometry/CSS, not a full-screen bitmap.
-- Regenerated and inspected all thirteen model expressions plus decorative
-  sleep at 1591 × 989. No browser console errors in the capture harness.
-- The complete JavaScript suite passes 297 tests, including 27 renderer tests;
-  the Python WebScreen suite passes 78. Three additional installer/status tests
+- Regenerated and inspected all thirteen model expressions, both drowsy phases
+  and decorative sleep at 1591 × 989. No browser console errors in the capture
+  harness.
+- The complete JavaScript suite passes 309 tests, including 28 renderer tests;
+  the Python WebScreen suite passes 83. Another 24 screen/installer/status tests
   verify runtime file coverage and both local/LAN presentation URLs.
   The separate kiosk watchdog passes 22 tests, including repeated CLI choices,
   both menu directions and a fast menu switch before the next watchdog poll.

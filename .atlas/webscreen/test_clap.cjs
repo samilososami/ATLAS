@@ -6,6 +6,7 @@ const vm = require('node:vm');
 const source = fs.readFileSync(`${__dirname}/static/clap.js`, 'utf8');
 
 function setup() {
+  let claps = 0;
   class Element {
     constructor() { this.children = []; this.hidden = false; this.disabled = false; this.value = 0; this.textContent = ''; this.className = ''; }
     addEventListener(name, listener) { this.listeners ||= {}; this.listeners[name] = listener; }
@@ -16,10 +17,10 @@ function setup() {
   const document = { querySelector(key) { if (!nodes.has(key)) nodes.set(key, new Element()); return nodes.get(key); }, createElement() { return new Element(); } };
   const window = {
     atlasAccess: { hasControl: () => true, fetch: async () => ({ ok: true, json: async () => ({ profile: null }) }) },
-    addEventListener() {}, setTimeout() { return 0; }, clearTimeout() {}, AtlasFace: { clap() { return true; } },
+    addEventListener() {}, setTimeout() { return 0; }, clearTimeout() {}, AtlasFace: { clap() { claps += 1; return true; } },
   };
   vm.runInNewContext(source, { window, document, performance: { now: () => 1000 }, Math, Number, Date, JSON, console });
-  return { clap: window.AtlasClap, window, nodes };
+  return { clap: window.AtlasClap, window, nodes, get claps() { return claps; } };
 }
 
 function broadBandFrame({ rms = .09, peak = .28, high = true } = {}) {
@@ -44,6 +45,67 @@ test('calibrated broad-band transient passes while voice-like low-band sound is 
   assert.equal(clap._candidate(clap._featuresFor(broadBandFrame()), rules, .004), true);
   assert.equal(clap._candidate(clap._featuresFor(broadBandFrame({ high: false })), rules, .004), false);
   assert.equal(clap._candidate(clap._featuresFor(broadBandFrame({ rms: .005, peak: .02 })), rules, .004), false);
+});
+
+function feed(clap, rules, at, values, onPair) {
+  const frame = broadBandFrame(values);
+  frame.at = at;
+  clap._processTransient(clap._featuresFor(frame), rules, .004, onPair);
+}
+
+test('one clap with a multi-frame tail never becomes a double clap', () => {
+  const { clap } = setup();
+  const rules = clap._defaultRules(.004);
+  let pairs = 0;
+  const onPair = () => { pairs += 1; };
+  for (const at of [0, 25, 50]) feed(clap, rules, at, { rms: .003, peak: .008 }, onPair);
+  feed(clap, rules, 100, { rms: .09, peak: .30 }, onPair);
+  feed(clap, rules, 125, { rms: .04, peak: .11 }, onPair);
+  feed(clap, rules, 150, { rms: .018, peak: .05 }, onPair);
+  for (const at of [175, 200, 225, 250, 500, 900]) feed(clap, rules, at, { rms: .003, peak: .008 }, onPair);
+  assert.equal(pairs, 0);
+  assert.equal(clap._state.pair.length, 1, 'the first event is armed but cannot fire alone');
+});
+
+test('a weaker delayed room echo cannot impersonate the second clap', () => {
+  const { clap } = setup();
+  const rules = clap._defaultRules(.004);
+  let pairs = 0;
+  const onPair = () => { pairs += 1; };
+  for (const at of [0, 25, 50]) feed(clap, rules, at, { rms: .003, peak: .008 }, onPair);
+  feed(clap, rules, 100, { rms: .12, peak: .38 }, onPair);
+  for (const at of [125, 150, 175, 200]) feed(clap, rules, at, { rms: .003, peak: .008 }, onPair);
+  feed(clap, rules, 430, { rms: .035, peak: .13 }, onPair);
+  for (const at of [455, 480, 505, 530]) feed(clap, rules, at, { rms: .003, peak: .008 }, onPair);
+  assert.equal(pairs, 0);
+  assert.equal(clap._state.pair.length, 1, 'the echo is rejected and becomes no completed pair');
+});
+
+test('two separate released clap envelopes produce exactly one pair', () => {
+  const { clap } = setup();
+  const rules = clap._defaultRules(.004);
+  let pairs = 0;
+  const onPair = () => { pairs += 1; };
+  for (const at of [0, 25, 50]) feed(clap, rules, at, { rms: .003, peak: .008 }, onPair);
+  for (const clapAt of [100, 500]) {
+    feed(clap, rules, clapAt, { rms: .09, peak: .30 }, onPair);
+    feed(clap, rules, clapAt + 25, { rms: .035, peak: .09 }, onPair);
+    for (const offset of [50, 75, 100, 125]) feed(clap, rules, clapAt + offset, { rms: .003, peak: .008 }, onPair);
+  }
+  assert.equal(pairs, 1);
+  assert.equal(clap._state.pair.length, 0);
+});
+
+test('a sustained broad-band cough-shaped envelope is rejected by duration', () => {
+  const { clap } = setup();
+  const rules = clap._defaultRules(.004);
+  let pairs = 0;
+  const onPair = () => { pairs += 1; };
+  for (const at of [0, 25, 50]) feed(clap, rules, at, { rms: .003, peak: .008 }, onPair);
+  for (let at = 100; at <= 425; at += 25) feed(clap, rules, at, { rms: .07, peak: .24 }, onPair);
+  for (const at of [450, 475, 500, 525, 550]) feed(clap, rules, at, { rms: .003, peak: .008 }, onPair);
+  assert.equal(pairs, 0);
+  assert.equal(clap._state.pair.length, 0, 'a long transient cannot arm the first clap');
 });
 
 test('no analyser frames are requested until calibration or a saved profile is active on ATLAS', () => {

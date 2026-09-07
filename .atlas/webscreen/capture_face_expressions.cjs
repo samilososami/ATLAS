@@ -80,8 +80,19 @@ async function main() {
       AtlasFaceBridge.update({ state: 'idle', phase: 'EN ESPERA' });
       AtlasFaceBridge.connection({ healthy: true, label: 'ATLAS A1 conectado' });
     });
-    await page.clock.runFor(61000);
+    await page.clock.runFor(56000);
+    assert.equal(await page.locator('.face-stage').getAttribute('data-sleep'), 'drowsy-one');
+    await page.waitForTimeout(350);
+    await page.screenshot({ path: path.join(output, '14-drowsy-one.png'), animations: 'allow' });
+    captures.push({ expression: 'drowsy stage one (inactivity)', file: '14-drowsy-one.png' });
+    await page.clock.runFor(25000);
+    assert.equal(await page.locator('.face-stage').getAttribute('data-sleep'), 'drowsy-two');
+    await page.waitForTimeout(350);
+    await page.screenshot({ path: path.join(output, '15-drowsy-two.png'), animations: 'allow' });
+    captures.push({ expression: 'drowsy stage two (inactivity)', file: '15-drowsy-two.png' });
+    await page.clock.runFor(25000);
     assert.equal(await page.locator('.face-stage').getAttribute('data-sleep'), 'asleep');
+    await page.waitForTimeout(350);
     // Choose settled frames of the real CSS animations for a reproducible
     // static sleep illustration (the live browser continues to animate them).
     await page.evaluate(() => {

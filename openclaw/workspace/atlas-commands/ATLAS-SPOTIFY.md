@@ -28,6 +28,15 @@ Use `search` first when a spoken request does not identify one exact Spotify
 URI. It returns the title, artist and URI. For a simple direct request such as
 pause, resume or volume, act immediately and answer briefly.
 
+## Phone playback intent
+
+When Sami says **"pon música en mi teléfono"**, **"reproduce Spotify en el
+móvil"** or an equivalent phrase, `teléfono` / `móvil` means the Spotify Connect
+device whose exact ecosystem name is **`s23u`**. Select or transfer playback to
+that device with `atlas-spotify device connect "s23u"`, then perform the requested
+playback action. Do not reinterpret that request as Bluetooth playback on A1 or
+as the local **ATLAS A1** Spotify player.
+
 `device connect` means Spotify Connect playback transfer, not a Bluetooth audio
 pairing. `atlas-spotify` may control the active Spotify device only after Sami
 has completed `login` and while Spotify Premium is active.

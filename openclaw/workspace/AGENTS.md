@@ -147,15 +147,16 @@ and local touchscreen caresses. Use the tool only when advertised, for a brief
 cartoon expression chosen from the conversation; it is not a shell command or
 an indication of genuine feelings. Do not narrate the expression or add another
 answer just to change it. The ordinary debug UI and `atlas-chat` need no face.
-The new face also has a purely visual drowsy/sleep cycle after inactivity and
-a full-face circular caress region. Sleep never disables wake recognition,
+The new face also has a purely visual, blink-gated drowsy/sleep cycle after
+inactivity and a full-face circular caress region. Sleep never disables wake recognition,
 audio or the computer. The two WebScreen presentations link to one another
 inside their tools drawer; the new presentation omits live transcript/status
 captions, while the original retains its debugging output.
 Both drawers also expose a local **Doble aplauso** calibration. Read
 `/home/atlas/.atlas/webscreen/CLAP.md` before changing it: it observes only the
-existing analyser, saves summary metrics (never audio) privately, and two
-calibrated claps while idle show the three-second local `defiant` face. It is
+existing analyser, saves summary metrics (never audio) privately, and exactly
+two complete, independently released calibrated claps while idle show the
+three-second local `defiant` face. It is
 not a Realtime command, wake word, shell tool or a way to interrupt a turn.
 `/home/atlas/.atlas/chat/README.md` explains the text-only Realtime client,
 its terminal presentation layer, persistent/ephemeral modes and diagnostics.

@@ -3,8 +3,8 @@
 El gesto de doble aplauso es una capa de interfaz de WebScreen: no abre un turno
 de Realtime, no ejecuta un comando y no sustituye la wake word. Tras una
 calibración guardada, dos aplausos claros mientras ATLAS está **en espera**
-muestran la cara `defiant` durante exactamente tres segundos y después vuelve a
-la cara neutra. El gesto no puede interrumpir una escucha, una respuesta, la
+muestran la cara `defiant` durante exactamente tres segundos y después vuelve
+con una transición corta a la cara neutra. El gesto no puede interrumpir una escucha, una respuesta, la
 reproducción de voz ni la interfaz de diagnóstico.
 
 ## Calibración
@@ -23,10 +23,13 @@ con el permiso de Chrome ya concedido. No muestra un segundo diálogo ni hay dos
 capturas simultáneas. Ese stream se cierra al salir del tab y no existe
 `MediaRecorder` ni grabación. `clap.js` calcula y descarta inmediatamente:
 
-- RMS, pico y un suelo de ruido ambiente adaptativo;
-- proporción de energía de banda alta y planitud espectral, propias de un
-  transitorio de aplauso frente a voz sostenida;
-- intervalo entre ambos transitorios, con ventana calibrada y período refractario.
+- RMS, pico, ataque y un suelo de ruido ambiente adaptativo;
+- proporción de energía de banda alta, centroide, planitud espectral y factor de
+  cresta, propios de un impacto breve frente a voz o tos;
+- envolvente completa de cada impacto: ataque, caída y al menos 75 ms de vuelta
+  al silencio; un mismo aplauso y su cola solo cuentan como un evento;
+- intervalo y similitud de nivel, duración y espectro entre dos eventos
+  independientes, además de un período refractario tras el par.
 
 El perfil persiste como resumen numérico privado en
 `/home/atlas/.atlas/webscreen/clap-profile.json`, con permisos `0600`. Incluye
@@ -34,11 +37,14 @@ solo cinco pares de métricas y umbrales derivados; **nunca** PCM, grabaciones,
 espectros completos ni texto. Si el archivo está corrupto, el backend lo ignora
 de forma segura y el detector permanece desactivado hasta recalibrar.
 
-El detector sigue siendo una heurística calibrada a la sala y al micrófono, no
-un clasificador universal. Por eso requiere cinco pares reales, exige dos
-transitorios breves con separación válida y combina energía, contenido de alta
-frecuencia y ruido de fondo. Si cambia mucho la barra de sonido, el micrófono o
-la habitación, se debe usar **Recalibrar**.
+El perfil actual es la versión 2. Los perfiles anteriores se ignoran de forma
+segura porque no contienen las medidas necesarias: tras instalar esta revisión
+hay que usar **Recalibrar** y completar cinco pares nuevos. El detector sigue
+siendo una heurística calibrada a la sala y al micrófono, no un clasificador
+universal. Por eso exige exactamente dos impactos completos, breves, parecidos y
+separados entre 280 y 950 ms. Una tos sostenida se descarta por duración y
+envolvente; un eco aislado, por no formar un segundo impacto comparable. Si
+cambia mucho el micrófono o la habitación, se debe recalibrar.
 
 ## Responsabilidades y límites
 

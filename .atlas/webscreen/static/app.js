@@ -1,5 +1,5 @@
 const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
-const CLIENT_BUILD = "2026-09-07-clap-1";
+const CLIENT_BUILD = "2026-09-07-clap-2";
 const REALTIME_PRIMARY = Boolean(window.AtlasRealtime);
 const PHYSICAL_ATLAS_A1 = /(?:^|[?&])kiosk=1(?:&|$)/u.test(String(window.location?.search || ""));
 const accessFetch = (url, options) => window.atlasAccess.fetch(url, options);

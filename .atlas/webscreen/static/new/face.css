@@ -110,6 +110,10 @@ body[data-design="new"] .face-stage[data-clap-activated="true"] .face-eye-varian
 body[data-design="new"] .face-stage[data-clap-activated="true"] .face-mouth,
 body[data-design="new"] .face-stage[data-clap-activated="true"] .face-mouth-previous { animation-duration: .12s; }
 body[data-design="new"] .face-stage[data-clap-activated="true"] .face-affect-bounce { animation: face-clap-arrival .16s var(--face-ease) both; }
+body[data-design="new"] .face-stage[data-clap-returning="true"] .face-eye-variant { transition-duration: .28s; }
+body[data-design="new"] .face-stage[data-clap-returning="true"] .face-mouth,
+body[data-design="new"] .face-stage[data-clap-returning="true"] .face-mouth-previous { animation-duration: .28s; }
+body[data-design="new"] .face-stage[data-clap-returning="true"] .face-affect-bounce { animation: face-clap-return .34s var(--face-ease) both; }
 body[data-design="new"] .face-petting-zone { display: block; width: 100%; height: 100%; border-radius: 50%; clip-path: circle(50% at 50% 50%); pointer-events: auto; touch-action: none; }
 body[data-design="new"] .face-glow { opacity: .16; transition: opacity .35s ease; }
 body[data-design="new"] .face-glow ellipse:nth-child(3) { transform: translateY(26.58222px); }
@@ -123,22 +127,30 @@ body[data-design="new"] .face-stage[data-state="working"] .face-eye-blink { tran
 body[data-design="new"] .face-stage[data-state="working"] .face-glow { opacity: .11; }
 body[data-design="new"] .face-stage[data-state="connecting"] .face-character { opacity: .66; }
 body[data-design="new"] .face-stage[data-state="error"] .face-character { opacity: .72; }
-body[data-design="new"] .face-eye-doze { transform-box: view-box; transition: opacity .22s ease; }
+body[data-design="new"] .face-eye-doze { transform-box: view-box; transition: opacity .08s ease; }
 body[data-design="new"] .face-breathe { transform-origin: 795.5px 425px; }
-body[data-design="new"] .face-sleep-eye, body[data-design="new"] .face-doze-mouth, body[data-design="new"] .face-wake-mouth { opacity: 0; transition: opacity .18s ease; }
+body[data-design="new"] .face-drowsy-eye, body[data-design="new"] .face-sleep-eye, body[data-design="new"] .face-doze-mouth, body[data-design="new"] .face-wake-mouth { opacity: 0; transition: opacity .08s ease, d .12s var(--face-ease); }
 body[data-design="new"] .face-sleep-z { opacity: 0; transition: opacity .2s ease; pointer-events: none; }
-body[data-design="new"] .face-stage[data-sleep="drowsy"] .face-eye-doze { animation: face-doze-eyes var(--face-doze-duration, 20s) linear both; }
-body[data-design="new"] .face-stage[data-sleep="drowsy"] .face-mouth,
+body[data-design="new"] .face-stage[data-sleep="drowsy-one"] .face-eye-doze,
+body[data-design="new"] .face-stage[data-sleep="drowsy-two"] .face-eye-doze { opacity: 0; }
+body[data-design="new"] .face-stage[data-sleep="drowsy-one"] .face-drowsy-eye,
+body[data-design="new"] .face-stage[data-sleep="drowsy-two"] .face-drowsy-eye { opacity: 1; }
+body[data-design="new"] .face-stage[data-sleep="drowsy-two"] .face-drowsy-eye-left,
+body[data-design="new"] .face-stage[data-sleep="drowsy-two"] .face-drowsy-eye-right { d: path("M -53 20 H 53 L 53 42 C 53 78 29 100 0 100 C -29 100 -53 78 -53 42 Z"); }
+body[data-design="new"] .face-stage[data-sleep="drowsy-one"] .face-mouth,
+body[data-design="new"] .face-stage[data-sleep="drowsy-two"] .face-mouth,
 body[data-design="new"] .face-stage[data-sleep="asleep"] .face-mouth { opacity: 0 !important; }
-body[data-design="new"] .face-stage[data-sleep="drowsy"] .face-doze-mouth { opacity: 1; animation: face-doze-mouth var(--face-doze-duration, 20s) linear both; }
-body[data-design="new"] .face-stage[data-sleep="asleep"] .face-eye-doze { transform: scaleY(.075); opacity: 0; }
+body[data-design="new"] .face-stage[data-sleep="drowsy-one"] .face-doze-mouth { opacity: 1; d: path("M 752 532 Q 795.5 558 839 532"); stroke-width: 21; }
+body[data-design="new"] .face-stage[data-sleep="drowsy-two"] .face-doze-mouth { opacity: 1; d: path("M 758 545 Q 795.5 530 833 545"); stroke-width: 17; }
+body[data-design="new"] .face-stage[data-sleep="asleep"] .face-eye-doze,
+body[data-design="new"] .face-stage[data-sleep="asleep"] .face-drowsy-eye { opacity: 0; }
 body[data-design="new"] .face-stage[data-sleep="asleep"] .face-sleep-eye { opacity: 1; }
-body[data-design="new"] .face-stage[data-sleep="asleep"] .face-doze-mouth { opacity: 1; d: path("M 765 545 Q 795.5 531 826 545"); stroke-width: 14; }
+body[data-design="new"] .face-stage[data-sleep="asleep"] .face-doze-mouth { opacity: 1; d: path("M 758 546 Q 795.5 529 833 546"); stroke-width: 16; }
 body[data-design="new"] .face-stage[data-sleep="asleep"] .face-breathe { animation: face-sleep-breathe 5s ease-in-out infinite; }
 body[data-design="new"] .face-stage[data-sleep="asleep"] .face-sleep-z { opacity: 1; }
 body[data-design="new"] .face-stage[data-sleep="asleep"] .face-z { animation: face-sleep-z 5s linear infinite; }
-body[data-design="new"] .face-stage[data-sleep="asleep"] .face-z-two { animation-delay: -1.66s; }
-body[data-design="new"] .face-stage[data-sleep="asleep"] .face-z-three { animation-delay: -3.33s; }
+body[data-design="new"] .face-stage[data-sleep="asleep"] .face-z-two { animation-delay: 1.66s; }
+body[data-design="new"] .face-stage[data-sleep="asleep"] .face-z-three { animation-delay: 3.33s; }
 body[data-design="new"] .face-stage[data-waking="true"] .face-eye-variant { opacity: 0; transition-duration: .08s; }
 body[data-design="new"] .face-stage[data-waking="true"] .face-eye-surprised { opacity: 1; }
 body[data-design="new"] .face-stage[data-waking="true"] .face-mouth { opacity: 0 !important; }
@@ -233,10 +245,14 @@ body[data-design="new"][data-face-paused="true"] .face-stage * { animation: none
 @keyframes face-expression-out { from { opacity: 1; } to { opacity: 0; } }
 @keyframes face-happy-bounce { 0%, 100% { transform: translateY(0); } 42% { transform: translateY(-5px); } }
 @keyframes face-clap-arrival { 0% { transform: translateY(2px) scale(.985); } 60% { transform: translateY(-3px) scale(1.012); } 100% { transform: translateY(0) scale(1); } }
-@keyframes face-doze-eyes { from { transform: scaleY(1); } 55% { transform: scaleY(.55); } to { transform: scaleY(.075); } }
-@keyframes face-doze-mouth { from { d: path("M 737.5 527 Q 795.5 575 853.5 527"); stroke-width: 26; } 45% { d: path("M 765 539 Q 795.5 539 826 539"); stroke-width: 17; } to { d: path("M 765 545 Q 795.5 531 826 545"); stroke-width: 14; } }
+@keyframes face-clap-return { 0% { transform: translateY(-2px) scale(1.008); } 62% { transform: translateY(1px) scale(.996); } 100% { transform: translateY(0) scale(1); } }
 @keyframes face-sleep-breathe { 0%, 100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-4px) scale(1.03); } }
-@keyframes face-sleep-z { 0% { opacity: 0; transform: translate(0, 6px); } 18% { opacity: .85; } 75% { opacity: .34; } 100% { opacity: 0; transform: translate(10px, -19px); } }
+@keyframes face-sleep-z {
+  0% { opacity: 0; transform: translate(1005px, 474px) scale(1.7); }
+  12% { opacity: .88; }
+  72% { opacity: .38; }
+  100% { opacity: 0; transform: translate(1115px, 292px) scale(.48); }
+}
 @media (max-width: 700px) {
   body[data-design="new"] .face-header { inset: 16px 20px auto; }
   body[data-design="new"] .menu-toggle { top: 16px; right: 17px; }
@@ -253,9 +269,6 @@ body[data-design="new"][data-face-paused="true"] .face-stage * { animation: none
 }
 @media (prefers-reduced-motion: reduce) {
   body[data-design="new"] *, body[data-design="new"] *::before { animation: none !important; transition-duration: .01ms !important; }
-  body[data-design="new"] .face-stage[data-sleep="drowsy"] .face-eye-doze { transform: scaleY(.55); }
-  body[data-design="new"] .face-stage[data-sleep="drowsy"] .face-doze-mouth { d: path("M 765 539 Q 795.5 539 826 539"); stroke-width: 17; }
-  body[data-design="new"] .face-z-one { opacity: .8; }
-  body[data-design="new"] .face-z-two { opacity: .4; }
-  body[data-design="new"] .face-z-three { opacity: .2; }
+  body[data-design="new"] .face-z-one { opacity: .8; transform: translate(1035px, 420px) scale(1.2); }
+  body[data-design="new"] .face-z-two, body[data-design="new"] .face-z-three { opacity: 0; }
 }

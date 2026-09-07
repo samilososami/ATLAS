@@ -13,13 +13,20 @@ import server as app
 
 
 def valid_clap_payload():
-    event = {"rms": .08, "peak": .25, "highBandRatio": .38, "flatness": .46}
+    event = {"rms": .08, "peak": .25, "highBandRatio": .38, "flatness": .46,
+             "crestFactor": 3.1, "spectralCentroidHz": 3400,
+             "onsetRatio": 6.2, "eventDurationMs": 75}
     return {
-        "version": 1, "createdAt": "2026-09-07T17:00:00Z", "trialCount": 5,
+        "version": 2, "createdAt": "2026-09-07T17:00:00Z", "trialCount": 5,
         "privacy": "summary-features-only-no-audio",
         "detector": {"minPeak": .12, "minRms": .03, "minRmsDb": -30.4,
-                     "minHighBandRatio": .21, "minFlatness": .24, "noiseMultiplier": 4.2,
-                     "minPairGapMs": 140, "maxPairGapMs": 900},
+                     "minHighBandRatio": .21, "minFlatness": .24,
+                     "minCrestFactor": 2.1, "minSpectralCentroidHz": 2200,
+                     "minOnsetRatio": 2.0, "maxEventMs": 210, "releaseMs": 75,
+                     "maxPairLevelRatio": 2.2, "maxPairCentroidRatio": 1.5,
+                     "maxPairHighBandDelta": .2, "maxPairDurationRatio": 2.4,
+                     "maxPairCrestRatio": 2.1, "noiseMultiplier": 4.8,
+                     "minPairGapMs": 280, "maxPairGapMs": 900},
         "trials": [{"first": event, "second": event, "pairGapMs": 420, "noiseFloorRms": .006} for _ in range(5)],
     }
 
