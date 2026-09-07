@@ -20,6 +20,12 @@ Controls and diagnostics remain available in the settings/tools panel rather
 than filling the idle screen. No second microphone, agent or credentials flow
 is introduced. See [design and source map](NEW_DESIGN.md).
 
+The same Realtime model can now choose twelve additional native expressions
+through the `/new/`-only `atlas_face` presentation tool. Deliberate repeated
+back-and-forth caresses on the face trigger a six-second delighted expression
+locally, without opening a voice turn. See the [expression contract](NEW_DESIGN.md#semantic-expressions-and-touchscreen-caresses)
+and [implemented-face screenshot gallery](../../docs/images/webscreen-expressions/README.md).
+
 The ready face uses a single 350 ms blink every 8.7 seconds, not a continuously
 running CSS animation. Blink timers stop outside idle, while the page/view is
 hidden, on page exit and under reduced motion. Identical telemetry does not

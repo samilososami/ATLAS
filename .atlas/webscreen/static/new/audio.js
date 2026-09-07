@@ -5,6 +5,8 @@
 
   const ZERO = Object.freeze({ rms: 0, peak: 0, db: -100, available: true });
   const OUTPUT_SAMPLE_MS = 1000 / 30;
+  const EXPRESSIONS = new Set(["neutral", "angry", "delighted", "surprised", "curious", "skeptical",
+    "sad", "worried", "sleepy", "wink", "laughing", "focused", "shy"]);
   let screen = { state: "connecting", phase: "", title: "", detail: "" };
   let lastVisualState = "";
   let microphoneMuted = false;
@@ -350,6 +352,18 @@
     outputStream(null, null);
     face("inputLevel", ZERO);
     face("outputLevel", ZERO);
+    face("expression", { expression: "neutral", source: "model", durationMs: 1000 });
+  }
+
+  function expressionsAvailable() {
+    return !suspended && typeof window.AtlasFace?.expression === "function";
+  }
+
+  function expression(value) {
+    if (!expressionsAvailable() || value?.source !== "model" || !EXPRESSIONS.has(value?.expression)
+        || !Number.isInteger(value?.durationMs) || value.durationMs < 1000 || value.durationMs > 30000) return false;
+    try { return window.AtlasFace.expression({ expression: value.expression,
+      source: "model", durationMs: value.durationMs }) === true; } catch { return false; }
   }
 
   function connection(value) {
@@ -367,6 +381,7 @@
       face("transcript", currentTranscript);
     },
     connection,
+    expression, expressionsAvailable,
     microphoneMuted(value) {
       microphoneMuted = Boolean(value);
       if (microphoneMuted) face("inputLevel", ZERO);

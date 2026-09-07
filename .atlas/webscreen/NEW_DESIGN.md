@@ -8,19 +8,29 @@ voice output and recovery rules. Every new spoken request requires **ATLAS**.
 
 ## Approved visual specification
 
-The approved landscape reference is the minimal HUD concept, 1591 × 989.
+The original approved landscape reference is the minimal HUD concept, 1591 × 989.
 Only the small ATLAS brand at top left, connection dot and settings control at
-top right, the central face and “Di «Atlas» para hablar” appear while ready.
+top right and the central face appear while ready. The first visual revision
+removed “Di «Atlas» para hablar” and enlarged the `.face-character` group to
+1.25×. The latest revision adds **50% relative to that 1.25× version**, giving
+**1.875× the original size**, including the thinking state. The waveform,
+conversation logic, measured audio response and blink cadence are unchanged.
+In portrait, the canvas uses 150% width with a -25% left offset to limit clipping;
+speaking-state copy moves to 84% height to clear the larger open mouth.
 No permanent dock, transcript history, quota cards or debug labels are added.
 Existing controls stay available inside the tools/settings surface.
 
 - Background: almost-black blue, approximately `#02060d`; no decorative panels.
 - Face: vivid `#00a8ff`/`#009bff`/`#008cee` with a restrained blue luminous gradient.
-- Text: muted off-white, regular sans serif; idle caption approximately 24 px
-  at the reference width, scaled down for the A1 and handheld viewports.
-- Eyes: two tall ovals, approximately 112 × 208 px in the reference, centered
-  near x=595/1004 and y=425. Smile centered near x=799, y=540.
-- Face and caption occupy the center with generous negative space. Header
+- Text: muted off-white, regular sans serif for non-idle status; normal idle
+  has no caption. Recognized words still appear in white while listening.
+- Base vector geometry before the current 1.875× group scale: two tall ovals,
+  112 × 208 units, centered at x=631.45/959.55 and y=425. Positions are native
+  SVG coordinates, not CSS translations, so blink scaling cannot reset spacing.
+  The latest refinement reduces center spacing by 15% relative to the previous
+  386-unit gap and lowers the mouth another 20 screen pixels at 1024 × 600
+  (total mouth translation 26.58222 SVG units). Eye sizes remain unchanged.
+- The larger face occupies the center with generous negative space. Header
   touch targets remain usable even though their visible icons are small.
 - Custom vector geometry and browser animation are explicitly requested:
   do not use the screenshot as a fake full-screen UI or regenerate the mascot.
@@ -34,10 +44,11 @@ Existing controls stay available inside the tools/settings surface.
 `app.js`/`realtime.js` remain the only conversation controllers.
 
 `window.AtlasFace` exposes `update`, `transcript`, `inputLevel`, `outputLevel`,
-`connection` and `speechBoundary`. A visual callback must never send a prompt,
+`connection`, `speechBoundary`, `expression` and `reset`. A visual callback must never send a prompt,
 take ownership, enable a microphone, change an audio route or replay a tool.
 
-1. Ready: the default smiling face, with occasional soft blinks. Each blink
+1. Ready: the larger smiling face without an instruction label, with occasional
+   soft blinks. Explicit mute/error status is not removed. Each blink
    closes/reopens in approximately 350 ms, with an 8.7 s start-to-start interval.
    A sparse timer starts one CSS animation; there is no permanent idle
    animation or idle animation-frame loop. Leaving idle, hiding the page/view,
@@ -55,6 +66,87 @@ Animation work is bounded, stops on hidden pages and honors reduced motion.
 Unchanged captions, transcripts, connection indicators and drawing values do
 not rewrite the DOM. The blink timing and visual geometry are independent of
 the voice session and never trigger a reconnect.
+
+## Semantic expressions and touchscreen caresses
+
+The neutral face keeps the approved eye spacing, mouth position and luminous
+blue palette. Twelve additional native SVG expressions are available:
+`angry`, `delighted`, `surprised`, `curious`, `skeptical`, `sad`, `worried`,
+`sleepy`, `wink`, `laughing`, `focused` and `shy`. The delighted face raises the
+concave lower eye cutouts so they read as lifted cheeks, not tiny bottom notches.
+Expression geometry and fixed-center vertical blink transforms are separate;
+changing or blinking an expression must not move the eyes apart.
+
+On `/new/`, the existing Realtime controller advertises a presentation-only
+`atlas_face` function when the visual bridge is available. The same
+`gpt-realtime-2.1` decides whether an expression fits the conversation; there is
+no keyword sentiment classifier, second model request or system command.
+Praise, an interesting fact or an insult can produce an appropriate cartoon
+reaction without changing the assistant's brevity, helpfulness or tone into
+hostility. This is a visual character response, not a claim of felt emotions.
+The debug presentation and terminal client do not require this visual tool.
+
+The bridge calls `AtlasFace.expression({expression, source: 'model',
+durationMs})`. Expressions expire (15 seconds by default, 30 seconds maximum).
+Tool outputs use the normal [Realtime function-calling protocol](https://developers.openai.com/api/docs/guides/realtime-conversations).
+An expression accompanying an audio/text answer must not start a second
+answer. A visual-only response can continue once; repeated cosmetic calls,
+invalid expression names and stale/cancelled response events cannot create a
+response loop or affect a replacement turn.
+
+`static/new/petting.js` recognizes deliberate back-and-forth strokes only over
+the face. A tap, one or two swipes, small jitter, multitouch and cancelled
+gestures do not qualify. A completed caress temporarily selects `delighted`
+for six seconds; a still-valid model expression returns afterward. This is
+entirely local: no prompt, recording, network request or speech is started.
+Listening, hidden/blocked views and the settings panel are excluded. Touch
+handling is limited to the face hit region, so the header/settings remain
+usable. The listening waveform and actual audio playback remain authoritative.
+
+All expression previews in the [browser screenshot gallery](../../docs/images/webscreen-expressions/README.md)
+are captures of the implemented WebScreen renderer, not generated concept
+images. The gallery describes the deterministic capture method and its limits.
+
+### Expression verification · 2026-09-07
+
+- All thirteen real renderer states were captured at 1591 × 989 and visually
+  reviewed: unchanged HUD, approved neutral proportions/spacing, blue palette,
+  lifted delighted eye cutouts, expression geometry and unclipped mouths. The
+  focused mouth is a filled capsule, avoiding a zero-height SVG gradient box.
+- Browser tests retain real PCM/MediaStream-driven mouth opening, silence,
+  playback completion, input waveform and suspended idle analyser behavior.
+  The test oscillator is muted and does not claim physical speaker validation.
+- The neutral 1024 × 600 screenshot is pixel-identical to the pre-expression
+  baseline. All thirteen expressions were also checked at 412-pixel mobile
+  width; real blink samples keep both eye pivots fixed. Idle has zero active
+  animations between sparse blinks and a hidden view requests zero frames.
+- Mouse and Chrome touch-event tests reject one/two swipes and accept four
+  back-and-forth strokes, without a request or voice-state change. A transparent
+  HTML hit region inside an SVG `foreignObject` applies `touch-action: none`
+  only to the face; applying it to a bare SVG rectangle allowed Chrome to cancel
+  touch input in favor of scrolling. The region is measured after the initially
+  hidden access-lease view becomes available, and refreshed lazily before input;
+  measuring it while hidden prevented caresses on the first kiosk load.
+- Deployed to the A1 with a reversible backup, retaining its settings and the
+  same Chrome process. After reload, four X11 pointer strokes over 1.927 seconds
+  selected `delighted` on the actual 1024 × 600 display; screenshots confirmed
+  the raised cutouts and the automatic return to neutral after expiry. This is
+  real kiosk pointer verification, not a claim of testing a physical finger.
+- Final automated suites pass: 277 JavaScript tests and 77 Python tests.
+- Three separate ephemeral OAuth sessions used the actual `gpt-realtime-2.1`,
+  the same visual tool instructions and only the harmless `atlas_face` tool.
+  Praise selected `delighted` in 2.231 s; an insult selected `angry` in 3.058 s;
+  unexpected happy news selected `delighted` in 1.018 s. Selection is semantic,
+  not a rigid keyword-to-emotion table. These are **tool-selection latencies**,
+  not time-to-first-spoken-audio measurements.
+- Two provider responses combined text and a visual call; the third contained
+  only the call. Unit tests cover both continuation paths. The isolated live
+  probe acknowledged calls but did not request a continuation, execute shell or
+  web tools, take the kiosk access lease, or persist its conversation.
+
+Model selection, browser rendering, PCM analysis and touch recognition are
+separately verified layers; they should not be described as a single physical
+microphone-to-speaker end-to-end test.
 
 ## Bounded transport recovery
 
@@ -134,7 +226,15 @@ rendering-efficiency improvement, not the demonstrated leak fix.
 - `server.py::render_new_design_shell`: serves the existing DOM at `/new/`
   with presentation assets. No second HTML copy or duplicate credential flow.
 
-## Browser verification
+## Earlier browser verification
+
+The browser checks and screenshots in this section predate the 1.25× face /
+caption-free idle revision and its subsequent enlargement to 1.875×. They are
+retained as historical evidence, not
+claimed visual verification of the latest size. `test_face_idle.cjs` now checks
+the new scale in normal/thinking styles, empty normal idle caption, cleared
+transcript on return to idle and preserved explicit mute status. Audio-bridge
+tests do not depend on the face scale or the removed instruction.
 
 The real `AtlasScreenHandler` route at `http://127.0.0.1:5057/new/` was checked
 in the Codex in-app browser with the shared controllers unmodified. The checks
@@ -195,7 +295,8 @@ boot default.
 
 [Live A1 capture](../../docs/images/webscreen-new/pi-live.png) is an unedited
 1024 × 600 capture of the actual X11 display after deployment and the slightly
-faster blink adjustment. It shows the ready face and green status indicator.
+faster blink adjustment, before the enlargement and idle-label removal. It
+shows that earlier ready face and green status indicator.
 This proves the installed display state, not room-microphone recognition or
 speaker audibility. Those physical voice behaviors still need a spoken test.
 
@@ -214,23 +315,27 @@ a deliberately crashed renderer and a failed page load without changing the
 selected design or opening a debugging network port. This is not a long-term
 stability guarantee.
 
-### Visual fidelity review
+### Earlier visual fidelity review
 
 The approved image and browser screenshots were inspected directly. The
 checks covered the eye proportions and positions, rounded smile, dark-blue
 background and luminous blue palette, minimal header, caption typography,
-negative space, and responsive geometry. The idle copy matches the approved
-“Di «Atlas» para hablar”; debug content is absent until settings is opened.
+negative space, and responsive geometry. At that point the idle copy matched
+the original reference's “Di «Atlas» para hablar”; the latest revision removes
+that label and enlarges only the face group. Debug content remains absent
+until settings is opened.
 The official ATLAS PNG/SVG assets replace the generated reference's tiny
 brand lettering intentionally. The listening, thinking and speaking states
 extend the approved idle design with the requested native animation.
 
-## Rendered screenshots
+## Rendered screenshots — previous size and idle label
 
 These PNGs are unedited browser captures of controlled verification states,
 not generated mockups or evidence of a completed live voice conversation.
 The idle capture comes from the presentation harness; the other captures
 come from the PCM/MediaStream browser check described above.
+They retain the earlier scale and idle instruction for comparison; they do not
+illustrate the latest 1.875×, caption-free ready face.
 
 | State | Browser capture |
 | --- | --- |

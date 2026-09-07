@@ -38,7 +38,7 @@ HOST = os.environ.get("ATLAS_WEBSCREEN_HOST", "0.0.0.0")
 PORT = int(os.environ.get("ATLAS_WEBSCREEN_PORT", "5000"))
 ROOT_DIR = Path(__file__).resolve().parent
 STATIC_DIR = ROOT_DIR / "static"
-NEW_DESIGN_BUILD = "2026-09-06-face-1"
+NEW_DESIGN_BUILD = "2026-09-07-face-expressions-1"
 
 
 def render_new_design_shell(source: str) -> bytes:
@@ -49,6 +49,7 @@ def render_new_design_shell(source: str) -> bytes:
     source = source.replace('    <script src="/access.js',
         f'    <script src="/new/face.js?v={NEW_DESIGN_BUILD}"></script>\n'
         f'    <script src="/new/audio.js?v={NEW_DESIGN_BUILD}"></script>\n'
+        f'    <script src="/new/petting.js?v={NEW_DESIGN_BUILD}"></script>\n'
         '    <script src="/access.js', 1)
     return source.encode('utf-8')
 

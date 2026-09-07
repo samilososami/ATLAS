@@ -12,6 +12,41 @@
   const svgNS = "http://www.w3.org/2000/svg";
   const smile = "M 737.5 527 Q 795.5 575 853.5 527";
   const thinkingMouth = "M 774 539 Q 795.5 531 817 536";
+  const blue = "url(#atlas-face-blue)";
+  const oval = (rx = 56, ry = 104) => `M 0 ${-ry} A ${rx} ${ry} 0 1 1 0 ${ry} A ${rx} ${ry} 0 1 1 0 ${-ry} Z`;
+  const eye = (d, stroke = 0, mirrored = false) => ({ d, stroke, mirrored });
+  const closedHappyEye = eye("M -49 31 Q 0 -49 49 31", 24);
+  const angryEye = eye("M -48 -84 Q -55 -90 -56 -66 L -56 0 C -56 58 -31 104 0 104 C 31 104 56 58 56 0 L 56 -5 Z");
+  // Approved 02-v2: retain the oval crown; the lower notch reaches 53% of
+  // the original eye height, with endpoints at 65%, not near its foot.
+  const delightedEye = eye("M 0 -104 C -30.93 -104 -56 -57.44 -56 0 C -56 11 -55 21 -52 31 Q 0 -20 52 31 C 55 21 56 11 56 0 C 56 -57.44 30.93 -104 0 -104 Z");
+  const worriedEye = eye("M -55 15 C -57 -5 -55 -28 -46 -43 Q -18 -79 26 -97 Q 42 -103 48 -83 C 53 -62 56 -27 56 0 C 56 57 31 101 0 101 C -31 101 -55 60 -55 15 Z");
+  // Geometry is local to fixed eye sockets. Eyelid/blink transforms are on a
+  // separate parent, so changes of shape cannot move the blink's pivot.
+  const expressions = Object.freeze({
+    neutral: { eyes: null, mouth: smile, stroke: 26, speech: "smile" },
+    angry: { eyes: [angryEye, { ...angryEye, mirrored: true }], mouth: "M 740 555 Q 795.5 502 851 555", stroke: 24, speech: "frown" },
+    delighted: { eyes: [delightedEye, delightedEye], mouth: "M 727.5 521 Q 795.5 588 863.5 521", stroke: 28, speech: "happy" },
+    surprised: { eyes: [eye(oval(58, 104)), eye(oval(58, 104))], mouth: "M 795.5 521 A 21 30 0 1 1 795.5 581 A 21 30 0 1 1 795.5 521 Z", stroke: 0, fill: blue, speech: "round" },
+    curious: { eyes: [eye(oval(56, 112)), eye(oval(50, 84))], mouth: "M 764 540 Q 795.5 565 827 526", stroke: 21, speech: "curious" },
+    skeptical: { eyes: [eye(oval()), eye("M -56 0 H 56 C 56 60 31 102 0 102 C -31 102 -56 60 -56 0 Z")], mouth: "M 766 543 L 826 547", stroke: 18, speech: "flat" },
+    sad: { eyes: [eye(oval(51, 96)), eye(oval(51, 96))], mouth: "M 746 551 Q 795.5 504 845 551", stroke: 24, speech: "frown" },
+    worried: { eyes: [worriedEye, { ...worriedEye, mirrored: true }], mouth: "M 756 549 Q 775 533 795.5 547 Q 815 563 835 545", stroke: 18, speech: "worried" },
+    sleepy: { eyes: [eye("M -49 3 Q 0 55 49 3", 23), eye("M -49 3 Q 0 55 49 3", 23)], mouth: "M 766 536 Q 795.5 557 825 536", stroke: 17, speech: "small" },
+    wink: { eyes: [eye(oval()), closedHappyEye], mouth: "M 738 526 Q 795.5 580 853 526", stroke: 26, speech: "happy" },
+    laughing: { eyes: [closedHappyEye, closedHappyEye], mouth: "M 719.5 520 H 871.5 Q 869 610 795.5 610 Q 722 610 719.5 520 Z", stroke: 0, fill: blue, speech: "laugh" },
+    // A filled capsule has a nonzero paint box. A gradient stroke on a strictly
+    // horizontal path has zero objectBoundingBox height and vanishes in Chrome.
+    focused: { eyes: [eye("M -56 -4 H 56 C 56 52 31 87 0 87 C -31 87 -56 52 -56 -4 Z"), eye("M -56 -4 H 56 C 56 52 31 87 0 87 C -31 87 -56 52 -56 -4 Z")], mouth: "M 766 535 H 825 A 9 9 0 0 1 825 553 H 766 A 9 9 0 0 1 766 535 Z", stroke: 0, fill: blue, speech: "flat" },
+    shy: { eyes: [eye(oval(47, 88)), eye(oval(47, 88))], mouth: "M 768 532 Q 795.5 552 823 532", stroke: 18, speech: "small" },
+  });
+  const expressionNames = Object.keys(expressions);
+  let modelExpression = null;
+  let pettingExpression = null;
+  let activeExpression = "neutral";
+  let activeExpressionSource = "neutral";
+  let expressionTimer = 0;
+  let expressionTransitionTimer = 0;
   let state = "idle";
   let frame = 0;
   let lastFrame = 0;
@@ -70,24 +105,32 @@
   const stage = document.createElement("section");
   stage.className = "face-stage";
   stage.dataset.state = state;
+  stage.dataset.expression = activeExpression;
+  stage.dataset.expressionSource = activeExpressionSource;
   stage.setAttribute("aria-label", "ATLAS");
+  const expressiveEyes = (side, cx) => expressionNames.filter(name => expressions[name].eyes).map(name => {
+    const shape = expressions[name].eyes[side];
+    return `<g class="face-eye-variant face-eye-${name}"><path d="${shape.d}" transform="translate(${cx} 425)${shape.mirrored ? " scale(-1 1)" : ""}" fill="${shape.stroke ? "none" : blue}" stroke="${shape.stroke ? blue : "none"}" stroke-width="${shape.stroke}" stroke-linecap="round" stroke-linejoin="round"/></g>`;
+  }).join("");
   stage.innerHTML = `<svg class="face-canvas" viewBox="0 0 1591 989" aria-hidden="true" focusable="false">
     <defs>
       <linearGradient id="atlas-face-blue" x1="0" y1="0" x2=".8" y2="1"><stop offset="0" stop-color="#00a8ff"/><stop offset=".52" stop-color="#009bff"/><stop offset="1" stop-color="#008cee"/></linearGradient>
       <radialGradient id="atlas-face-light"><stop stop-color="#008fff" stop-opacity=".45"/><stop offset=".42" stop-color="#008fff" stop-opacity=".14"/><stop offset="1" stop-color="#008fff" stop-opacity="0"/></radialGradient>
     </defs>
     <g class="face-character">
-      <g class="face-glow"><ellipse cx="591.5" cy="425" rx="127" ry="172" fill="url(#atlas-face-light)"/><ellipse cx="999.5" cy="425" rx="127" ry="172" fill="url(#atlas-face-light)"/><ellipse cx="795.5" cy="532" rx="125" ry="79" fill="url(#atlas-face-light)"/></g>
-      <ellipse class="face-eye" cx="591.5" cy="425" rx="56" ry="104" fill="url(#atlas-face-blue)"/>
-      <ellipse class="face-eye" cx="999.5" cy="425" rx="56" ry="104" fill="url(#atlas-face-blue)"/>
+      <g class="face-glow"><ellipse cx="631.45" cy="425" rx="127" ry="172" fill="url(#atlas-face-light)"/><ellipse cx="959.55" cy="425" rx="127" ry="172" fill="url(#atlas-face-light)"/><ellipse cx="795.5" cy="532" rx="125" ry="79" fill="url(#atlas-face-light)"/></g>
+      <g class="face-eye-blink face-eye-left"><g class="face-eye-variant face-eye-neutral"><ellipse class="face-eye" cx="631.45" cy="425" rx="56" ry="104" fill="url(#atlas-face-blue)"/></g>${expressiveEyes(0, 631.45)}</g>
+      <g class="face-eye-blink face-eye-right"><g class="face-eye-variant face-eye-neutral"><ellipse class="face-eye" cx="959.55" cy="425" rx="56" ry="104" fill="url(#atlas-face-blue)"/></g>${expressiveEyes(1, 959.55)}</g>
+      <path class="face-mouth-previous" d="${smile}" fill="none" stroke="url(#atlas-face-blue)" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
       <path class="face-mouth" d="${smile}" fill="none" stroke="url(#atlas-face-blue)" stroke-width="26" stroke-linecap="round" stroke-linejoin="round"/>
     </g>
     <g class="face-wave" fill="url(#atlas-face-blue)"></g>
-  </svg><div class="face-copy"><p class="face-transcript" aria-live="off"></p><p class="face-caption" role="status" aria-live="polite">Di «Atlas» para hablar</p></div>`;
+  </svg><div class="face-copy"><p class="face-transcript" aria-live="off"></p><p class="face-caption" role="status" aria-live="polite"></p></div>`;
   view.append(stage);
   const caption = stage.querySelector(".face-caption");
   const transcript = stage.querySelector(".face-transcript");
   const mouth = stage.querySelector(".face-mouth");
+  const previousMouth = stage.querySelector(".face-mouth-previous");
   const wave = stage.querySelector(".face-wave");
   const bars = levels.map((_, i) => {
     const bar = document.createElementNS(svgNS, "rect");
@@ -105,6 +148,96 @@
   const setAttribute = (node, name, value) => {
     if (node.getAttribute(name) !== value) node.setAttribute(name, value);
   };
+  function clearExpressionTransition() {
+    clearTimeout(expressionTransitionTimer);
+    expressionTransitionTimer = 0;
+    if (stage.hasAttribute("data-expression-transition")) stage.removeAttribute("data-expression-transition");
+  }
+  function restMouth() {
+    const profile = expressions[activeExpression];
+    const thinking = activeExpression === "neutral" && state === "working";
+    setAttribute(mouth, "d", thinking ? thinkingMouth : profile.mouth);
+    setAttribute(mouth, "fill", profile.fill || "none");
+    setAttribute(mouth, "stroke-width", String(thinking ? 17 : profile.stroke));
+  }
+  function speechMouth(level) {
+    if (level < .035) { restMouth(); return; }
+    const style = expressions[activeExpression].speech;
+    let opening = 12 + level * 57;
+    let width = 52 - level * 10;
+    let d;
+    // The neutral articulation is intentionally unchanged. Other expressions
+    // retain their affect in the upper lip and their own resting mouth at PCM 0.
+    if (style === "round") {
+      const rx = 21 + level * 7, ry = 30 + level * 22;
+      d = `M 795.5 ${551 - ry} A ${rx} ${ry} 0 1 1 795.5 ${551 + ry} A ${rx} ${ry} 0 1 1 795.5 ${551 - ry} Z`;
+    } else if (style === "laugh") {
+      width = 76 - level * 7;
+      d = `M ${795.5 - width} 520 Q 795.5 ${521 - level * 10} ${795.5 + width} 520 Q ${795.5 + width} ${606 + level * 23} 795.5 ${606 + level * 23} Q ${795.5 - width} ${606 + level * 23} ${795.5 - width} 520 Z`;
+    } else if (style === "smile" || style === "happy") {
+      if (style === "happy") width += 10;
+      d = `M ${795.5 - width} 528 Q 795.5 ${546 - opening * .32} ${795.5 + width} 528 Q ${795.5 + width + 3} ${560 + opening} 795.5 ${560 + opening} Q ${795.5 - width - 3} ${560 + opening} ${795.5 - width} 528 Z`;
+    } else {
+      if (style === "small") { width = 28 + level * 7; opening *= .68; }
+      if (style === "flat" || style === "worried") width = 32 + level * 6;
+      const top = style === "frown" ? 547 : 538;
+      const bend = style === "frown" ? -32 : style === "curious" ? 15 : style === "worried" ? -8 : 0;
+      d = `M ${795.5 - width} ${top} Q 795.5 ${top + bend} ${795.5 + width} ${top - (style === "curious" ? 9 : 0)} Q ${795.5 + width} ${top + opening} 795.5 ${top + opening} Q ${795.5 - width} ${top + opening} ${795.5 - width} ${top} Z`;
+    }
+    setAttribute(mouth, "d", d);
+    setAttribute(mouth, "fill", blue);
+    setAttribute(mouth, "stroke-width", style === "round" || style === "laugh" ? "0" : "12");
+  }
+  function renderExpression(name, source, animate = true) {
+    if (activeExpression === name && activeExpressionSource === source) return;
+    const changed = activeExpression !== name;
+    if (changed) {
+      clearExpressionTransition();
+      for (const attribute of ["d", "fill", "stroke-width"]) setAttribute(previousMouth, attribute, mouth.getAttribute(attribute) || "none");
+    }
+    activeExpression = name;
+    activeExpressionSource = source;
+    if (stage.dataset.expression !== name) stage.dataset.expression = name;
+    if (stage.dataset.expressionSource !== source) stage.dataset.expressionSource = source;
+    if (!changed) return;
+    if (state === "speaking") speechMouth(mouthLevel); else restMouth();
+    if (animate && !suspended && !reducedMotion.matches) {
+      stage.setAttribute("data-expression-transition", "true");
+      expressionTransitionTimer = setTimeout(clearExpressionTransition, 280);
+    }
+  }
+  function syncExpression() {
+    clearTimeout(expressionTimer);
+    expressionTimer = 0;
+    const now = performance.now();
+    if (modelExpression && modelExpression.expiresAt <= now) modelExpression = null;
+    if (pettingExpression && pettingExpression.expiresAt <= now) pettingExpression = null;
+    const selected = pettingExpression || modelExpression;
+    renderExpression(selected?.expression || "neutral", pettingExpression ? "petting" : modelExpression ? "model" : "neutral");
+    const deadlines = [modelExpression, pettingExpression].filter(Boolean).map(item => item.expiresAt);
+    if (deadlines.length && !suspended) expressionTimer = setTimeout(syncExpression, Math.max(1, Math.min(...deadlines) - now));
+  }
+  function resetExpression() {
+    clearTimeout(expressionTimer);
+    expressionTimer = 0;
+    modelExpression = pettingExpression = null;
+    clearExpressionTransition();
+    renderExpression("neutral", "neutral", false);
+  }
+  function expression(payload = {}) {
+    if (!payload || typeof payload !== "object" || suspended || document.hidden || view.hidden || content.hidden || pageSuspended) return false;
+    const { expression: name, source = "model", durationMs = 15000 } = payload;
+    if (!expressionNames.includes(name) || !["model", "petting"].includes(source)) return false;
+    if (source === "petting") {
+      if (name !== "delighted") return false;
+      pettingExpression = { expression: name, expiresAt: performance.now() + 6000 };
+    } else {
+      const duration = Number.isFinite(Number(durationMs)) ? clamp(durationMs, 1000, 30000) : 15000;
+      modelExpression = name === "neutral" ? null : { expression: name, expiresAt: performance.now() + duration };
+    }
+    syncExpression();
+    return true;
+  }
   function cancelBlink() {
     clearTimeout(blinkTimer);
     clearTimeout(blinkEndTimer);
@@ -150,17 +283,7 @@
     } else if (state === "speaking") {
       if (outputAvailable && performance.now() - lastOutputAt > 260) targetMouth = 0;
       mouthLevel += (targetMouth - mouthLevel) * .68;
-      if (mouthLevel < .035) {
-        setAttribute(mouth, "d", smile);
-        setAttribute(mouth, "fill", "none");
-        setAttribute(mouth, "stroke-width", "26");
-      } else {
-        const opening = 12 + mouthLevel * 57;
-        const width = 52 - mouthLevel * 10;
-        setAttribute(mouth, "d", `M ${795.5 - width} 528 Q 795.5 ${546 - opening * .32} ${795.5 + width} 528 Q ${795.5 + width + 3} ${560 + opening} 795.5 ${560 + opening} Q ${795.5 - width - 3} ${560 + opening} ${795.5 - width} 528 Z`);
-        setAttribute(mouth, "fill", "url(#atlas-face-blue)");
-        setAttribute(mouth, "stroke-width", "12");
-      }
+      speechMouth(mouthLevel);
     }
   }
   function scheduleDraw() {
@@ -168,9 +291,7 @@
   }
   function resetMouth() {
     targetMouth = mouthLevel = 0;
-    setAttribute(mouth, "d", state === "working" ? thinkingMouth : smile);
-    setAttribute(mouth, "fill", "none");
-    setAttribute(mouth, "stroke-width", state === "working" ? "17" : "26");
+    restMouth();
   }
   function update(next = {}) {
     let nextState = next.state || state;
@@ -190,7 +311,7 @@
     }
     const muted = /silenciado/i.test(`${next.phase || ""} ${next.title || ""}`);
     const copy = {
-      idle: muted ? "Micrófono silenciado" : "Di «Atlas» para hablar",
+      idle: muted ? "Micrófono silenciado" : "",
       listening: transcript.textContent ? "" : "Te escucho…",
       working: "Pensando…",
       speaking: "",
@@ -208,6 +329,7 @@
       cancelAnimationFrame(frame);
       frame = 0;
       clearTimeout(boundaryTimer);
+      resetExpression();
       resetMouth();
     } else scheduleDraw();
     syncBlink();
@@ -217,7 +339,7 @@
   document.addEventListener("visibilitychange", onVisibility);
   window.addEventListener("pagehide", () => { pageSuspended = true; onVisibility(); });
   window.addEventListener("pageshow", () => { pageSuspended = false; onVisibility(); });
-  reducedMotion.addEventListener?.("change", () => { syncBlink(); scheduleDraw(); });
+  reducedMotion.addEventListener?.("change", () => { clearExpressionTransition(); syncBlink(); scheduleDraw(); });
   // The original drawer handles open/close; add keyboard focus containment to it.
   let drawerWasOpen = false;
   const panelObserver = new MutationObserver(() => {
@@ -242,6 +364,8 @@
 
   window.AtlasFace = Object.freeze({
     update,
+    expression,
+    reset: resetExpression,
     transcript(text) {
       if (state === "idle" || state === "connecting") return;
       const cleaned = String(text || "").trim();

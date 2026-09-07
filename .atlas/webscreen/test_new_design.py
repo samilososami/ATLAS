@@ -34,6 +34,9 @@ class NewDesignTests(unittest.TestCase):
         self.assertEqual([s for s in new.scripts if not s.startswith('/new/')], original.scripts)
         self.assertTrue(new.scripts[0].startswith('/new/face.js?'))
         self.assertTrue(new.scripts[1].startswith('/new/audio.js?'))
+        self.assertTrue(new.scripts[2].startswith('/new/petting.js?'))
+        self.assertEqual(sum(s.startswith('/new/petting.js?') for s in new.scripts), 1)
+        self.assertFalse(any(s.startswith('/new/') for s in original.scripts))
         self.assertIn('/new/face.css?', rendered)
         self.assertEqual(sum(s.startswith('/realtime.js') for s in new.scripts), 1)
 

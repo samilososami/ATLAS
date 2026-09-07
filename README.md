@@ -70,18 +70,23 @@ The quiet HUD keeps only the brand, connection indicator and settings access.
 The original `/` and `--atlas` remain the debugging presentation; both share
 the same Realtime session logic, tools, context and access controls.
 
+The same Realtime model chooses the face's cartoon expression through a local
+visual tool. Repeated back-and-forth touchscreen caresses make it delighted.
+Browse all thirteen [implemented expressions](docs/images/webscreen-expressions/README.md):
+these are native WebScreen browser captures, not generated design mockups.
+
 Browser previews: [ready](docs/images/webscreen-new/idle.png),
 [listening](docs/images/webscreen-new/listening.png),
 [thinking](docs/images/webscreen-new/thinking.png),
 [speaking](docs/images/webscreen-new/speaking.png), and
 [1024 × 600](docs/images/webscreen-new/pi-1024x600.png).
-These are controlled browser captures; the [verification notes](.atlas/webscreen/NEW_DESIGN.md#browser-verification)
+These earlier previews are controlled browser captures; the [verification notes](.atlas/webscreen/NEW_DESIGN.md#earlier-browser-verification)
 distinguish presentation checks and real PCM/MediaStream tests from physical
 microphone/speaker validation.
 The [installed A1 screenshot](docs/images/webscreen-new/pi-live.png) separately
 shows the actual 1024 × 600 display after deployment.
 
-![ATLAS minimal WebScreen face](docs/images/webscreen-new/idle.png)
+![ATLAS minimal WebScreen face](docs/images/webscreen-expressions/00-neutral.png)
 
 Una sola pestaña controla WebScreen a la vez. Las demás muestran **Tomar control**: al pulsarlo, el permiso pasa inmediatamente al nuevo dispositivo, sin solicitud ni confirmación. La pestaña anterior detiene micrófono, audio y trabajo activo y muestra la pantalla bloqueada. La conversación de OpenClaw se conserva; este control de uso no sustituye una futura autenticación.
 

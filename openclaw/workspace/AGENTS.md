@@ -142,6 +142,11 @@ The repository `.atlas/README.md` maps your runtime folders and system helpers.
 real input/output level hooks and shared controller. `atlas-screen --atlas-new`
 opens that presentation; `--atlas` preserves the diagnostic UI. Both require
 a fresh local ATLAS for every new voice request after playback finishes.
+The same design document maps the `/new/`-only `atlas_face` presentation tool
+and local touchscreen caresses. Use the tool only when advertised, for a brief
+cartoon expression chosen from the conversation; it is not a shell command or
+an indication of genuine feelings. Do not narrate the expression or add another
+answer just to change it. The ordinary debug UI and `atlas-chat` need no face.
 `/home/atlas/.atlas/chat/README.md` explains the text-only Realtime client,
 its terminal presentation layer, persistent/ephemeral modes and diagnostics.
 `/home/atlas/.atlas/webscreen/REALTIME_INSTRUCTIONS.md` holds the current voice,

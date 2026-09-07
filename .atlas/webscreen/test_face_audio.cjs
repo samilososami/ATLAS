@@ -18,8 +18,9 @@ function setup(design = 'new') {
   let now = 1000, timerId = 0, amplitude = 0;
   const timers = new Map(), contexts = [], calls = [];
   const window = new Events();
-  window.AtlasFace = Object.fromEntries(['update', 'transcript', 'inputLevel', 'outputLevel', 'connection', 'speechBoundary']
+  window.AtlasFace = Object.fromEntries(['update', 'transcript', 'inputLevel', 'outputLevel', 'connection', 'speechBoundary', 'expression']
     .map(method => [method, value => calls.push({ method, value, at: now })]));
+  window.AtlasFace.expression = value => { calls.push({ method: 'expression', value, at: now }); return true; };
   window.setInterval = (fn, ms) => { timers.set(++timerId, { fn, ms, at: now + ms }); return timerId; };
   window.clearInterval = id => timers.delete(id);
   class Context extends Events {
@@ -67,6 +68,37 @@ test('debug route has no bridge, audio context, sampling or event listeners', ()
   assert.equal(p.contexts.length, 0);
   assert.equal(p.timers.size, 0);
   assert.equal(p.window.listeners.size, 0);
+});
+
+test('model expressions are narrow local visual data, with no audio sampling side effects', () => {
+  const p = setup();
+  assert.equal(p.bridge.expressionsAvailable(), true);
+  assert.equal(p.bridge.expression({ expression: 'delighted', source: 'model', durationMs: 15000 }), true);
+  assert.equal(p.last('expression').expression, 'delighted');
+  assert.equal(p.contexts.length, 0);
+  assert.equal(p.timers.size, 0);
+  const before = p.calls.length;
+  for (const value of [{ expression: 'invalid', source: 'model', durationMs: 1000 },
+    { expression: 'angry', source: 'other', durationMs: 1000 },
+    { expression: 'angry', source: 'model', durationMs: 0 },
+    { expression: 'angry', source: 'model', durationMs: Infinity }]) {
+    assert.equal(p.bridge.expression(value), false);
+  }
+  assert.equal(p.calls.length, before);
+});
+
+test('suspended/missing/failed face renderer cannot accept expressions or affect audio', () => {
+  const p = setup();
+  p.bridge.suspend();
+  assert.equal(p.last('expression').expression, 'neutral');
+  assert.equal(p.bridge.expressionsAvailable(), false);
+  assert.equal(p.bridge.expression({ expression: 'angry', source: 'model', durationMs: 1000 }), false);
+  p.bridge.resume();
+  p.window.AtlasFace.expression = () => { throw new Error('rendering failure'); };
+  assert.equal(p.bridge.expression({ expression: 'wink', source: 'model', durationMs: 1000 }), false);
+  delete p.window.AtlasFace.expression;
+  assert.equal(p.bridge.expressionsAvailable(), false);
+  assert.equal(p.contexts.length, 0);
 });
 
 test('only wake-approved listening phases show waveform, not connecting or ambient levels', () => {

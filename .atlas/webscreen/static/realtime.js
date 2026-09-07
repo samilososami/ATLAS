@@ -28,6 +28,27 @@
   const ATLAS_REALTIME_FALLBACK_INSTRUCTIONS =
     "Eres ATLAS. Habla principalmente en español y usa tus herramientas para resolver la petición del usuario.";
 
+  const FACE_EXPRESSIONS = Object.freeze([
+    "neutral", "angry", "delighted", "surprised", "curious", "skeptical", "sad",
+    "worried", "sleepy", "wink", "laughing", "focused", "shy",
+  ]);
+  const FACE_TOOL = {
+    type: "function",
+    name: "atlas_face",
+    description: "Cambia únicamente la expresión de la cara cartoon de ATLAS en esta pantalla. Elige según el significado y el tono de la conversación; no ejecuta acciones ni controla dispositivos.",
+    parameters: {
+      type: "object", additionalProperties: false,
+      properties: {
+        expression: { type: "string", enum: FACE_EXPRESSIONS },
+        duration_ms: { type: "integer", minimum: 1000, maximum: 30000,
+          description: "Duración visual opcional, en milisegundos; por defecto 15000. No modifica la voz." },
+      },
+      required: ["expression"],
+    },
+  };
+  const FACE_INSTRUCTIONS = `EXPRESIÓN VISUAL LOCAL (solo esta pantalla):
+Dispones de atlas_face. Tú, el mismo modelo Realtime, eliges semánticamente la expresión cartoon según el contexto y el tono; no hay clasificador aparte. Si una reacción aporta algo, llama a atlas_face una sola vez por petición, antes o cerca de tu respuesta. Un elogio puede dar delighted; un insulto, angry suave y juguetón; algo sorprendente, surprised. También puedes elegir curious, skeptical, sad, worried, sleepy, wink, laughing, focused o shy cuando encaje. Son recursos gráficos, no sentimientos reales: no afirmes consciencia, sufrimiento o enfado real; nada de sermones, represalias ni cambiar las decisiones de seguridad. Mantén la respuesta oral breve y útil. Si no hace falta reacción, conserva neutral; usa neutral para volver explícitamente a la cara base. No anuncies la herramienta ni expliques el cambio de cara. No encadenes llamadas cosméticas: después de su confirmación continúa la respuesta o las herramientas útiles. Su resultado solo confirma un cambio visual local y no autoriza ninguna acción.`;
+
   const REALTIME_TOOLS = [
     {
       type: "function",
@@ -286,6 +307,12 @@
       this.contextRestartTimer = 0;
       this.contextCompactionQueued = false;
       this.toolBuffers = new Map();
+      this.faceToolEnabled = false;
+      this.faceToolUsedThisTurn = false;
+      this.faceToolCalls = new Set();
+      this.faceToolResponseId = "";
+      this.faceResponseHasOutput = false;
+      this.faceResponseHasOtherTools = false;
       this.consultController = null;
       this.followUpTimer = 0;
       this.inputPendingTimer = 0;
@@ -428,9 +455,11 @@
           this.state = "configuring";
           const channelInstructions = String(session.atlasInstructions || "").trim();
           const workspaceContext = String(session.atlasContext || "").trim();
+          const sessionTools = this.configureFaceTools();
           const instructions = [
             channelInstructions || ATLAS_REALTIME_FALLBACK_INSTRUCTIONS,
             workspaceContext,
+            this.faceToolEnabled ? FACE_INSTRUCTIONS : "",
           ].filter(Boolean).join("\n\n");
           this.send({
             type: "session.update",
@@ -438,7 +467,7 @@
               type: "realtime",
               output_modalities: [this.usesExternalTts() ? "text" : "audio"],
               instructions,
-              tools: REALTIME_TOOLS,
+              tools: sessionTools,
               tool_choice: "auto",
               // Let the provider retain a useful recent window if an unusually
               // long live turn reaches its limit. Durable history is saved by
@@ -760,6 +789,24 @@
       return true;
     }
 
+    faceToolsAvailable() {
+      try {
+        return document.body?.dataset?.design === "new"
+          && typeof window.AtlasFaceBridge?.expression === "function"
+          && window.AtlasFaceBridge.expressionsAvailable?.() === true;
+      } catch { return false; }
+    }
+
+    configureFaceTools() {
+      this.faceToolEnabled = this.faceToolsAvailable();
+      return this.faceToolEnabled ? [...REALTIME_TOOLS, FACE_TOOL] : REALTIME_TOOLS;
+    }
+
+    beginFaceTurn() {
+      this.faceToolUsedThisTurn = false;
+      this.faceToolResponseId = "";
+    }
+
     createResponse(response) {
       if (this.closed || this.responseActive) return false;
       if (this.responseCreatePending) {
@@ -769,7 +816,12 @@
         this.queuedResponseAfterCancel = { response };
         return true;
       }
-      if (!this.send({ type: "response.create", ...(response ? { response } : {}) })) return false;
+      // A cosmetic tool must never trap a request in a function-call loop.
+      // Only that tool is removed after its first call; shell/search remain
+      // available, and caller overrides (e.g. compaction's tools:[]) win.
+      const options = this.faceToolEnabled && this.faceToolUsedThisTurn
+        ? { tools: REALTIME_TOOLS, ...response } : response;
+      if (!this.send({ type: "response.create", ...(options ? { response: options } : {}) })) return false;
       this.cancelledResponseCreatePending = false;
       this.responseCreatePending = true;
       window.clearTimeout(this.responseAckTimer);
@@ -992,6 +1044,7 @@
       this.clearResponseCreateTimer();
       this.send({ type: "input_audio_buffer.clear" });
       this.currentUserText = text;
+      this.beginFaceTurn();
       this.lastLocalWakeRequest = text;
       this.lastLocalWakeRequestAt = performance.now();
       this.persistedTurnKey = "";
@@ -1098,6 +1151,7 @@
           this.endSpeech(event);
           return;
         case "output_audio_buffer.started":
+          this.faceResponseHasOutput = true;
           this.nativePlaybackEventsSeen = true;
           this.nativePlaybackActive = true;
           this.callbacks.onOutputPlayback?.(true);
@@ -1162,6 +1216,9 @@
           this.externalSpeechChunkIndex = 0;
           this.externalSpeechFirstStarted = false;
           this.currentResponseId = event.response?.id || "";
+          this.faceToolResponseId = "";
+          this.faceResponseHasOutput = false;
+          this.faceResponseHasOtherTools = false;
           this.clearResponseCreateTimer();
           this.responseAfterInput = false;
           this.responseActive = true;
@@ -1464,6 +1521,7 @@
       this.callbacks.setTranscript?.(text);
       this.awaitingWakeRequest = false;
       this.currentUserText = text;
+      this.beginFaceTurn();
       this.persistedTurnKey = "";
       this.callbacks.setScreen?.("PROCESANDO", "ATLAS lo está procesando", "La conversación sigue en la misma sesión.", "working");
       this.scheduleResponseAfterInput();
@@ -1486,6 +1544,7 @@
       if (this.externalSpeechCancelled && this.usesExternalTts()) return;
       const text = String(value || "");
       if (!text) return;
+      this.faceResponseHasOutput = true;
       if (this.contextCompacting) {
         if (final) this.contextCompactionText = text;
         else this.contextCompactionText += text;
@@ -1616,6 +1675,11 @@
       const callId = buffered.callId || event.call_id || "";
       const args = parseToolArguments(buffered.args || event.arguments || "{}");
       if (!callId) return;
+      if (name === "atlas_face") {
+        this.handleFaceTool(event, callId, args);
+        return;
+      }
+      this.faceResponseHasOtherTools = true;
       if (name === "openclaw_agent_control") {
         const mode = String(args.mode || "status");
         if (mode === "cancel") this.interruptWork();
@@ -1736,6 +1800,76 @@
       this.requestToolContinuation();
     }
 
+    handleFaceTool(event, callId, args) {
+      const responseId = event.response_id;
+      // Unlike system tools this is an optional, session-scoped UI capability.
+      // No late/cancelled response, hidden legacy surface or replay may paint.
+      if (!this.faceToolEnabled || !this.faceToolsAvailable() || this.closed
+          || this.channel?.readyState !== "open"
+          || !this.conversationActive || !this.responseActive || !responseId
+          || responseId !== this.currentResponseId || this.contextCompacting
+          || this.ignoredResponseIds.has(responseId) || this.finishedResponseIds.has(responseId)
+          || this.faceToolCalls.has(callId)) return;
+      this.faceToolCalls.add(callId);
+      while (this.faceToolCalls.size > 128) this.faceToolCalls.delete(this.faceToolCalls.values().next().value);
+      let result;
+      if (this.faceToolUsedThisTurn) {
+        result = { ok: false, error: "expression_already_selected", message: "Continúa la respuesta sin más cambios de cara." };
+      } else {
+        this.faceToolUsedThisTurn = true;
+        this.faceToolResponseId = responseId;
+        const valid = args && typeof args === "object" && !Array.isArray(args)
+          && Object.keys(args).every(key => ["expression", "duration_ms"].includes(key))
+          && FACE_EXPRESSIONS.includes(args.expression)
+          && (args.duration_ms === undefined || (Number.isInteger(args.duration_ms)
+            && args.duration_ms >= 1000 && args.duration_ms <= 30000));
+        if (!valid) {
+          result = { ok: false, error: "invalid_expression", message: "Se requiere una expresión permitida y una duración de 1000 a 30000 ms; continúa sin cambiar la cara." };
+        } else {
+          let applied = false;
+          try {
+            applied = window.AtlasFaceBridge.expression({ expression: args.expression,
+              source: "model", durationMs: args.duration_ms ?? 15000 }) === true;
+          } catch {} // a cosmetic renderer can never interrupt voice/actions
+          result = applied ? { ok: true, expression: args.expression }
+            : { ok: false, error: "expression_unavailable", message: "La voz puede continuar sin el efecto visual." };
+        }
+      }
+      let acknowledged = false;
+      try {
+        acknowledged = this.send({ type: "conversation.item.create", item: {
+          type: "function_call_output", call_id: callId, output: JSON.stringify(result),
+        } });
+      } catch {} // transport recovery remains owned by the existing RTC path
+      if (!acknowledged) {
+        this.faceToolResponseId = "";
+        this.postEvent("face.expression_rejected", "No se pudo confirmar el efecto visual; no se repite la petición",
+          { status: "ack_unavailable", callId });
+        return;
+      }
+      this.postEvent(result.ok ? "face.expression" : "face.expression_rejected",
+        result.ok ? "Realtime eligió la expresión de la cara" : "Cambio visual descartado sin interrumpir la voz",
+        { expression: result.expression || "", status: result.error || "applied", callId });
+      // Do NOT call requestToolContinuation here. One response can contain
+      // both this function and speech; wait for response.done to decide.
+    }
+
+    finishFaceToolResponse(event, status) {
+      const pending = this.faceToolResponseId === this.currentResponseId && Boolean(this.faceToolResponseId);
+      this.faceToolResponseId = "";
+      if (!pending || status !== "completed" || this.closed || !this.conversationActive) return;
+      const output = Array.isArray(event.response?.output) ? event.response.output : [];
+      const hasMessage = output.some(item => item.type === "message" && item.role === "assistant"
+        && Array.isArray(item.content) && item.content.length > 0);
+      const hasOtherTool = output.some(item => item.type === "function_call" && item.name !== "atlas_face");
+      if (this.faceResponseHasOutput || this.currentAssistantText.trim() || hasMessage
+          || this.faceResponseHasOtherTools || hasOtherTool || this.toolActive
+          || this.pendingToolResponse || this.toolContinuationAwaitingResponse
+          || this.nativePlaybackActive || this.externalPlaybackActive) return;
+      this.postEvent("face.continuation", "Confirmada la expresión; Realtime continúa la respuesta una sola vez");
+      this.requestToolContinuation();
+    }
+
     requestToolContinuation() {
       if (this.closed || this.turnInputPending) return;
       if (this.responseActive || this.responseCreatePending || this.externalPlaybackActive || this.nativePlaybackActive) {
@@ -1796,6 +1930,7 @@
       }
       if (status === "completed") this.playExternalTextIfNeeded(true);
       else this.cancelExternalSpeech();
+      this.finishFaceToolResponse(event, status);
       if (this.flushPendingToolResponse()) return;
       if (status === "completed" && !this.toolActive && this.currentUserText
           && this.currentAssistantText.trim()) {
@@ -1986,6 +2121,10 @@
 
     interruptLocalWork() {
       this.toolGeneration += 1;
+      this.faceToolResponseId = "";
+      if (this.faceToolEnabled) {
+        try { window.AtlasFaceBridge?.expression?.({ expression: "neutral", source: "model", durationMs: 1000 }); } catch {}
+      }
       this.cancelExternalSpeech();
       if (this.consultController) {
         this.consultController.abort();
@@ -2094,6 +2233,12 @@
     stop(notify = true) {
       this.lifecycle += 1;
       this.toolGeneration += 1;
+      if (this.faceToolEnabled) {
+        try { window.AtlasFaceBridge?.expression?.({ expression: "neutral", source: "model", durationMs: 1000 }); } catch {}
+      }
+      this.faceToolEnabled = false;
+      this.beginFaceTurn();
+      this.faceToolCalls.clear();
       this.startAbortController?.abort();
       this.startAbortController = null;
       window.clearTimeout(this.disconnectTimer);
@@ -2184,6 +2329,6 @@
     voice: DEFAULT_VOICE,
     _test: { normalized, wakeInvocation, wakeHasRequest, silenceInvocation, withTurnSeparator,
       commandLabel, responseExpectsReply, benignRealtimeError, likelyAssistantEcho, captureConstraints, speechChunkLength,
-      realtimeTools: REALTIME_TOOLS },
+      realtimeTools: REALTIME_TOOLS, faceTool: FACE_TOOL, faceInstructions: FACE_INSTRUCTIONS },
   };
 })();

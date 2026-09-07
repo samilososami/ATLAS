@@ -78,22 +78,44 @@ body[data-design="new"] .face-stage::before {
   pointer-events: none;
 }
 body[data-design="new"] .face-canvas { display: block; position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
-body[data-design="new"] .face-character { transform-origin: 795.5px 425px; transition: transform .5s var(--face-ease), opacity .32s ease; }
-body[data-design="new"] .face-eye { transform-box: fill-box; transform-origin: center; }
+body[data-design="new"] .face-character { transform-origin: 795.5px 425px; transform: scale(1.875); transition: transform .5s var(--face-ease), opacity .32s ease; }
+body[data-design="new"] .face-eye-blink { transform-box: view-box; }
+body[data-design="new"] .face-eye-left { transform-origin: 631.45px 425px; }
+body[data-design="new"] .face-eye-right { transform-origin: 959.55px 425px; }
+body[data-design="new"] .face-eye-variant { opacity: 0; transition: opacity .26s ease; }
+body[data-design="new"] .face-stage[data-expression="neutral"] .face-eye-neutral,
+body[data-design="new"] .face-stage[data-expression="angry"] .face-eye-angry,
+body[data-design="new"] .face-stage[data-expression="delighted"] .face-eye-delighted,
+body[data-design="new"] .face-stage[data-expression="surprised"] .face-eye-surprised,
+body[data-design="new"] .face-stage[data-expression="curious"] .face-eye-curious,
+body[data-design="new"] .face-stage[data-expression="skeptical"] .face-eye-skeptical,
+body[data-design="new"] .face-stage[data-expression="sad"] .face-eye-sad,
+body[data-design="new"] .face-stage[data-expression="worried"] .face-eye-worried,
+body[data-design="new"] .face-stage[data-expression="sleepy"] .face-eye-sleepy,
+body[data-design="new"] .face-stage[data-expression="wink"] .face-eye-wink,
+body[data-design="new"] .face-stage[data-expression="laughing"] .face-eye-laughing,
+body[data-design="new"] .face-stage[data-expression="focused"] .face-eye-focused,
+body[data-design="new"] .face-stage[data-expression="shy"] .face-eye-shy { opacity: 1; }
+body[data-design="new"] .face-mouth, body[data-design="new"] .face-mouth-previous { transform: translateY(26.58222px); }
+body[data-design="new"] .face-mouth-previous { opacity: 0; }
+body[data-design="new"] .face-stage[data-expression-transition="true"] .face-mouth { animation: face-expression-in .26s ease both; }
+body[data-design="new"] .face-stage[data-expression-transition="true"] .face-mouth-previous { animation: face-expression-out .26s ease both; }
+body[data-design="new"] .face-petting-zone { display: block; width: 100%; height: 100%; touch-action: none; }
 body[data-design="new"] .face-glow { opacity: .16; transition: opacity .35s ease; }
+body[data-design="new"] .face-glow ellipse:nth-child(3) { transform: translateY(26.58222px); }
 body[data-design="new"] .face-wave { opacity: 0; transform: scaleX(.06); transform-origin: 795.5px 425px; transition: transform .55s var(--face-ease), opacity .3s ease; }
 body[data-design="new"] .face-wave rect { transition: height .075s linear, y .075s linear; }
 body[data-design="new"] .face-stage[data-state="listening"] .face-character { opacity: 0; transform: translateY(-6px) scale(.035, .025); }
 body[data-design="new"] .face-stage[data-state="listening"] .face-wave { opacity: 1; transform: scaleX(1); }
-body[data-design="new"] .face-stage[data-state="idle"][data-blinking="true"] .face-eye { animation: face-blink .35s ease-in-out 1; }
-body[data-design="new"] .face-stage[data-state="working"] .face-character { transform: rotate(-3deg) translateY(-7px); }
-body[data-design="new"] .face-stage[data-state="working"] .face-eye { transform: scaleY(.84); transition: transform .4s var(--face-ease); }
+body[data-design="new"] .face-stage[data-state="idle"][data-blinking="true"] .face-eye-blink { animation: face-blink .35s ease-in-out 1; }
+body[data-design="new"] .face-stage[data-state="working"] .face-character { transform: rotate(-3deg) translateY(-7px) scale(1.875); }
+body[data-design="new"] .face-stage[data-state="working"] .face-eye-blink { transform: scaleY(.84); transition: transform .4s var(--face-ease); }
 body[data-design="new"] .face-stage[data-state="working"] .face-glow { opacity: .11; }
 body[data-design="new"] .face-stage[data-state="connecting"] .face-character { opacity: .66; }
 body[data-design="new"] .face-stage[data-state="error"] .face-character { opacity: .72; }
 body[data-design="new"] .face-copy {
   position: absolute;
-  top: 64.8%;
+  top: 70%;
   left: 50%;
   width: min(78%, 860px);
   transform: translateX(-50%);
@@ -125,6 +147,7 @@ body[data-design="new"] .face-transcript {
 }
 body[data-design="new"] .face-transcript:not(:empty) + .face-caption { margin-top: 12px; font-size: clamp(14px, 1.1vw, 17px); }
 body[data-design="new"] .face-transcript:empty { display: none; }
+body[data-design="new"] .face-stage[data-state="speaking"] .face-copy { top: 84%; }
 body[data-design="new"] .side-panel {
   inset: 0 0 0 auto;
   width: min(470px, 94vw);
@@ -171,8 +194,10 @@ body[data-design="new"] .face-debug #activity-log { max-height: 300px; overflow-
 body[data-design="new"] .tool-shell { padding-top: 108px; }
 body[data-design="new"] .access-blocked { background: var(--face-background); }
 body[data-design="new"] .face-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
-body[data-design="new"][data-face-paused="true"] .face-eye { animation-play-state: paused !important; }
+body[data-design="new"][data-face-paused="true"] .face-stage * { animation: none !important; transition: none !important; }
 @keyframes face-blink { 0%, 100% { transform: scaleY(1); } 30%, 50% { transform: scaleY(.065); } }
+@keyframes face-expression-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes face-expression-out { from { opacity: 1; } to { opacity: 0; } }
 @media (max-width: 700px) {
   body[data-design="new"] .face-header { inset: 16px 20px auto; }
   body[data-design="new"] .menu-toggle { top: 16px; right: 17px; }
@@ -182,7 +207,7 @@ body[data-design="new"][data-face-paused="true"] .face-eye { animation-play-stat
   body[data-design="new"] .face-copy { width: 82%; }
 }
 @media (max-aspect-ratio: 4/5) {
-  body[data-design="new"] .face-canvas { width: 175%; max-width: none; left: -37.5%; }
+  body[data-design="new"] .face-canvas { width: 150%; max-width: none; left: -25%; }
   body[data-design="new"] .face-copy { top: 64%; }
   body[data-design="new"] .face-stage::before { width: 100%; }
 }
