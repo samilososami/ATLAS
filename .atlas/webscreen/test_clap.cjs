@@ -8,7 +8,7 @@ const source = fs.readFileSync(`${__dirname}/static/clap.js`, 'utf8');
 function setup() {
   class Element {
     constructor() { this.children = []; this.hidden = false; this.disabled = false; this.value = 0; this.textContent = ''; this.className = ''; }
-    addEventListener() {}
+    addEventListener(name, listener) { this.listeners ||= {}; this.listeners[name] = listener; }
     append(...items) { this.children.push(...items); }
     replaceChildren(...items) { this.children = items; }
   }
@@ -19,7 +19,7 @@ function setup() {
     addEventListener() {}, setTimeout() { return 0; }, clearTimeout() {}, AtlasFace: { clap() { return true; } },
   };
   vm.runInNewContext(source, { window, document, performance: { now: () => 1000 }, Math, Number, Date, JSON, console });
-  return window.AtlasClap;
+  return { clap: window.AtlasClap, window, nodes };
 }
 
 function broadBandFrame({ rms = .09, peak = .28, high = true } = {}) {
@@ -29,7 +29,7 @@ function broadBandFrame({ rms = .09, peak = .28, high = true } = {}) {
 }
 
 test('clap metrics are extracted synchronously without retaining a waveform', () => {
-  const clap = setup();
+  const { clap } = setup();
   const frame = broadBandFrame();
   const metrics = clap._featuresFor(frame);
   assert.ok(metrics.highBandRatio > .5);
@@ -39,7 +39,7 @@ test('clap metrics are extracted synchronously without retaining a waveform', ()
 });
 
 test('calibrated broad-band transient passes while voice-like low-band sound is rejected', () => {
-  const clap = setup();
+  const { clap } = setup();
   const rules = clap._defaultRules(.004);
   assert.equal(clap._candidate(clap._featuresFor(broadBandFrame()), rules, .004), true);
   assert.equal(clap._candidate(clap._featuresFor(broadBandFrame({ high: false })), rules, .004), false);
@@ -47,7 +47,7 @@ test('calibrated broad-band transient passes while voice-like low-band sound is 
 });
 
 test('no analyser frames are requested until calibration or a saved profile is active on ATLAS', () => {
-  const clap = setup();
+  const { clap } = setup();
   assert.equal(clap.needsFrames(), false);
   clap._state.phase = 'trial';
   assert.equal(clap.needsFrames(), true);
@@ -57,4 +57,21 @@ test('no analyser frames are requested until calibration or a saved profile is a
   assert.equal(clap.needsFrames(), false);
   clap.onViewChanged('atlas');
   assert.equal(clap.needsFrames(), true);
+});
+
+test('starting calibration prepares an already-authorized microphone through the app bridge', async () => {
+  const { clap, window, nodes } = setup();
+  let requested = 0;
+  window.AtlasClapBridge = {
+    async ensureMicrophone() {
+      requested += 1;
+      clap.microphone({ available: true, sampleRate: 48000 });
+      return true;
+    },
+  };
+  nodes.get('#clap-start').listeners.click();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(requested, 1);
+  assert.equal(clap._state.phase, 'ready');
+  assert.equal(nodes.get('#clap-start').disabled, false);
 });

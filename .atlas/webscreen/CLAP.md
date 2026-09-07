@@ -15,9 +15,13 @@ usuario realiza cinco pruebas: pulsa **Registrar prueba** y aplaude dos veces.
 Cada prueba tiene una breve medida inicial del ambiente y una ventana limitada
 para el par; puede cancelarse o repetirse sin alterar el perfil guardado.
 
-No se abre un segundo `getUserMedia`, `MediaRecorder` ni una conexión Realtime.
-`app.js` comparte, solo cuando hace falta, un frame temporal del `AnalyserNode`
-que ya usa para el nivel de voz. `clap.js` calcula y descarta inmediatamente:
+Mientras ATLAS está esperando, `app.js` comparte, solo cuando hace falta, un
+frame temporal del `AnalyserNode` que ya usa para el nivel de voz. Al abrir el
+tab de calibración la sesión Realtime se detiene deliberadamente; al pulsar
+**Empezar calibración**, WebScreen abre entonces un único stream local temporal
+con el permiso de Chrome ya concedido. No muestra un segundo diálogo ni hay dos
+capturas simultáneas. Ese stream se cierra al salir del tab y no existe
+`MediaRecorder` ni grabación. `clap.js` calcula y descarta inmediatamente:
 
 - RMS, pico y un suelo de ruido ambiente adaptativo;
 - proporción de energía de banda alta y planitud espectral, propias de un
@@ -41,7 +45,8 @@ la habitación, se debe usar **Recalibrar**.
 - `static/clap.js`: calibración, análisis síncrono de frames y UI; no gestiona
   pistas de audio ni conserva arrays de muestras.
 - `static/app.js`: entrega un FFT únicamente durante calibración o cuando el
-  perfil ya está activo en el tab ATLAS.
+  perfil ya está activo en el tab ATLAS; abre y libera la captura local efímera
+  de calibración con el permiso previamente otorgado.
 - `server.py`: valida límites estrictos, lee/escribe el resumen de forma
   atómica y protege `GET/POST /api/clap/profile` con la misma lease de control.
 - `static/new/face.js`: expone `AtlasFace.clap()` para la transición local y

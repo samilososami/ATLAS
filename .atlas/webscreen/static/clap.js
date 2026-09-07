@@ -1,5 +1,6 @@
-/* Local, calibrated double-clap gesture. It observes the analyser already
- * owned by app.js; it never opens another microphone or records audio. */
+/* Local, calibrated double-clap gesture. It observes app.js's analyser and
+ * never records audio. During calibration, app.js can temporarily reopen the
+ * already-authorized microphone after Realtime has released its own stream. */
 (() => {
   "use strict";
 
@@ -71,7 +72,10 @@
     const waitingForPair = state.phase === "arming" || state.phase === "trial";
     if (controls.start) {
       controls.start.hidden = calibrating;
-      controls.start.disabled = state.busy || !hasControl() || !state.microphone;
+      // Starting calibration is also the explicit user gesture that asks
+      // app.js to attach the already-authorized local capture if Realtime was
+      // stopped when this drawer was opened.
+      controls.start.disabled = state.busy || !hasControl();
       controls.start.textContent = state.profile ? "Recalibrar" : "Empezar calibración";
     }
     if (controls.capture) {
@@ -92,7 +96,9 @@
     else if (state.phase === "arming") controls.step.textContent = `Prepárate… prueba ${state.trials.length + 1}/${TRIALS_REQUIRED}.`;
     else if (state.phase === "trial") controls.step.textContent = `Aplaude dos veces ahora · ${state.pair.length}/2 detectados.`;
     else if (state.phase === "complete") controls.step.textContent = "Las cinco pruebas están listas. Guarda el mapeo.";
-    else controls.step.textContent = state.microphone ? "Preparado para calibrar cinco pares de aplausos." : "Abre ATLAS y permite el micrófono para calibrar.";
+    else controls.step.textContent = state.microphone
+      ? "Preparado para calibrar cinco pares de aplausos."
+      : "Pulsa “Empezar calibración” para preparar el micrófono ya autorizado.";
   }
 
   function clearTimer() {
@@ -113,9 +119,24 @@
     render();
   }
 
-  function start() {
+  async function start() {
     if (!hasControl()) { setResult("Esta pestaña no tiene el control de ATLAS.", "error"); return; }
-    if (!state.microphone) { setResult("Permite el micrófono en ATLAS antes de calibrar.", "error"); render(); return; }
+    if (state.busy) return;
+    if (!state.microphone) {
+      state.busy = true;
+      setResult("Preparando el micrófono ya autorizado…");
+      render();
+      try {
+        const ready = await window.AtlasClapBridge?.ensureMicrophone?.();
+        if (!ready || !state.microphone) throw new Error("El micrófono no quedó disponible para calibrar.");
+      } catch (error) {
+        setResult(error?.message || "No se pudo preparar el micrófono para calibrar.", "error");
+        return;
+      } finally {
+        state.busy = false;
+        render();
+      }
+    }
     state.generation += 1;
     clearTimer();
     state.phase = "ready";
@@ -355,7 +376,7 @@
     render();
   }
 
-  controls.start?.addEventListener("click", start);
+  controls.start?.addEventListener("click", () => { void start(); });
   controls.capture?.addEventListener("click", capture);
   controls.cancel?.addEventListener("click", () => cancel());
   controls.save?.addEventListener("click", () => { void save(); });

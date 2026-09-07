@@ -102,6 +102,12 @@ const microphoneMuteButton = document.querySelector("#microphone-mute");
 
 let microphoneStream = null;
 let microphoneInitializing = false;
+// Realtime owns its WebRTC capture while ATLAS is visible. The clap mapper
+// needs an analyser even after that session is intentionally stopped, so it
+// may temporarily own one local stream of its own. It is never concurrent
+// with the Realtime stream and is released as soon as the drawer is left.
+let clapCalibrationStream = null;
+let clapMicrophoneInitializing = false;
 let microphoneMuted = false;
 let microphoneGeneration = 0;
 let voiceAudioContext = null;
@@ -233,6 +239,7 @@ function switchView(view) {
   if (activeView === "transcription" && view !== "transcription") stopDictation();
   if (activeView === "tts" && view !== "tts") stopTtsLab();
   if (activeView === "wakeword" && view !== "wakeword") window.AtlasWakeEnrollment?.stop?.();
+  if (activeView === "clap" && view !== "clap") releaseClapCalibrationMicrophone();
   activeView = view;
   for (const element of appViews) {
     const selected = element.dataset.viewPanel === view;
@@ -703,6 +710,61 @@ function startVoiceActivityGate(stream) {
   } catch (error) {
     stopVoiceActivityGate();
     addLog(`El filtro local de voz no pudo iniciarse: ${error.message}`, null, "error");
+  }
+}
+
+function liveAudioStream(stream) {
+  return Boolean(stream?.getAudioTracks?.().some((track) => track.readyState !== "ended"));
+}
+
+function releaseClapCalibrationMicrophone() {
+  const stream = clapCalibrationStream;
+  clapCalibrationStream = null;
+  if (!stream) return;
+  // Disconnect the analyser before stopping its source. This tells the clap
+  // drawer immediately that the short-lived calibration capture is gone.
+  stopVoiceActivityGate();
+  stream.getTracks().forEach((track) => track.stop());
+  if (microphoneStream === stream) microphoneStream = null;
+  microphoneMuteButton.disabled = !microphoneStream;
+}
+
+async function ensureClapCalibrationMicrophone() {
+  if (!hasControl() || activeView !== "clap") return false;
+  if (microphoneMuted) throw new Error("El micrófono está silenciado. Actívalo antes de calibrar.");
+  if (voiceGateReady && liveAudioStream(microphoneStream)) return true;
+  if (clapMicrophoneInitializing) return false;
+  if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+    throw new Error("Chrome no permite abrir el micrófono en este origen.");
+  }
+
+  clapMicrophoneInitializing = true;
+  try {
+    // Chrome reusa el permiso ya concedido sin volver a mostrar un diálogo.
+    // Esta captura solo existe durante la calibración, después de detener
+    // Realtime: nunca hay dos streams de micrófono a la vez.
+    const stream = await navigator.mediaDevices.getUserMedia(microphoneConstraints());
+    if (!hasControl() || activeView !== "clap") {
+      stream.getTracks().forEach((track) => track.stop());
+      return false;
+    }
+    releaseClapCalibrationMicrophone();
+    microphoneStream = stream;
+    clapCalibrationStream = stream;
+    microphoneMuteButton.disabled = false;
+    startVoiceActivityGate(stream);
+    if (!voiceGateReady) throw new Error("No se pudo preparar el analizador local del micrófono.");
+    addLog("Micrófono local preparado para calibrar el doble aplauso");
+    return true;
+  } catch (error) {
+    releaseClapCalibrationMicrophone();
+    const message = error?.name === "NotAllowedError"
+      ? "Chrome bloqueó el micrófono. Revisa el permiso de esta pantalla."
+      : (error?.message || "No se pudo abrir el micrófono para calibrar.");
+    addLog(message, null, "error");
+    throw new Error(message);
+  } finally {
+    clapMicrophoneInitializing = false;
   }
 }
 
@@ -2353,6 +2415,7 @@ window.addEventListener("beforeunload", () => {
   suspendHealthCheck();
   window.clearTimeout(realtimeReconnectTimer);
   realtimeController?.stop(false);
+  releaseClapCalibrationMicrophone();
   microphoneGeneration += 1;
   microphoneInitializing = false;
   recognitionEnabled = false;
@@ -2368,6 +2431,12 @@ window.addEventListener("beforeunload", () => {
 
 transcriptElement.classList.add("placeholder");
 responseElement.classList.add("placeholder");
+// clap.js intentionally does not own media permissions or a MediaStream. This
+// tiny bridge gives its start button one explicit, bounded way to attach a
+// calibration-only capture after Realtime has been stopped by the tool view.
+window.AtlasClapBridge = Object.freeze({
+  ensureMicrophone: ensureClapCalibrationMicrophone,
+});
 window.atlasAccess.bind({
   isIdle: () => (REALTIME_PRIMARY && !realtimeFallbackActive
     ? activeView === "atlas" && Boolean(realtimeController?.isIdle())
@@ -2381,6 +2450,7 @@ window.atlasAccess.bind({
     window.clearTimeout(realtimeReconnectTimer);
     realtimeReconnectTimer = 0;
     realtimeController?.stop(false);
+    releaseClapCalibrationMicrophone();
     microphoneGeneration += 1;
     microphoneInitializing = false;
     interactionToken += 1;
