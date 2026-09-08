@@ -3489,7 +3489,10 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
         params = args.get("params", {})
         if not isinstance(params, dict):
             raise ValueError("Los parámetros de teléfono deben ser un objeto JSON")
-        inspect_after = args.get("inspectAfter", args.get("inspect_after", True)) is not False
+        default_inspect = operation != "androiduse.start"
+        inspect_after = args.get(
+            "inspectAfter", args.get("inspect_after", default_inspect),
+        ) is not False
         interaction_id = safe_identifier(
             str(payload.get("interactionId") or ""), uuid4().hex,
         )

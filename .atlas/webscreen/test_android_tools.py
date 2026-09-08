@@ -150,6 +150,26 @@ class AndroidControlTests(unittest.TestCase):
         self.assertEqual(responses[0][0], 200)
         self.assertEqual(responses[0][1]["screenshot"]["pngBase64"], encoded)
 
+    @mock.patch.object(SERVER, "append_realtime_event")
+    @mock.patch.object(SERVER, "execute_atlas_app_control")
+    def test_start_does_not_inspect_until_the_next_visual_request(
+        self, execute: mock.Mock, _event: mock.Mock,
+    ) -> None:
+        execute.return_value = {"ok": True}
+        responses: list[tuple[int, dict[str, object]]] = []
+        handler = SimpleNamespace(
+            _read_realtime_device_tool=lambda: (
+                "androiduse.start", {}, False, "interaction",
+            ),
+            log_client=lambda: {},
+            send_json=lambda status, payload: responses.append((status, payload)),
+        )
+        SERVER.AtlasScreenHandler.handle_realtime_android(handler)
+        self.assertEqual(execute.call_count, 1)
+        self.assertEqual(execute.call_args.args[0], "androiduse.start")
+        self.assertEqual(responses[0][0], 200)
+        self.assertNotIn("screenshot", responses[0][1])
+
 
 if __name__ == "__main__":
     unittest.main()

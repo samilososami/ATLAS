@@ -8,5 +8,6 @@ Actualización instalable que afina el flujo de control del teléfono:
   la detiene, cierra el cliente, pulsa el botón rojo o vence el tiempo de espera.
 - Abrir una aplicación conocida sigue usando `apps.launch`; las coordenadas se
   reservan para acciones dentro de la aplicación.
-- El cliente ya no fuerza una segunda inspección visual inmediatamente después
-  de `androiduse.start`.
+- Ni el cliente ni el backend fuerzan una inspección visual inmediatamente
+  después de `androiduse.start`; una tarea posterior solicita la captura cuando
+  realmente la necesita.

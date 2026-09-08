@@ -697,7 +697,10 @@ class AtlasChat:
     def _run_android_tool(self, args: dict[str, Any]) -> dict[str, Any]:
         operation = str(args.get("operation") or "").strip().lower()
         params = args.get("params", {})
-        inspect_after = args.get("inspectAfter", args.get("inspect_after", True)) is not False
+        default_inspect = operation != "androiduse.start"
+        inspect_after = args.get(
+            "inspectAfter", args.get("inspect_after", default_inspect),
+        ) is not False
         try:
             if operation == "androiduse.screenshot":
                 result, screenshot = self._capture_android_screenshot()
