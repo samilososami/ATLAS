@@ -1,12 +1,30 @@
-import asyncio, json, os, secrets, sys, time, unittest
+import asyncio, base64, json, os, secrets, sys, time, unittest
 from unittest.mock import AsyncMock, patch
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).parent))
 from crypto import Cipher,b64
 from server import Companion,application
+import ble_pair
 from aiohttp.test_utils import TestClient,TestServer
 
 def cfg():return {'key':b64(secrets.token_bytes(32)),'room':secrets.token_hex(24),'relay':'','relayPassword':'not-a-real-secret'}
+
+class PairingPayloadTests(unittest.TestCase):
+    def test_payload_fits_one_gatt_value_and_has_direct_credentials(self):
+        configuration=cfg()
+        with patch.object(ble_pair,'tailscale_identity',return_value={'host':'atlas-a1','ip':'100.112.71.111'}), \
+             patch.object(ble_pair.ssl,'PEM_cert_to_DER_cert',return_value=b'certificate-der'), \
+             patch.object(Path,'read_text',return_value='certificate'):
+            payload=ble_pair.pairing_payload(configuration)
+        self.assertLessEqual(len(payload),ble_pair.MAX_PAIRING_VALUE_BYTES)
+        self.assertTrue(payload.startswith(b'atlas2:'))
+        encoded=payload.split(b':',1)[1]
+        decoded=json.loads(base64.urlsafe_b64decode(encoded+b'='*((-len(encoded))%4)))
+        self.assertEqual(decoded['endpoint'],'wss://100.112.71.111:5010/app')
+        self.assertEqual(decoded['key'],configuration['key'])
+        self.assertRegex(decoded['pin'],r'^[0-9a-f]{64}$')
+        self.assertNotIn('room',decoded)
+        self.assertNotIn('relay',decoded)
 class CryptoTests(unittest.TestCase):
     def test_round_trip_and_replay(self):
         c=cfg();a=Cipher(c['key'],'app');p=Cipher(c['key'],'pi');box=a.seal({'text':'hola ñ'})

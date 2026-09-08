@@ -252,7 +252,15 @@ public final class MainActivity extends Activity {
     private void savePairingPayload(String code){
         io.execute(()->{try{
             int separator=code.indexOf(':');if(separator<0)throw new IOException("Payload de emparejamiento inválido");
-            JSONObject next=new JSONObject(new String(connection.decode(code.substring(separator+1)),StandardCharsets.UTF_8));
+            String encoded=code.substring(separator+1).replaceAll("\\s","");
+            final byte[] decoded;
+            try{decoded=connection.decode(encoded);}catch(IllegalArgumentException error){
+                throw new IOException("Los datos BLE llegaron incompletos. Reinicia atlas-app pair e inténtalo de nuevo.",error);
+            }
+            final JSONObject next;
+            try{next=new JSONObject(new String(decoded,StandardCharsets.UTF_8));}catch(JSONException error){
+                throw new IOException("Los datos BLE llegaron incompletos. Reinicia atlas-app pair e inténtalo de nuevo.",error);
+            }
             int version=next.has("v")?next.optInt("v"):next.optInt("version");boolean endpoint=!next.optString("endpoint").isEmpty()||!next.optString("tailscale").isEmpty()||!next.optString("tailscaleIp").isEmpty()||!next.optString("direct").isEmpty()||next.optString("url").startsWith("wss://")||next.optString("relay").startsWith("wss://");
             if((version<1||version>2)||connection.decode(next.getString("key")).length!=32||!next.getString("pin").matches("[0-9a-f]{64}")||!endpoint)throw new IOException("Datos de emparejamiento incompletos");
             JSONObject before=connection.pairing;connection.close();connection.pairing=next;connection.preferDirect();

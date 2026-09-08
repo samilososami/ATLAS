@@ -22,14 +22,16 @@ console or use a suitable tagged auth key. Do not publish the tailnet name,
 pairing payload, certificate pin or AES key.
 
 `atlas-app pair` advertises **ATLAS A1** over BLE for 120 seconds and displays a
-six-digit `XXX-XXX` code. After the app submits the code, BLE returns a compact
-version-2 `atlas1:` payload containing:
+six-digit `XXX-XXX` code. After the app submits the code, BLE returns a compact,
+single-GATT-value version-2 `atlas2:` payload containing:
 
 - `endpoint`: persistent `wss://HOST:5010/app` transport;
-- `direct`: encrypted HTTP fallback at `https://HOST:5010/rpc`;
-- `tailscale` and `tailscaleIp`: current private identity;
 - `pin`: SHA-256 pin for A1's self-signed TLS certificate;
 - `key`: random AES-256-GCM pairing key.
+
+Duplicate endpoint, relay and room fields are intentionally excluded. This
+keeps the encoded bootstrap below the BLE MTU so Android cannot receive a
+truncated Base64 credential.
 
 The Android app stores its secret in Android Keystore and disables app backup.
 Re-pair after changing tailnets or rotating the key. `atlas-app unpair` rotates

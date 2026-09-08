@@ -27,6 +27,7 @@ CHARACTERISTIC_PATH = SERVICE_PATH + "/characteristic0"
 ADVERTISEMENT_PATH = APP_PATH + "/advertisement0"
 SERVICE_UUID = "7d2f8c42-7b5d-4a8d-9f20-61746c617331"
 CHARACTERISTIC_UUID = "7d2f8c43-7b5d-4a8d-9f20-61746c617331"
+MAX_PAIRING_VALUE_BYTES = 480
 
 
 def variant(signature, value):
@@ -54,24 +55,24 @@ def pairing_payload(config):
     if not identity:
         raise SystemExit("Tailscale no está autenticado en ATLAS A1. Ejecuta sudo tailscale up antes de emparejar.")
     certificate = ssl.PEM_cert_to_DER_cert((STATE / "certificate.pem").read_text())
-    endpoint = f"wss://{identity['host']}:5010/app"
-    direct = f"https://{identity['host']}:5010/rpc"
+    # Prefer the private Tailscale IPv4 so pairing does not depend on MagicDNS.
+    # Only these four fields are needed by the direct transport. The previous
+    # duplicate host/URL/relay fields exceeded the BLE GATT value limit, so
+    # Android received truncated URL-safe Base64 on some negotiated MTUs.
+    endpoint_host = identity["ip"] or identity["host"]
+    endpoint = f"wss://{endpoint_host}:5010/app"
     value = {
         "v": 2,
         "name": os.uname().nodename,
-        "transport": "tailscale",
-        "tailscale": identity["host"],
-        "tailscaleIp": identity["ip"],
         "endpoint": endpoint,
-        "direct": direct,
-        "url": direct,
         "pin": hashlib.sha256(certificate).hexdigest(),
         "key": config["key"],
-        "room": config["room"],
-        "relay": config.get("legacyRelay", config.get("relay", "")),
     }
     encoded = base64.urlsafe_b64encode(json.dumps(value, separators=(",", ":")).encode()).decode().rstrip("=")
-    return ("atlas1:" + encoded).encode()
+    payload = ("atlas2:" + encoded).encode()
+    if len(payload) > MAX_PAIRING_VALUE_BYTES:
+        raise SystemExit(f"El emparejamiento BLE interno es demasiado grande ({len(payload)} bytes)")
+    return payload
 
 
 def save_device(name):
