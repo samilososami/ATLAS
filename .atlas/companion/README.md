@@ -55,7 +55,7 @@ App requests decrypt to:
 Pi-initiated phone tools decrypt to:
 
 ```json
-{"id":"unique","method":"control.get_location","params":{},"serverRequest":true}
+{"id":"unique","method":"control.location.get","params":{},"serverRequest":true}
 ```
 
 The app completes a Pi request with its own encrypted RPC:
@@ -68,20 +68,39 @@ If no live app socket exists, the deterministic CLI error is exactly
 `Error: Android device not connected`. Connection loss never replays a phone
 action automatically because it may already have executed.
 
+The WebSocket reader dispatches decrypted RPC requests concurrently, with a
+bounded task set and serialized writes. This is required for re-entrant phone
+tools: a request such as `atlas_phone` may wait for a Pi-initiated
+`serverRequest`, while the same socket must continue reading the matching
+`app.reply`. Processing one frame to completion before reading the next would
+deadlock that round trip. Concurrency does not weaken replay protection or
+allowlists, and duplicate actions are still never retried automatically.
+
 ## Phone tools
 
 Native Android APIs are preferred over screen automation:
 
 ```sh
-atlas-app control get_location
+atlas-app control location.get
+atlas-app control capabilities
 atlas-app control contacts.search query=Papa
-atlas-app control calls.place target=Papa
-atlas-app control sms.send number=600000000 message='Llego pronto'
-atlas-app control calendar.create --params '{"title":"Dentista","start":1234}'
+atlas-app control phone.call number=600000000
+atlas-app control sms.send number=600000000 text='Llego pronto'
+atlas-app control calendar.list from=1788825600000 to=1789430400000
+atlas-app control calendar.create --params '{"calendarId":1,"title":"Dentista","begin":1788865200000,"end":1788868800000}'
 atlas-app control notifications.list
 ```
 
 The generic form is `atlas-app control OP [key=value ...] [--params JSON]`.
+`location`, `get_location`, `capabilities`, `call` and the historical
+`calls.place` remain friendly aliases for `location.get`,
+`phone.capabilities` and `phone.call`. Contact names are not accepted by
+`phone.call`: first resolve the contact with `contacts.search`, then pass its
+verified `number`. SMS content uses `text`, never `message`. Calendar timestamps
+are Unix milliseconds; call `calendar.list` first and select an entry from
+`editableCalendars` to obtain the required `calendarId` before creating an
+event with `begin` and optional `end`.
+
 Supported families are location, notifications, contacts, calendar, calls,
 SMS, Wi-Fi, media/gallery, files, camera and sensors. The phone validates its
 runtime permission for every operation and returns an explicit permission error
@@ -93,11 +112,18 @@ Accessibility-based screen control has a narrower wrapper:
 atlas-androiduse start
 atlas-androiduse status
 atlas-androiduse screenshot
-atlas-androiduse tap 540 1200
-atlas-androiduse swipe 800 1600 800 500 300
+atlas-androiduse tree
+atlas-androiduse tap 0.50 0.52
+atlas-androiduse long_press 0.50 0.52 700
+atlas-androiduse swipe 0.75 0.80 0.75 0.25 300
 atlas-androiduse text 'esp32'
 atlas-androiduse key ENTER
-atlas-androiduse launch https://amazon.es
+atlas-androiduse back
+atlas-androiduse home
+atlas-androiduse recents
+atlas-androiduse wait 350
+atlas-androiduse launch com.android.chrome
+atlas-androiduse launch https://example.com
 atlas-androiduse stop
 ```
 
@@ -105,8 +131,14 @@ atlas-androiduse stop
 `~/.atlas/companion/screenshots/latest.png` by default and prints its path and
 dimensions; it does not dump base64 into model context. `start` must activate
 the Android control notification, touch-blocking stop surface and blue border.
-`stop` is mandatory after the requested visual action. Read
-`ATLAS-ANDROIDUSE.md` before using this fallback.
+Use normalized coordinates from `0` to `1`; `launch` sends either `package` for
+an Android package name or `uri` for an allowed URL. `tree` redacts password
+nodes and all their descendants. `key ENTER` uses the focused field's safe IME
+action; `back`, `home` and `recents` are direct aliases for the corresponding
+global actions. `stop` is mandatory after the requested visual action and on
+every cancellation or failure path. Read
+[`ATLAS-ANDROIDUSE.md`](../../openclaw/workspace/atlas-commands/ATLAS-ANDROIDUSE.md)
+before using this fallback.
 
 ## Resumable terminal
 
@@ -134,10 +166,13 @@ tailscale netcheck
 Tailscale state without returning secrets. A `Running` tailnet and an active
 service are not proof that the phone app is connected; check live clients too.
 
-The previous blind relay remains source-compatible only as a recovery bridge:
+The previous blind relay remains source-compatible only as a deliberately
+selected recovery bridge:
 `atlas-app legacy-relay wss://HOST/connect` enables it explicitly and
 `atlas-app legacy-relay off` restores Tailscale. New installations and migrated
-configs always default to Tailscale. The relay source can be removed in a later
+configs always force Tailscale; transport failure never falls back to the legacy
+relay automatically. Tailscale may itself choose a secure DERP path without
+changing the configured transport. The relay source can be removed in a later
 breaking release after old APKs are retired.
 
 This is a single-owner development system, not an independently audited remote

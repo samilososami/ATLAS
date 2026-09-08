@@ -23,7 +23,7 @@ public final class AtlasAccessibilityService extends AccessibilityService {
     private static volatile AtlasAccessibilityService instance;
     private static final int CONTROL_NOTIFICATION=83;
     private static final String CHANNEL="atlas-control";
-    private static final long GESTURE_OVERLAY_SETTLE_MS=32;
+    private static final long GESTURE_OVERLAY_SETTLE_MS=80;
     private static final long SCREENSHOT_RETRY_DELAY_MS=350;
     private static final int SCREENSHOT_MAX_ATTEMPTS=2;
     private final Handler main=new Handler(Looper.getMainLooper());
@@ -144,7 +144,14 @@ public final class AtlasAccessibilityService extends AccessibilityService {
     }
     private JSONObject launch(JSONObject p)throws Exception{
         Intent intent;String packageName=p.optString("package").trim(),uri=p.optString("uri").trim();
-        if(!packageName.isEmpty()){if(!packageName.matches("[A-Za-z0-9_.]{3,160}"))throw new SecurityException("Paquete no válido");intent=getPackageManager().getLaunchIntentForPackage(packageName);if(intent==null)throw new IOException("Aplicación no instalada");}
+        if(!packageName.isEmpty()){
+            if(!packageName.matches("[A-Za-z0-9_.]{3,160}"))throw new SecurityException("Paquete no válido");
+            if(Build.VERSION.SDK_INT>=33){
+                try{getPackageManager().getLaunchIntentSenderForPackage(packageName).sendIntent(this,0,null,null,null);return ok();}
+                catch(IntentSender.SendIntentException|IllegalArgumentException error){throw new IOException("Aplicación no instalada",error);}
+            }
+            intent=getPackageManager().getLaunchIntentForPackage(packageName);if(intent==null)throw new IOException("Aplicación no instalada");
+        }
         else {Uri target=Uri.parse(uri);if(!Arrays.asList("https","http","geo","tel","sms","mailto").contains(target.getScheme()))throw new SecurityException("Enlace no permitido");intent=new Intent(Intent.ACTION_VIEW,target);}
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);startActivity(intent);return ok();
     }
@@ -198,6 +205,7 @@ public final class AtlasAccessibilityService extends AccessibilityService {
     private void stopControl(){main.post(()->{main.removeCallbacks(idleStop);controlling=false;if(guard!=null){try{windows.removeView(guard);}catch(Exception ignored){}guard=null;guardParams=null;}getSystemService(NotificationManager.class).cancel(CONTROL_NOTIFICATION);});}
     private void setGuardPassThrough(boolean passThrough){
         if(guard==null||guardParams==null||windows==null)return;
+        guard.setVisibility(passThrough?View.INVISIBLE:controlling?View.VISIBLE:View.GONE);
         int next=passThrough?guardParams.flags|WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE:guardParams.flags&~WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
         if(next==guardParams.flags)return;guardParams.flags=next;
         try{windows.updateViewLayout(guard,guardParams);}catch(Exception ignored){}

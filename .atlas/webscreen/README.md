@@ -1,8 +1,9 @@
 # ATLAS WebScreen
 
 Interfaz web de voz local para ATLAS. La conversación usa directamente OpenAI
-Realtime mediante WebRTC, con su contexto, `atlas_shell` y búsqueda web mediante
-Tavily. La
+Realtime mediante WebRTC, con su contexto, shell, búsqueda web, rutinas y tools
+tipadas de Android. `atlas_phone` usa APIs nativas; `atlas_android` reserva
+Accessibility para tareas visuales y adjunta capturas como `input_image`. La
 arquitectura anterior de preámbulo más agente OpenClaw se conserva únicamente
 como backup reversible en `Backups/WebScreen/legacy-preamble-2026-08-29`: no es
 un fallback ejecutable del flujo actual.
@@ -52,18 +53,19 @@ heartbeats and ambient sound do not reset the visual inactivity clock.
 
 `atlas-chat` es la superficie hermana de terminal: usa el mismo modelo
 `gpt-realtime-2.1`, las mismas instrucciones y Markdown, las mismas herramientas
-y, salvo con `--ephemeral`, la misma conversación persistente. No abre WebRTC,
+y —incluidas `atlas_phone`, `atlas_android` e inspección `input_image`—, salvo
+con `--ephemeral`, la misma conversación persistente. No abre WebRTC,
 micrófono, TTS ni interfaz web. Su manual operativo está en
 `openclaw/workspace/atlas-commands/ATLAS-CHAT.md`.
 
 ## Flujo Realtime actual
 
-1. El backend solicita una reserva WebRTC efímera para `gpt-realtime-2.1` usando el OAuth ya configurado en la Pi. OpenClaw actúa aquí solo como broker de autenticación: ninguno de sus agentes procesa la conversación. El parámetro protocolario `brain: agent-consult` es el único perfil admitido por `talk.client.create`; no activa el agente legacy. El navegador configura después `atlas_shell`, `atlas_web_search` y `atlas_routine` como herramientas del modelo. Nunca recibe el token persistente ni una API key.
+1. El backend solicita una reserva WebRTC efímera para `gpt-realtime-2.1` usando el OAuth ya configurado en la Pi. OpenClaw actúa aquí solo como broker de autenticación: ninguno de sus agentes procesa la conversación. El parámetro protocolario `brain: agent-consult` es el único perfil admitido por `talk.client.create`; no activa el agente legacy. El navegador configura después `atlas_shell`, `atlas_web_search`, `atlas_routine`, `atlas_phone` y `atlas_android` como herramientas del modelo. Nunca recibe el token persistente ni una API key.
 2. OpenAI Realtime recibe y transcribe el audio, decide el turno y puede generar directamente una de las voces nativas `ash`, `cedar`, `marin` o `verse`. El selector también admite ElevenLabs y la voz del navegador; en esos modos Realtime devuelve texto y WebScreen lo entrega al TTS elegido. ElevenLabs usa `eleven_v3` y transmite `MP3 44,1 kHz / 128 kbps`, la máxima calidad de salida del plan Free, directamente hacia el elemento de audio de Chrome: ya no espera un MP3 completo codificado en Base64. Cambiar la salida guarda el ajuste y crea una sesión WebRTC nueva.
 3. Solo Chrome activa la conversación al reconocer la palabra exacta `ATLAS`, en cualquier posición y también en resultados provisionales. No se exige silencio previo, posición inicial, puntuación acústica ni confirmación de Realtime. En el A1 y en navegadores remotos la petición recogida por Chrome se envía como texto a Realtime; su transcripción de audio alternativa se descarta por identificador de turno para que no la sustituya ni duplique. Se mantiene el bloqueo del micrófono del A1 durante reproducción y los 200 ms posteriores. Una transcripción auxiliar fallida no debe perder una petición que Chrome ya ha reconocido.
 4. Al finalizar la reproducción se vuelve a esperar ATLAS. Cada nueva petición hablada exige una wake word local nueva; no existe la continuación automática de diez segundos. Decir solo ATLAS todavía deja tiempo para terminar esa misma petición. Los navegadores remotos conservan sus interrupciones naturales. En el A1 las interrupciones están temporalmente desactivadas durante la voz: se cierran el micrófono y el detector local y se reabren 200 ms después de finalizar la reproducción.
 5. Antes de crear una respuesta del modelo, WebScreen compara la petición completa con `/home/atlas/.atlas/routines/ROUTINES.md`. La coincidencia es exacta tras normalizar mayúsculas, acentos, puntuación y el ATLAS inicial. Un match se ejecuta localmente: su `[SAY]` opcional se pronuncia y, sin él, el éxito es silencioso. Un fallo se registra y llega al modelo con un identificador, sin repetir la acción.
-6. OpenAI Realtime responde directamente. Usa `atlas_shell` para consultar archivos, red y estado real o ejecutar acciones, `atlas_web_search` para información externa o reciente y `atlas_routine` para gestionar definiciones validadas. La búsqueda lee en tiempo de ejecución la clave privada del plugin Tavily de OpenClaw y la usa solo en el backend; no la copia al repositorio, al navegador, al contexto ni a los logs. Las búsquedas normales usan profundidad `basic` y hasta cinco fuentes para priorizar latencia y consumo. El backend rechaza de forma permanente cualquier `rm` que combine borrado recursivo y forzado, además de `--no-preserve-root`, con independencia de lo que solicite o genere el modelo. En esta etapa no deriva el turno a Luna.
+6. OpenAI Realtime responde directamente. Usa `atlas_shell` para consultar archivos, red y estado real o ejecutar acciones, `atlas_web_search` para información externa o reciente, `atlas_routine` para gestionar definiciones validadas, `atlas_phone` para APIs nativas del móvil y `atlas_android` solo cuando debe inspeccionar o tocar la pantalla. Android Use usa coordenadas normalizadas, adjunta el PNG como un `input_image` separado, redacta contraseñas en `tree` y garantiza `stop` al terminar o fallar. La búsqueda lee en tiempo de ejecución la clave privada del plugin Tavily de OpenClaw y la usa solo en el backend; no la copia al repositorio, al navegador, al contexto ni a los logs. Las búsquedas normales usan profundidad `basic` y hasta cinco fuentes para priorizar latencia y consumo. El backend rechaza de forma permanente cualquier `rm` que combine borrado recursivo y forzado, además de `--no-preserve-root`, con independencia de lo que solicite o genere el modelo. En esta etapa no deriva el turno a Luna.
    Si la sesión WebRTC falla, WebScreen reintenta Realtime con espera progresiva; nunca cambia automáticamente al pipeline legacy de OpenClaw ni reactiva sus preámbulos.
 7. La sesión recibe `REALTIME_INSTRUCTIONS.md`, todos los Markdown del workspace salvo los episodios de `memory/`, los reportes actuales de dispositivos en `.atlas/adb/devices` y el contexto conversacional Realtime compartido con las sesiones normales de `atlas-chat`. `AGENTS.md` sigue siendo el mapa para localizar contexto adicional y `NOTES.md` funciona como cuaderno operativo compacto.
 8. Los turnos producen logs JSON Lines. Si falla la reserva, WebRTC o el proveedor, WebScreen reconecta Realtime con espera progresiva; no deriva el texto a OpenClaw.
@@ -272,6 +274,13 @@ reprodujo la fuga con el parpadeo anterior. Véase
 
 Despliegue acotado sobre una instalación existente: `sudo bash system/install-webscreen-resilience.sh --restart` desde el repositorio. Guarda respaldo de los archivos actualizados, incluidos los assets públicos de `static/new/`; no sustituye ajustes, OAuth ni Markdown privados. Después hay que recargar las pestañas. Para audio y ADB existe un instalador independiente: [guía de conexiones](../../openclaw/workspace/ATLAS-CONNECTIONS.md), [audio](../../openclaw/workspace/atlas-commands/ATLAS-AUDIO.md) y [ADB](../../openclaw/workspace/ADB.md). No reiniciar toda la red o todos los servicios de audio como primer intento.
 
+Para una actualización coordinada de WebScreen, `atlas-chat`, Companion y el
+contexto canónico existe `system/deploy-runtime-update.sh`. Debe ejecutarse desde
+un checkout preparado mientras A1 está en `atlas-hide`; crea respaldos fechados,
+conserva el estado de kiosco/overlay, espera a Companion 0.2.1 y deja el resultado
+en `/run/atlas-runtime-deploy.rc`. No es un actualizador remoto ni sustituye la
+verificación del archivo recibido antes de ejecutarlo.
+
 El backend exige `X-Atlas-Client` para las operaciones de voz, texto, preámbulos,
 cancelación, ajustes, eventos y consulta de cuota. No basta con ocultar botones.
 `/api/health` sigue público para los comandos de estado y el oyente interno
@@ -440,12 +449,12 @@ Incluye timestamps, duración y resultado de la transcripción nativa, sesión u
 
 ## Componentes
 
-- `server.py`: HTTP, reserva Realtime, shell acotada, logging, entrada de texto legacy, fallback de Whisper, banco TTS y ajustes de voz.
+- `server.py`: HTTP, reserva Realtime, shell acotada, búsqueda, rutinas, allowlists nativas/visuales Android, normalización de capturas, logging, entrada de texto legacy, fallback de Whisper, banco TTS y ajustes de voz.
 - `REALTIME_INSTRUCTIONS.md`: comportamiento, seguridad, latencia y pronunciación del agente Realtime.
 - `WEBSCREEN_INSTRUCTIONS.md`: prompt e instrucciones del pipeline legacy conservado como respaldo.
 - `openclaw-plugin/`: herramienta local `atlas_webscreen_wait`, limitada a loopback y a la sesión interna del oyente, que mantiene preparado el turno del preámbulo.
 - `gateway_bridge.mjs`: conexión persistente al Gateway, reserva segura de sesiones OpenAI Realtime y multiplexación del agente principal/legacy.
-- `static/realtime.js`: WebRTC, audio full-duplex, wake gate, AEC nativo del navegador y tool calls de shell/Tavily.
+- `static/realtime.js`: WebRTC, audio full-duplex, wake gate, AEC nativo del navegador y tool calls de shell, Tavily, rutinas, `atlas_phone` y `atlas_android`; los resultados visuales añaden `input_image` sin exponer base64.
 - `static/`: interfaz mínima y herramientas de diagnóstico; `app.js` reconecta Realtime sin activar el pipeline legacy.
 - `start.sh`: arranque con el entorno Python local.
 - `atlas-webscreen`: wrapper disponible para usuario normal y root.

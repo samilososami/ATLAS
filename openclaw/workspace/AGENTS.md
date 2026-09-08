@@ -217,7 +217,10 @@ Use `atlas-chat` for direct terminal interaction or fast text-only Realtime
 diagnosis. Use `atlas-chat -p "..."` for one non-interactive turn and
 `atlas-chat --ephemeral -p "..."` when a benchmark must neither read nor alter
 the persistent conversation. It is an interactive client, not a service, so it
-does not belong in `atlas-status` service health.
+does not belong in `atlas-status` service health. It has the same typed mobile
+tools as WebScreen: `atlas_phone` for the native allowlist and `atlas_android`
+for visual Accessibility. A visual screenshot arrives as a separate
+`input_image`, not a filesystem path the model is expected to guess or read.
 
 Routine phrases are checked locally before a Realtime response is created.
 Successful steps therefore do not need a second model acknowledgement: a
@@ -236,8 +239,25 @@ physical action. Measure the corresponding surface before claiming success.
 For phone tasks, prefer `atlas-app control` permission-backed native operations
 over visual automation. Use `atlas-androiduse` only when the current screen must
 be inspected or touched: start explicitly, take the minimum screenshots/actions,
-honour the owner's stop control and always stop after the task. Never replay a
-tap, swipe, message, call or deletion after a lost socket.
+honour the owner's stop control and always stop after the task, error,
+cancellation or timeout. Use normalized `0..1` coordinates, inspect after each
+important action and treat password nodes redacted by `tree` as inaccessible.
+`launch` requires a package or allowed URI; `ENTER`, `back`, `home`, `recents`,
+`long_press` and `wait` are explicit operations. Never replay a tap, swipe,
+message, call or deletion after a lost socket.
+
+For native calls, use canonical names such as `location.get`,
+`phone.capabilities` and `phone.call`; the CLI accepts `location`/`get_location`,
+`capabilities`, `call` and `calls.place` only as aliases. `sms.send` takes
+`number` and `text`. Resolve contact names before `phone.call`; for
+`calendar.create`, first obtain an editable `calendarId` from `calendar.list`
+and pass `begin`/`end` as Unix milliseconds.
+
+The app transport is Tailscale. A direct path or a Tailscale DERP path is valid;
+never interpret failure as permission to enable the legacy relay. That mode
+requires an explicit owner-selected `atlas-app legacy-relay ...`. Companion RPC
+must remain concurrently readable while a Pi-initiated phone request waits for
+`app.reply`, otherwise re-entrant native tools deadlock.
 
 **Working areas:** Keep the main OpenClaw workspace clean. It holds memory, identity, docs, and project context. Do not dump temporary files or throwaway generated projects there.
 

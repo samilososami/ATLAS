@@ -69,6 +69,7 @@ ANDROID_OPERATIONS = [
     "androiduse.status", "androiduse.start", "androiduse.stop",
     "androiduse.screenshot", "androiduse.tree", "androiduse.tap",
     "androiduse.long_press", "androiduse.swipe", "androiduse.text",
+    "androiduse.key",
     "androiduse.back", "androiduse.home", "androiduse.recents",
     "androiduse.launch", "androiduse.wait",
 ]
@@ -76,7 +77,8 @@ ANDROID_TOOL_INSTRUCTIONS = """CONTROL DEL TELÉFONO EMPAREJADO:
 Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques.
 Consulta capabilities si no conoces el permiso disponible. Usa atlas_android
 únicamente cuando no exista una operación nativa adecuada. En control visual:
-llama a androiduse.start, actúa sobre la captura más reciente, inspecciona el
+llama a androiduse.start, usa siempre coordenadas normalizadas de 0 a 1,
+actúa sobre la captura más reciente, inspecciona el
 resultado tras cada paso y llama siempre a androiduse.stop al terminar, ante un
 bloqueo o antes de responder al usuario. La captura llega como imagen separada
 del resultado de herramienta; debes mirarla y no inventar posiciones ni estados.
@@ -369,7 +371,7 @@ REALTIME_TOOLS: list[dict[str, Any]] = [
                     "type": "object",
                     "additionalProperties": True,
                     "description": (
-                        "Coordenadas x/y o x1/y1/x2/y2, duration, text, package, "
+                        "Coordenadas normalizadas 0..1 para x/y o x1/y1/x2/y2, duration, text, package, "
                         "uri o ms según la operación."
                     ),
                 },

@@ -141,7 +141,10 @@ presentation. See [Screen](ATLAS-SCREEN.md) for its bounded browser-only recover
 and `--atlas-hide` behavior. HTTP success alone does not prove renderer health.
 
 The current conversation uses direct `gpt-realtime-2.1`, the shared Markdown
-context and direct shell/web-search tools. Chrome validates the local ATLAS
+context and typed shell, web-search, routine, native-phone and Android Use
+tools. Android screenshots are attached as private `input_image` items; visual
+control uses normalized coordinates, password-redacted trees and mandatory
+`androiduse.stop`. Chrome validates the local ATLAS
 wake word; do not describe the recognizer as a guaranteed offline speech engine.
 Partial/final recognition results must not create duplicate turns. Permission
 or audio-capture errors are shown as microphone errors, not repaired by sending
@@ -253,7 +256,8 @@ atlas-status
 Use `atlas-chat` when the same ATLAS Realtime brain must be tested or used from
 a terminal without microphone, audio output or browser UI. It reserves the same
 `gpt-realtime-2.1` route, loads the same crucial Markdown, exposes the same
-shell and web-search tools, and normally shares WebScreen's persistent
+typed shell, web-search, routine, `atlas_phone` and `atlas_android` tools, and
+normally shares WebScreen's persistent
 conversation. `atlas-chat --ephemeral` deliberately starts without that
 conversation history and does not write new turns back to it.
 

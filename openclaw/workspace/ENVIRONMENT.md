@@ -54,3 +54,8 @@ The Android app uses a persistent encrypted Companion WebSocket through the
 owner's tailnet. Tailscale `Running`, Companion active and a live app socket are
 separate states. Native phone tools live behind `atlas-app control`; only use
 `atlas-androiduse` when a task truly requires visual Accessibility control.
+WebScreen and `atlas-chat` expose those paths as typed `atlas_phone` and
+`atlas_android` tools; screenshots are separate private `input_image` items.
+Tailscale can be direct or DERP and never selects the legacy relay automatically.
+Companion must keep reading concurrent RPC while a native request waits for the
+phone's `app.reply`.

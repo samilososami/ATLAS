@@ -1,5 +1,9 @@
 # ATLAS Android 0.2.0-preview
 
+> Nota histórica: la versión 0.2.1 sustituyó el fallback automático descrito en
+> esta página. La ruta actual mantiene Tailscale y solo usa el relay heredado
+> cuando se selecciona explícitamente.
+
 Actualización mayor de conexión, control del teléfono y experiencia móvil.
 
 ## Novedades

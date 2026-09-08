@@ -23,6 +23,10 @@ SPEC.loader.exec_module(SERVER)
 
 
 class AndroidControlTests(unittest.TestCase):
+    def test_enter_key_is_allowed_and_auto_inspected(self) -> None:
+        self.assertIn("androiduse.key", SERVER.ATLAS_ANDROID_OPERATIONS)
+        self.assertIn("androiduse.key", SERVER.ATLAS_ANDROID_AUTO_INSPECT)
+
     @mock.patch.object(SERVER.shutil, "which", return_value="/usr/local/bin/atlas-app")
     @mock.patch.object(SERVER.subprocess, "run")
     def test_native_alias_uses_argv_without_shell(self, run: mock.Mock, _which: mock.Mock) -> None:
@@ -61,9 +65,12 @@ class AndroidControlTests(unittest.TestCase):
     def test_screenshot_is_validated_and_separated(self) -> None:
         encoded = base64.b64encode(b"\x89PNG\r\n\x1a\nfixture").decode("ascii")
         capture = SERVER.normalize_android_screenshot({
-            "mime": "image/png", "width": 1440, "height": 3088, "data": encoded,
+            "mime": "image/png", "width": 1440, "height": 3088,
+            "captureWidth": 720, "captureHeight": 1544, "data": encoded,
         })
         self.assertEqual(capture["pngBase64"], encoded)
+        self.assertEqual((capture["width"], capture["height"]), (720, 1544))
+        self.assertEqual((capture["screenWidth"], capture["screenHeight"]), (1440, 3088))
         public = SERVER.public_android_result({
             "mime": "image/png", "width": 1440, "height": 3088, "data": encoded,
         })

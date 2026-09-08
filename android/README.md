@@ -1,12 +1,13 @@
-# ATLAS Android · 0.2.0 preview
+# ATLAS Android · 0.2.1 preview
 
 Aplicación Android 11+ para hablar con ATLAS y controlar un ATLAS A1 propio. La
 APK se publica en [GitHub Releases](https://github.com/samilososami/ATLAS/releases).
 Es una preview firmada para desarrollo; no es la imagen de ATLAS OS.
 
-La versión 0.2.0 migra la conexión principal a Tailscale, añade control nativo y
-visual del teléfono, rehace la interfaz completa y mantiene voz, chat, acciones,
-terminal, estado, widgets y actualizaciones dentro de una sola aplicación.
+La versión 0.2.1 consolida la conexión principal sobre Tailscale, evita bloqueos
+reentrantes al invocar herramientas del teléfono y endurece tanto las APIs nativas
+como Android Use. Mantiene voz, chat, acciones, terminal, estado, widgets y
+actualizaciones dentro de una sola aplicación.
 
 ## Primera conexión
 
@@ -29,10 +30,11 @@ comprobarse al regresar desde Ajustes de Android.
 
 Companion escucha en el canal privado `wss://atlas-a1:5010/app`. Tailscale intenta
 una ruta directa entre el teléfono y A1; si la red no permite UDP directo puede
-usar su relay cifrado. El antiguo relay de Cloudflare se conserva únicamente como
-respaldo para emparejamientos anteriores. Una instalación 0.1.x prueba MagicDNS
-con la clave y el pin ya guardados, sin obligar a emparejar de nuevo, y vuelve a
-probar la ruta directa cada 90 segundos si tuvo que recurrir al relay antiguo.
+usar un relay DERP cifrado de Tailscale sin cambiar de protocolo. El antiguo
+relay de Cloudflare solo existe como modo de compatibilidad seleccionado de forma
+explícita; un fallo de Tailscale nunca provoca fallback automático. Una
+instalación 0.1.x puede migrar a MagicDNS con la clave y el pin ya guardados, sin
+obligar a emparejar de nuevo.
 
 Un foreground service conserva el WebSocket cifrado cuando la Activity queda en
 segundo plano, reacciona a cambios entre Wi-Fi y datos y aplica backoff acotado.
@@ -40,10 +42,16 @@ Android muestra una notificación persistente y puede pedir excluir ATLAS de la
 optimización de batería. **Forzar detención** desde Android sí mata el proceso y
 la conexión, deliberadamente.
 
-La sesión Realtime se precarga al abrir la app y se renueva antes del máximo del
-proveedor. Un corte breve tiene margen de recuperación y reconexión automática.
-Si Android destruye la Activity, la voz se prepara otra vez al volver; el enlace
-con A1 permanece a cargo del servicio.
+El servidor procesa RPC cifrado de forma concurrente y serializa las escrituras.
+Así puede recibir `app.reply` por el mismo WebSocket mientras la petición original
+espera una operación nativa del teléfono, sin bloquear el lector ni duplicar la
+acción tras una reconexión.
+
+La sesión Realtime se precarga al abrir la app, antes de pulsar el micrófono. Al
+mandar la Activity a segundo plano se libera WebRTC para evitar consumo continuo
+de CPU, batería y audio; al volver se prepara de inmediato otra sesión. Esto no
+cierra el enlace con A1: el WebSocket Tailscale permanece a cargo del foreground
+service y conserva widgets, estado, terminales y herramientas del teléfono.
 
 ## Cinco tabs
 
@@ -71,11 +79,22 @@ notificaciones, archivos, galería, cámara, sensores y panel Wi-Fi. Las operaci
 devuelven `permission_required`, `unsupported` o `requires_user_action` cuando
 Android exige permiso, confirmación o no ofrece la capacidad; nunca simulan éxito.
 
+WebScreen y `atlas-chat` comparten `atlas_phone` para esas APIs y
+`atlas_android` para el fallback visual. Los nombres `location`/`get_location`,
+`capabilities`, `call` y `calls.place` son aliases de `location.get`,
+`phone.capabilities` y `phone.call`. SMS usa `text`; las llamadas usan `number`;
+y la creación de calendario requiere descubrir antes un `calendarId` editable
+con `calendar.list` y enviar `begin`/`end` en milisegundos Unix.
+
 `atlas-androiduse` es el fallback visual. El AccessibilityService puede observar
-la jerarquía, capturar la pantalla, tocar, deslizar, escribir, abrir aplicaciones
-y usar Atrás/Inicio/Recientes. Durante el control aparece una notificación, un aura
+la jerarquía, capturar la pantalla, tocar, mantener pulsado, deslizar, escribir,
+abrir paquetes o URI, esperar y usar Atrás/Inicio/Recientes/ENTER. Los gestos usan
+coordenadas normalizadas de `0` a `1`; la jerarquía redacta campos de contraseña
+y todos sus descendientes. Durante el control aparece una notificación, un aura
 azul, un bloqueo de entrada y un botón rojo para detenerlo. Cada acción importante
-se sigue con una nueva inspección y la sesión se cierra al terminar o por watchdog.
+se sigue con una nueva inspección. Realtime recibe el PNG como un `input_image`
+separado, nunca como base64 dentro del resultado, y la sesión se cierra al
+terminar, cancelar, fallar o por watchdog.
 Accesibilidad se activa manualmente en Ajustes de Android.
 
 En A1 están disponibles `atlas-app control …` y `atlas-androiduse …`. Si el móvil
@@ -126,7 +145,10 @@ addon-fit 0.10.0 se distribuyen bajo MIT; su licencia está en
 ## Límites de validación
 
 El emulador permite verificar instalación, actualización, navegación y contratos,
-pero no demuestra la calidad real del micrófono, BLE, telefonía, Tailscale en
-Android, biometría ni el AccessibilityService sobre One UI. Esas comprobaciones
-E2E finales deben hacerse en el S23 Ultra. Algunas APIs abren una pantalla o
-confirmación del sistema porque Android no permite autorizarlas silenciosamente.
+pero no sustituye las pruebas de hardware. En un S23 Ultra real se verificaron
+Tailscale y Companion, Realtime y voz por pulsación, herramientas nativas no
+intrusivas, AccessibilityService sobre One UI, control de Chrome y liberación de
+WebRTC en segundo plano sin perder el enlace con A1. BLE, biometría, telefonía,
+SMS y las acciones que exigen modificar datos o completar una confirmación del
+sistema siguen fuera de esa tanda. Algunas APIs abren una pantalla o confirmación
+porque Android no permite autorizarlas silenciosamente.

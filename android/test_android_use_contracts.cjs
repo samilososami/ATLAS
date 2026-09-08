@@ -12,6 +12,8 @@ assert.match(source, /"enter"\.equals\(key\).*imeEnter\(\)/s,
   "ENTER must route through the focused IME action");
 assert.match(source, /AccessibilityAction\.ACTION_IME_ENTER\.getId\(\)/,
   "ENTER must use ACTION_IME_ENTER, not arbitrary key injection");
+assert.match(source, /getLaunchIntentSenderForPackage/,
+  "package launch must bypass Android 11+ package visibility through IntentSender");
 assert.match(source, /inheritedPassword\|\|node\.isPassword\(\)/,
   "password sensitivity must propagate through the node subtree");
 assert.match(source, /password\?redacted:[^\n]*node\.getText\(\)/,
@@ -25,8 +27,10 @@ assert.match(source, /SCREENSHOT_MAX_ATTEMPTS=2/,
   "screenshots must make at most one retry");
 assert.match(source, /setGuardPassThrough\(true\)[\s\S]*main\.postDelayed[\s\S]*dispatchGesture/,
   "the overlay must become pass-through before gesture dispatch");
-assert.match(source, /GESTURE_OVERLAY_SETTLE_MS=32/,
+assert.match(source, /GESTURE_OVERLAY_SETTLE_MS=80/,
   "gesture dispatch must wait for WindowManager to publish the input flag");
+assert.match(source, /guard\.setVisibility\(passThrough\?View\.INVISIBLE/,
+  "the blocking overlay must leave the hit-test surface during injected gestures");
 assert.match(source, /FLAG_NOT_TOUCHABLE/,
   "pass-through mode must use FLAG_NOT_TOUCHABLE");
 assert.match(source, /onCompleted[^}]*setGuardPassThrough\(false\)/s,

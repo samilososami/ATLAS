@@ -344,7 +344,7 @@ public final class MainActivity extends Activity {
                     case "microphone":
                         if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED)prepareWebMicrophone(id);
                         else {permissionId=id;requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},7);}break;
-                    case "realtimeWarmup": event("realtimeState",object("state","connecting"));answer(id,object("ready",true),null);break;
+                    case "realtimeWarmup": answer(id,object("ready",true),null);break;
                     case "audio.capture.start": work(id,()->audioCapture.start(p.optInt("sampleRate",24000),p.optInt("channelCount",1)));break;
                     case "audio.capture.stop": work(id,()->audioCapture.stop());break;
                     case "accessibilityStatus": answer(id,object("enabled",AtlasAccessibilityService.enabled(MainActivity.this),"controlling",AtlasAccessibilityService.controlling()),null);break;

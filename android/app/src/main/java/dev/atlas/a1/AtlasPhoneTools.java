@@ -53,11 +53,69 @@ final class AtlasPhoneTools {
             default: throw new SecurityException("Herramienta Android no permitida: "+requestedMethod);
         }
     }
-    private static void require(Context context,String...permissions){for(String permission:permissions)if(context.checkSelfPermission(permission)!=PackageManager.PERMISSION_GRANTED)throw new SecurityException("permission_required: "+permission.substring(permission.lastIndexOf('.')+1));}
-    private static JSONObject capabilities(Context context)throws Exception{return new JSONObject().put("accessibility",AtlasAccessibilityService.enabled(context)).put("notificationAccess",AtlasNotificationListenerService.enabled(context))
-        .put("location",context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)==PackageManager.PERMISSION_GRANTED).put("contacts",context.checkSelfPermission(Manifest.permission.READ_CONTACTS)==PackageManager.PERMISSION_GRANTED)
-        .put("calendar",context.checkSelfPermission(Manifest.permission.READ_CALENDAR)==PackageManager.PERMISSION_GRANTED).put("phone",context.checkSelfPermission(Manifest.permission.CALL_PHONE)==PackageManager.PERMISSION_GRANTED)
-        .put("sms",context.checkSelfPermission(Manifest.permission.SEND_SMS)==PackageManager.PERMISSION_GRANTED).put("files",Build.VERSION.SDK_INT<30||Environment.isExternalStorageManager());}
+    private static void require(Context context,String...permissions){for(String permission:permissions)if(!granted(context,permission))throw new SecurityException("permission_required: "+permission.substring(permission.lastIndexOf('.')+1));}
+    private static boolean granted(Context context,String permission){return context.checkSelfPermission(permission)==PackageManager.PERMISSION_GRANTED;}
+    private static JSONObject capabilities(Context context)throws Exception{
+        PackageManager packageManager=context.getPackageManager();
+        boolean accessibility=AtlasAccessibilityService.enabled(context),notificationAccess=AtlasNotificationListenerService.enabled(context);
+        boolean locationFine=granted(context,Manifest.permission.ACCESS_FINE_LOCATION),locationCoarse=granted(context,Manifest.permission.ACCESS_COARSE_LOCATION);
+        boolean contactsRead=granted(context,Manifest.permission.READ_CONTACTS),contactsWrite=granted(context,Manifest.permission.WRITE_CONTACTS);
+        boolean calendarRead=granted(context,Manifest.permission.READ_CALENDAR),calendarWrite=granted(context,Manifest.permission.WRITE_CALENDAR);
+        boolean phoneCall=granted(context,Manifest.permission.CALL_PHONE),phoneState=granted(context,Manifest.permission.READ_PHONE_STATE);
+        boolean callLogRead=granted(context,Manifest.permission.READ_CALL_LOG),callLogWrite=granted(context,Manifest.permission.WRITE_CALL_LOG);
+        boolean smsRead=granted(context,Manifest.permission.READ_SMS),smsSend=granted(context,Manifest.permission.SEND_SMS),smsReceive=granted(context,Manifest.permission.RECEIVE_SMS);
+        boolean legacyMediaRead=granted(context,Manifest.permission.READ_EXTERNAL_STORAGE);
+        boolean mediaImagesRead=Build.VERSION.SDK_INT<33?legacyMediaRead:granted(context,Manifest.permission.READ_MEDIA_IMAGES);
+        boolean mediaVideoRead=Build.VERSION.SDK_INT<33?legacyMediaRead:granted(context,Manifest.permission.READ_MEDIA_VIDEO);
+        boolean mediaAudioRead=Build.VERSION.SDK_INT<33?legacyMediaRead:granted(context,Manifest.permission.READ_MEDIA_AUDIO);
+        boolean cameraPermission=granted(context,Manifest.permission.CAMERA);
+        boolean activityRecognition=granted(context,Manifest.permission.ACTIVITY_RECOGNITION),bodySensors=granted(context,Manifest.permission.BODY_SENSORS);
+        boolean overlay=Settings.canDrawOverlays(context);
+        boolean bluetoothScan=Build.VERSION.SDK_INT<31||granted(context,Manifest.permission.BLUETOOTH_SCAN);
+        boolean bluetoothConnect=Build.VERSION.SDK_INT<31||granted(context,Manifest.permission.BLUETOOTH_CONNECT);
+        boolean wifiNearby=Build.VERSION.SDK_INT<33||granted(context,Manifest.permission.NEARBY_WIFI_DEVICES);
+        boolean wifiState=granted(context,Manifest.permission.ACCESS_WIFI_STATE),wifiChange=granted(context,Manifest.permission.CHANGE_WIFI_STATE);
+        boolean notificationsPost=Build.VERSION.SDK_INT<33||granted(context,Manifest.permission.POST_NOTIFICATIONS);
+        boolean allFilesAccess=Environment.isExternalStorageManager();
+        boolean telephony=packageManager.hasSystemFeature(PackageManager.FEATURE_TELEPHONY);
+        boolean cameraHardware=packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY);
+        boolean bluetoothHardware=packageManager.hasSystemFeature(PackageManager.FEATURE_BLUETOOTH);
+        boolean wifiHardware=packageManager.hasSystemFeature(PackageManager.FEATURE_WIFI);
+        boolean sensorHardware=context.getSystemService(SensorManager.class)!=null;
+        boolean cameraPhoto=new Intent(MediaStore.INTENT_ACTION_STILL_IMAGE_CAMERA).resolveActivity(packageManager)!=null;
+        boolean cameraVideo=new Intent(MediaStore.INTENT_ACTION_VIDEO_CAMERA).resolveActivity(packageManager)!=null;
+        boolean mediaList=mediaImagesRead&&mediaVideoRead&&mediaAudioRead;
+
+        JSONObject permissions=new JSONObject()
+            .put("locationFine",locationFine).put("locationCoarse",locationCoarse)
+            .put("contactsRead",contactsRead).put("contactsWrite",contactsWrite)
+            .put("calendarRead",calendarRead).put("calendarWrite",calendarWrite)
+            .put("phoneCall",phoneCall).put("phoneState",phoneState)
+            .put("callLogRead",callLogRead).put("callLogWrite",callLogWrite)
+            .put("smsRead",smsRead).put("smsSend",smsSend).put("smsReceive",smsReceive)
+            .put("mediaImagesRead",mediaImagesRead).put("mediaVideoRead",mediaVideoRead).put("mediaAudioRead",mediaAudioRead)
+            .put("camera",cameraPermission).put("activityRecognition",activityRecognition).put("bodySensors",bodySensors)
+            .put("overlay",overlay).put("bluetoothScan",bluetoothScan).put("bluetoothConnect",bluetoothConnect)
+            .put("wifiNearby",wifiNearby).put("wifiState",wifiState).put("wifiChange",wifiChange)
+            .put("notificationsPost",notificationsPost).put("notificationAccess",notificationAccess)
+            .put("allFilesAccess",allFilesAccess).put("accessibility",accessibility);
+        JSONObject operations=new JSONObject()
+            .put("phone.call",phoneCall&&telephony).put("calls.recent",callLogRead)
+            .put("sms.send",smsSend&&telephony).put("sms.unread",smsRead).put("sms.list",smsRead)
+            .put("contacts.search",contactsRead)
+            .put("calendar.list",calendarRead).put("calendar.create",calendarWrite).put("calendar.update",calendarWrite).put("calendar.delete",calendarWrite)
+            .put("location.get",locationFine).put("notifications.list",notificationAccess).put("notifications.show",notificationsPost).put("notifications.access",true)
+            .put("wifi.panel",wifiHardware).put("files.list",allFilesAccess).put("files.read",allFilesAccess).put("files.move",allFilesAccess).put("files.delete",allFilesAccess)
+            .put("media.list",mediaList).put("media.delete",true)
+            .put("camera.photo",cameraPhoto).put("camera.video",cameraVideo).put("sensors.summary",sensorHardware).put("androiduse",accessibility);
+        JSONObject hardware=new JSONObject().put("telephony",telephony).put("camera",cameraHardware).put("bluetooth",bluetoothHardware).put("wifi",wifiHardware).put("sensors",sensorHardware);
+
+        // Keep the original flat keys stable for older clients while exposing exact permission and operation detail.
+        return new JSONObject().put("accessibility",accessibility).put("notificationAccess",notificationAccess)
+            .put("location",locationFine).put("contacts",contactsRead).put("calendar",calendarRead)
+            .put("phone",phoneCall).put("sms",smsSend).put("files",allFilesAccess)
+            .put("permissions",permissions).put("operations",operations).put("hardware",hardware);
+    }
     private static JSONObject call(Context context,JSONObject p)throws Exception{
         if(context.checkSelfPermission(Manifest.permission.CALL_PHONE)!=PackageManager.PERMISSION_GRANTED)throw new SecurityException("permission_required: CALL_PHONE");String number=p.optString("number").replaceAll("[^+0-9*#]","");if(number.length()<3)throw new IllegalArgumentException("Número no válido");
         TelecomManager telecom=context.getSystemService(TelecomManager.class);if(telecom==null)throw new UnsupportedOperationException("unsupported: este dispositivo no ofrece telefonía");telecom.placeCall(Uri.parse("tel:"+Uri.encode(number)),Bundle.EMPTY);return new JSONObject().put("initiated",true);
@@ -90,11 +148,17 @@ final class AtlasPhoneTools {
         }return new JSONObject().put("contacts",values);
     }
     private static JSONObject calendar(Context context,JSONObject p)throws Exception{
-        require(context,Manifest.permission.READ_CALENDAR);long from=p.optLong("from",System.currentTimeMillis()),to=p.optLong("to",from+7L*86400000L);JSONArray values=new JSONArray();
+        require(context,Manifest.permission.READ_CALENDAR);long from=p.optLong("from",System.currentTimeMillis()),to=p.optLong("to",from+7L*86400000L);if(to<from)throw new IllegalArgumentException("El final del intervalo no puede ser anterior al inicio");JSONArray values=new JSONArray();
         Uri uri=CalendarContract.Instances.CONTENT_URI.buildUpon().appendPath(Long.toString(from)).appendPath(Long.toString(to)).build();
-        try(Cursor cursor=context.getContentResolver().query(uri,new String[]{CalendarContract.Instances.EVENT_ID,CalendarContract.Instances.TITLE,CalendarContract.Instances.BEGIN,CalendarContract.Instances.END,CalendarContract.Instances.EVENT_LOCATION},null,null,CalendarContract.Instances.BEGIN+" ASC")){
-            if(cursor!=null)while(cursor.moveToNext()&&values.length()<80)values.put(new JSONObject().put("id",cursor.getLong(0)).put("title",cursor.getString(1)).put("begin",cursor.getLong(2)).put("end",cursor.getLong(3)).put("location",cursor.getString(4)==null?"":cursor.getString(4)));
-        }return new JSONObject().put("events",values);
+        try(Cursor cursor=context.getContentResolver().query(uri,new String[]{CalendarContract.Instances.EVENT_ID,CalendarContract.Instances.TITLE,CalendarContract.Instances.BEGIN,CalendarContract.Instances.END,CalendarContract.Instances.EVENT_LOCATION,CalendarContract.Instances.CALENDAR_ID,CalendarContract.Instances.CALENDAR_DISPLAY_NAME},null,null,CalendarContract.Instances.BEGIN+" ASC")){
+            if(cursor!=null)while(cursor.moveToNext()&&values.length()<80)values.put(new JSONObject().put("id",cursor.getLong(0)).put("title",cursor.getString(1)==null?"":cursor.getString(1)).put("begin",cursor.getLong(2)).put("end",cursor.getLong(3)).put("location",cursor.getString(4)==null?"":cursor.getString(4)).put("calendarId",cursor.getLong(5)).put("calendarName",cursor.getString(6)==null?"":cursor.getString(6)));
+        }
+        JSONArray calendars=new JSONArray(),editableCalendars=new JSONArray();
+        String[] columns={CalendarContract.Calendars._ID,CalendarContract.Calendars.NAME,CalendarContract.Calendars.CALENDAR_DISPLAY_NAME,CalendarContract.Calendars.ACCOUNT_NAME,CalendarContract.Calendars.ACCOUNT_TYPE,CalendarContract.Calendars.OWNER_ACCOUNT,CalendarContract.Calendars.VISIBLE,CalendarContract.Calendars.SYNC_EVENTS,CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL,CalendarContract.Calendars.IS_PRIMARY};
+        try(Cursor cursor=context.getContentResolver().query(CalendarContract.Calendars.CONTENT_URI,columns,null,null,CalendarContract.Calendars.CALENDAR_DISPLAY_NAME+" COLLATE NOCASE ASC")){
+            if(cursor!=null)while(cursor.moveToNext()&&calendars.length()<100){int accessLevel=cursor.getInt(8);boolean editable=accessLevel>=CalendarContract.Calendars.CAL_ACCESS_CONTRIBUTOR;JSONObject item=new JSONObject().put("id",cursor.getLong(0)).put("name",cursor.getString(1)==null?"":cursor.getString(1)).put("displayName",cursor.getString(2)==null?"":cursor.getString(2)).put("accountName",cursor.getString(3)==null?"":cursor.getString(3)).put("accountType",cursor.getString(4)==null?"":cursor.getString(4)).put("ownerAccount",cursor.getString(5)==null?"":cursor.getString(5)).put("visible",cursor.getInt(6)!=0).put("syncEvents",cursor.getInt(7)!=0).put("accessLevel",accessLevel).put("editable",editable).put("primary",cursor.getInt(9)!=0);calendars.put(item);if(editable)editableCalendars.put(item);}
+        }
+        return new JSONObject().put("events",values).put("calendars",calendars).put("editableCalendars",editableCalendars);
     }
     private static JSONObject createCalendar(Context context,JSONObject p)throws Exception{
         require(context,Manifest.permission.WRITE_CALENDAR);long calendarId=p.getLong("calendarId"),begin=p.getLong("begin"),end=p.optLong("end",begin+3600000);ContentValues values=new ContentValues();values.put(CalendarContract.Events.CALENDAR_ID,calendarId);values.put(CalendarContract.Events.TITLE,p.getString("title"));values.put(CalendarContract.Events.DTSTART,begin);values.put(CalendarContract.Events.DTEND,end);values.put(CalendarContract.Events.EVENT_TIMEZONE,TimeZone.getDefault().getID());
@@ -121,14 +185,23 @@ final class AtlasPhoneTools {
         return requestUserAction(context,new Intent(android.provider.Settings.Panel.ACTION_WIFI),"ATLAS necesita que elijas una red","Toca para abrir el panel Wi-Fi",94);
     }
     private static JSONObject files(JSONObject p)throws Exception{
-        if(Build.VERSION.SDK_INT>=30&&!Environment.isExternalStorageManager())throw new SecurityException("permission_required: MANAGE_EXTERNAL_STORAGE");File root=Environment.getExternalStorageDirectory().getCanonicalFile();File target=new File(p.optString("path",root.getPath())).getCanonicalFile();if(!target.getPath().startsWith(root.getPath()+File.separator)&&!target.equals(root))throw new SecurityException("Ruta fuera del almacenamiento compartido");
-        if(target.getPath().contains(File.separator+"Android"+File.separator+"data"))throw new UnsupportedOperationException("unsupported: Android no permite acceder a Android/data de otras aplicaciones ni siquiera con acceso completo");
+        File target=resolveSharedPath(p.optString("path",""),true);
         File[] list=target.listFiles();JSONArray values=new JSONArray();if(list!=null){Arrays.sort(list,Comparator.comparing(File::getName,String.CASE_INSENSITIVE_ORDER));for(File file:list){values.put(new JSONObject().put("name",file.getName()).put("path",file.getPath()).put("directory",file.isDirectory()).put("size",file.isFile()?file.length():0).put("modified",file.lastModified()));if(values.length()>=200)break;}}
         return new JSONObject().put("path",target.getPath()).put("files",values);
     }
     private static File sharedPath(JSONObject p,String key,boolean allowRoot)throws Exception{
-        if(Build.VERSION.SDK_INT>=30&&!Environment.isExternalStorageManager())throw new SecurityException("permission_required: MANAGE_EXTERNAL_STORAGE");File root=Environment.getExternalStorageDirectory().getCanonicalFile(),target=new File(p.getString(key)).getCanonicalFile();if((!target.getPath().startsWith(root.getPath()+File.separator)&&!target.equals(root))||(!allowRoot&&target.equals(root)))throw new SecurityException("Ruta fuera del almacenamiento compartido");
-        if(target.getPath().contains(File.separator+"Android"+File.separator+"data"))throw new UnsupportedOperationException("unsupported: Android no permite acceder a Android/data de otras aplicaciones ni siquiera con acceso completo");return target;
+        return resolveSharedPath(p.getString(key),allowRoot);
+    }
+    private static File resolveSharedPath(String raw,boolean allowRoot)throws Exception{
+        if(!Environment.isExternalStorageManager())throw new SecurityException("permission_required: MANAGE_EXTERNAL_STORAGE");
+        File root=Environment.getExternalStorageDirectory().getCanonicalFile();
+        File candidate=raw.isEmpty()?root:new File(raw);
+        File target=(candidate.isAbsolute()?candidate:new File(root,raw)).getCanonicalFile();
+        Path rootPath=root.toPath(),targetPath=target.toPath();
+        if(!targetPath.startsWith(rootPath)||(!allowRoot&&targetPath.equals(rootPath)))throw new SecurityException("Ruta fuera del almacenamiento compartido");
+        Path androidData=rootPath.resolve("Android").resolve("data");
+        if(targetPath.startsWith(androidData))throw new UnsupportedOperationException("unsupported: Android no permite acceder a Android/data de otras aplicaciones ni siquiera con acceso completo");
+        return target;
     }
     private static JSONObject readFile(JSONObject p)throws Exception{
         File file=sharedPath(p,"path",false);if(!file.isFile())throw new IOException("El archivo no existe");long maximum=Math.max(1024,Math.min(1024L*1024,p.optLong("maxBytes",512L*1024)));if(file.length()>maximum)throw new IOException("Archivo demasiado grande para el canal seguro; máximo "+maximum+" bytes");byte[] bytes=Files.readAllBytes(file.toPath());

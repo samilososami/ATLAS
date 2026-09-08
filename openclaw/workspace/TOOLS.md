@@ -11,7 +11,9 @@ keep installation-specific device identities in private records, not here.
 - [`ATLAS-WEBSCREEN.md`](atlas-commands/ATLAS-WEBSCREEN.md): browser ownership,
   local HTTP health, direct Realtime voice and bounded session recovery.
 - [`ATLAS-CHAT.md`](atlas-commands/ATLAS-CHAT.md): the same model/context/tools
-  from a text terminal. Good for logical checks, not an audio latency test.
+  from a text terminal, including typed `atlas_phone`, typed `atlas_android`
+  and private `input_image` inspection. Good for logical checks, not an audio
+  latency test.
 - [`ATLAS-ROUTINES.md`](atlas-commands/ATLAS-ROUTINES.md): deterministic local
   actions, exact phrases, `[SAY]` variables and validated SSH management.
 - [`ATLAS-AUDIO.md`](atlas-commands/ATLAS-AUDIO.md): physical playback routing,
@@ -19,9 +21,11 @@ keep installation-specific device identities in private records, not here.
 - [`ADB.md`](ADB.md): authorised Android transports, shared user/root identity,
   private read-only inventories and per-device notes.
 - [`ATLAS-APP.md`](atlas-commands/ATLAS-APP.md): paired Android companion,
-  Tailscale transport and permission-backed native phone tools.
+  Tailscale transport and permission-backed native phone tools. Tailscale may
+  be direct or DERP; it never falls back to the legacy relay automatically.
 - [`ATLAS-ANDROIDUSE.md`](atlas-commands/ATLAS-ANDROIDUSE.md): explicit,
-  screenshot-driven Accessibility fallback with owner-visible start/stop state.
+  screenshot-driven Accessibility fallback with normalized coordinates,
+  password redaction and owner-visible mandatory stop state.
   Companion pairing is not Bluetooth audio pairing or ADB approval.
 - [`ATLAS-RAFAS.md`](atlas-commands/ATLAS-RAFAS.md): broader Pi health and
   interactive recovery when the fault is below the browser/model layer.

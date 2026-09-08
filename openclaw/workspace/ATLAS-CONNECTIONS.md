@@ -29,8 +29,10 @@ Source paths below are relative to the repository. Live voice files are under
 The Gateway bridge supplies the configured authentication/reservation path;
 Realtime handles the conversation directly with shared Markdown and explicit
 tools. The archived starter/Whisper pipeline is not an automatic fallback.
-`atlas-chat` shares that model/context/tool path but not browser ownership or
-microphone/playback. Companion BLE pairing, Tailscale membership, Bluetooth
+`atlas-chat` shares that model/context/tool path, including typed `atlas_phone`
+and `atlas_android`, but not browser ownership or microphone/playback. Visual
+captures are attached to Realtime as private `input_image` items rather than
+filesystem paths or base64 tool output. Companion BLE pairing, Tailscale membership, Bluetooth
 speaker pairing, Accessibility and Android ADB authorisation are independent
 relationships. A green VPN icon is not proof of a live Companion socket.
 
@@ -95,11 +97,20 @@ to the Internet or put lease tokens in URLs, logs or public files.
 6. For the ATLAS app, run `atlas-app status --json`, then `tailscale ping s23u`
    only when the saved device alias resolves. Distinguish Tailscale `Running`, a
    direct/DERP path, Companion/5010 and the app's persistent encrypted socket.
-   Never open 5010 publicly as a repair.
+   Never open 5010 publicly as a repair and never enable the legacy relay as an
+   automatic fallback. Companion dispatches socket RPC concurrently so a
+   waiting native tool cannot block the `app.reply` that completes it; keep
+   task bounds, serialized writes and replay checks intact when debugging it.
 7. For Android ADB, follow [ADB](ADB.md): `adb devices -l`, then explicit
    `adb -s SERIAL get-state` and a harmless read on the authorised target.
    `unauthorized` requires Android approval; never bypass it or kill the shared
    server as an automatic fix. Cached private records are context, not liveness.
+8. For an agent-driven phone action, check `atlas_phone` first. Canonical
+   methods include `location.get`, `phone.capabilities` and `phone.call`; aliases
+   are only input conveniences. If visual control is necessary, use normalized
+   coordinates, inspect each important result and guarantee `androiduse.stop`
+   from success, error, cancellation and timeout paths. A password-redacted tree
+   is not a signal to inspect the corresponding screen by another route.
 
 Do not reset Wi-Fi, remove Bluetooth pairings, disconnect unrelated devices or
 restart BlueZ/PipeWire/the browser together to “see if it helps”. Prefer the

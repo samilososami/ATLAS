@@ -9,11 +9,17 @@ touch.
 atlas-androiduse start
 atlas-androiduse status
 atlas-androiduse screenshot [PATH]
+atlas-androiduse tree
 atlas-androiduse tap X Y
+atlas-androiduse long_press X Y [DURATION_MS]
 atlas-androiduse swipe X1 Y1 X2 Y2 [DURATION_MS]
 atlas-androiduse text 'text'
 atlas-androiduse key BACK|HOME|RECENTS|ENTER
-atlas-androiduse launch PACKAGE_OR_URL
+atlas-androiduse back
+atlas-androiduse home
+atlas-androiduse recents
+atlas-androiduse wait [MILLISECONDS]
+atlas-androiduse launch PACKAGE|URL
 atlas-androiduse stop
 ```
 
@@ -22,13 +28,32 @@ screen, perform one bounded action, capture again only if needed, then stop.
 While active, Android shows the ATLAS control notification, blue border and
 owner stop button, and blocks ordinary touches. The owner can stop at any time.
 
-Screenshots are current sensitive data. The wrapper validates PNG and saves it
-privately under `~/.atlas/companion/screenshots/`; never add it to Git, durable
+Screenshots and accessibility trees are current sensitive data. The wrapper
+validates each screenshot as PNG and saves it privately under
+`~/.atlas/companion/screenshots/`; never add captures or trees to Git, durable
 memory or public logs. Do not capture passwords, banking, authentication codes
 or private conversations unless the owner explicitly requests that exact task.
+`tree` replaces the text and description of password nodes and all descendants
+with `[REDACTED]`; this is a safety boundary, not permission to inspect secret
+screens.
 
-Coordinates use physical display pixels. Never infer that a tap worked: inspect
-the next screenshot or a deterministic native result. Do not retry an action
-after connection loss because it may already have executed. Stop immediately
-on a permission screen, unexpected account switch, purchase, destructive
-confirmation or the exact error `Error: Android device not connected`.
+Coordinates are normalized from `0` to `1`: `(0,0)` is the top-left and `(1,1)`
+the bottom-right of the physical display. Use the current screenshot or tree to
+derive them; do not reuse coordinates from another resolution. `long_press`
+accepts an optional duration, `wait` is bounded, and `launch` maps a package name
+to `package` or an allowed URL to `uri`. `key ENTER` invokes the focused editable
+field's IME action; `back`, `home` and `recents` are shorthand global actions.
+
+In Realtime, use typed `atlas_android` rather than invoking this wrapper through
+`atlas_shell`. Successful screenshots and post-action inspections are attached
+as separate `input_image` items; base64 is stripped from the function result.
+The typed `androiduse.key` operation accepts `{"key":"ENTER"}` and triggers the
+same safe IME action as the CLI. The model must inspect the new image before
+claiming success.
+
+Never infer that a tap worked: inspect the next screenshot or a deterministic
+native result. Do not retry an action after connection loss because it may
+already have executed. Call `stop` after success and from every error,
+cancellation, timeout and client-exit path. Stop immediately on a permission
+screen, unexpected account switch, purchase, destructive confirmation or the
+exact error `Error: Android device not connected`.

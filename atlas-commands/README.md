@@ -69,11 +69,19 @@ atlas-app
 atlas-app pair
 atlas-app tailscale
 atlas-app endpoint
-atlas-app control get_location
+atlas-app control location.get
+atlas-app control capabilities
 atlas-app logs
 atlas-app restart
 atlas-app unpair
 ```
+
+También se aceptan los aliases breves `location`, `get_location`,
+`capabilities`, `call` y `calls.place`. En operaciones con datos, usa el contrato
+real: `sms.send number=... text=...`; para crear eventos consulta primero
+`calendar.list`, elige un `calendarId` editable y pasa `begin`/`end` en
+milisegundos Unix. `phone.call` recibe un `number`, por lo que un nombre debe
+resolverse antes con `contacts.search`.
 
 Instalación y conexión por Internet: [ATLAS Companion](../.atlas/companion/README.md).
 
@@ -86,16 +94,26 @@ priorizan para llamadas, SMS, calendario, ubicación, archivos y notificaciones.
 ```bash
 atlas-androiduse start
 atlas-androiduse screenshot
-atlas-androiduse tap 540 1200
-atlas-androiduse swipe 800 1600 800 500 300
+atlas-androiduse tree
+atlas-androiduse tap 0.50 0.52
+atlas-androiduse long_press 0.50 0.52 700
+atlas-androiduse swipe 0.75 0.80 0.75 0.25 300
 atlas-androiduse text 'esp32'
 atlas-androiduse key ENTER
+atlas-androiduse back
+atlas-androiduse home
+atlas-androiduse recents
+atlas-androiduse wait 350
+atlas-androiduse launch com.android.chrome
+atlas-androiduse launch https://example.com
 atlas-androiduse stop
 ```
 
 Una captura se guarda como PNG privado y devuelve su ruta, no una cadena base64.
-Cada flujo visual debe terminar con `stop`; no se repiten acciones tras perder la
-conexión. [Manual operativo](../openclaw/workspace/atlas-commands/ATLAS-ANDROIDUSE.md).
+Los gestos usan coordenadas normalizadas de `0` a `1`; `launch` distingue
+internamente `package` y `uri`. `tree` redacta los campos de contraseña y sus
+descendientes. Cada flujo visual debe terminar con `stop`, también tras error o
+cancelación; no se repiten acciones tras perder la conexión. [Manual operativo](../openclaw/workspace/atlas-commands/ATLAS-ANDROIDUSE.md).
 
 ## `atlas-chat`
 
@@ -103,6 +121,12 @@ Abre un chat de terminal, solo por texto, con el mismo `gpt-realtime-2.1`,
 OAuth, contexto Markdown, memoria y tools directas que WebScreen. Las respuestas
 se muestran en blanco; los comandos, búsquedas y resultados, en gris. También
 mide el tiempo hasta el primer texto y el tiempo total de cada turno.
+
+Además de shell, búsqueda y rutinas, registra `atlas_phone` para APIs nativas y
+`atlas_android` para Accessibility. Las capturas de este último se adjuntan al
+turno como `input_image` privado, sin incrustar base64 en la salida. Los aliases
+`location`/`get_location`, `capabilities`, `call` y `calls.place` se normalizan a
+`location.get`, `phone.capabilities` y `phone.call`.
 
 ```bash
 atlas-chat

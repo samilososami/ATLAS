@@ -56,14 +56,21 @@ La clave se guarda cifrada con Android Keystore; la copia de seguridad de la
 app está desactivada. La huella/credencial se verifica en Android y no se envía
 a A1. Cada permiso nativo se valida en Android. La terminal y Accessibility
 permiten acciones potentes; el modo visual debe mostrar notificación, borde azul
-y un botón local para detenerlo. Las capturas son datos privados y no se publican.
+y un botón local para detenerlo. Las capturas son datos privados y no se publican
+ni se incrustan como base64 en resultados o logs: Realtime las recibe como un
+`input_image` separado. La jerarquía de Accesibilidad redacta texto y descripción
+de los nodos de contraseña y todos sus descendientes. Todo flujo visual debe
+ejecutar `androiduse.stop` al terminar, cancelar, fallar o agotar el tiempo.
 Esto no limita lo que puede hacer el propietario que posee la clave.
 
 La conexión predeterminada viaja por el tailnet privado y conserva, además,
 sobres AES-256-GCM con protección de dirección, fecha y repetición. Tailscale y
 el emparejamiento de ATLAS son dos capas distintas. No abras 5010 en el router
 ni expongas HTTP/5000 como alternativa. El relay antiguo está desactivado por
-defecto. El protocolo aún no tiene una auditoría independiente y la APK sigue
+defecto y nunca se habilita automáticamente si Tailscale falla; solo un modo de
+compatibilidad pedido explícitamente puede seleccionarlo. El servidor limita las
+tareas RPC concurrentes y serializa escrituras para permitir respuestas
+reentrantes sin desactivar validación criptográfica ni protección de replay. El protocolo aún no tiene una auditoría independiente y la APK sigue
 siendo un producto personal de desarrollo, no una administración para terceros.
 
 ## Reportar un problema

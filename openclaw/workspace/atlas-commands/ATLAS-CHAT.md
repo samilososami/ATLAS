@@ -2,7 +2,9 @@
 
 `atlas-chat` abre ATLAS dentro de la terminal, solo por texto. Utiliza
 `gpt-realtime-2.1` con el mismo OAuth, instrucciones Realtime, contexto Markdown,
-memoria conversacional, shell y búsqueda web que WebScreen. No usa el pipeline
+memoria conversacional y contrato de herramientas que WebScreen. Incluye
+`atlas_shell`, `atlas_web_search`, `atlas_routine`, la API nativa tipada
+`atlas_phone` y el control visual tipado `atlas_android`. No usa el pipeline
 legacy ni sintetiza o captura voz.
 
 ```bash
@@ -56,6 +58,23 @@ WebScreen. `--ephemeral` permite medir o diagnosticar sin leerla ni añadir ese
 turno. La capa `TERMINAL_INSTRUCTIONS.md` conserva identidad, herramientas y
 criterio, pero sustituye las reglas exclusivas de voz por presentación técnica
 de terminal: Markdown conciso, rutas, cifras y unidades legibles.
+
+Para el teléfono, `atlas_phone` es siempre la primera opción. Acepta operaciones
+canónicas como `phone.capabilities`, `location.get` y `phone.call`, además de los
+aliases `capabilities`, `location`, `get_location`, `call` y `calls.place`.
+`atlas_android` queda reservado para pantallas que haya que observar o tocar y
+solo admite su allowlist cerrada: `status`, `start`, `stop`, `screenshot`,
+`tree`, `tap`, `long_press`, `swipe`, `text`, `key`, `back`, `home`, `recents`,
+`launch` y `wait`, todos bajo el prefijo `androiduse.`; `key` acepta `ENTER`.
+Sus gestos usan
+coordenadas normalizadas de `0` a `1`.
+
+Una captura no se devuelve como texto ni como base64: después del resultado de
+la función se añade un `input_image` privado para que Realtime pueda ver la
+pantalla. La jerarquía de Accesibilidad redacta campos de contraseña y sus
+descendientes. Todo flujo visual llama a `androiduse.stop` al finalizar y también
+ante error, cancelación, timeout o salida del cliente; nunca se deja el bloqueo
+de pantalla activo por una sesión de terminal terminada.
 
 Puede invocarse como `sami` o como root. En ambos casos el proceso se ejecuta
 como el usuario de servicio `sami`, evitando archivos root dentro del estado de

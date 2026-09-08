@@ -9,7 +9,7 @@ ROOT=pathlib.Path(os.environ.get('ATLAS_HOME','/home/atlas'))
 STATE=ROOT/'.atlas/companion/state'
 CONFIG=STATE/'config.json'
 WEB='http://127.0.0.1:5000'
-VERSION='0.2.0'
+VERSION='0.2.1'
 
 class Companion:
     def __init__(self, config):

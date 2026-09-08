@@ -48,4 +48,5 @@ shortcut and never expose WebScreen/5000.
 The previous `.atlas/relay-cloudflare` and Python relay remain in the source for
 older APKs and rollback. They are disabled after migration. A deliberate
 `atlas-app legacy-relay wss://HOST/connect` switches back; `legacy-relay off`
-returns to Tailscale. Relay credentials and pairing keys remain private.
+returns to Tailscale. No transport error, timeout or DERP route triggers that
+legacy mode automatically. Relay credentials and pairing keys remain private.

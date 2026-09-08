@@ -106,7 +106,7 @@ shows the actual 1024 × 600 display after deployment.
 
 Una sola pestaña controla WebScreen a la vez. Las demás muestran **Tomar control**: al pulsarlo, el permiso pasa inmediatamente al nuevo dispositivo, sin solicitud ni confirmación. La pestaña anterior detiene micrófono, audio y trabajo activo y muestra la pantalla bloqueada. La conversación de OpenClaw se conserva; este control de uso no sustituye una futura autenticación.
 
-- `gpt-realtime-2.1` conversa, razona y utiliza `atlas_shell` y `atlas_web_search` (Tavily) directamente. Recibe identidad, Markdown, informes actuales y contexto conversacional; no usa el preámbulo ni `openclaw_agent_consult` del pipeline antiguo.
+- `gpt-realtime-2.1` conversa, razona y utiliza `atlas_shell`, `atlas_web_search` (Tavily), `atlas_routine`, `atlas_phone` y `atlas_android` directamente. Recibe identidad, Markdown, informes actuales y contexto conversacional; no usa el preámbulo ni `openclaw_agent_consult` del pipeline antiguo. Las tools del móvil tienen allowlists cerradas: la ruta nativa es prioritaria y Android Use siempre inspecciona el resultado y termina con `stop`.
 - Las rutinas deterministas se guardan en `.atlas/routines/ROUTINES.md`. Una
   frase exacta se resuelve localmente antes de abrir una respuesta de Realtime,
   con pasos de shell, variables capturadas y respuesta `[SAY]` opcional. Se
@@ -121,6 +121,10 @@ Una sola pestaña controla WebScreen a la vez. Las demás muestran **Tomar contr
   presentación al terminal, permitiendo Markdown, rutas, cifras y unidades.
   Incluye sugerencias de comandos `/`, referencias a archivos `@`, entrada
   multilínea y herramientas compactas con `/expand` para consultar el detalle.
+  También comparte las tools tipadas `atlas_phone` y `atlas_android`: prioriza
+  APIs nativas del móvil y, cuando necesita ver la pantalla, adjunta la captura
+  privada como `input_image` separado. El PNG no se vuelca en texto/base64 y el
+  control visual se detiene en toda salida, cancelación o error.
 - Chrome detecta la palabra exacta `Atlas`, también dentro de una frase, sin silencio previo ni veto semántico. En A1 y navegadores remotos, Chrome entrega la petición y las continuaciones como texto a Realtime, descartando duplicados de la transcripción auxiliar. `gpt-4o-mini-transcribe` aporta una transcripción auxiliar de los turnos de audio, no el razonamiento.
 - Solo en A1, el micrófono y el detector se bloquean durante la reproducción y 200 ms después. El resto de dispositivos conserva sus interrupciones naturales. Al terminar la respuesta se vuelve a esperar la palabra Atlas: ya no se abre una continuación automática de diez segundos.
 - Se pueden elegir voces nativas de OpenAI, navegador o ElevenLabs, y esfuerzo Default, Minimal, Low, Medium, High y Xhigh, según admita el proveedor. Default omite el ajuste. Los resultados provisionales de Chrome se sustituyen al corregirse y el texto idéntico no reinicia la espera.
@@ -132,11 +136,11 @@ OpenClaw sigue disponible en otros canales, pero el WebScreen actual recibe su c
 
 La recuperación distingue HTTP, permisos de página, Gateway, WebRTC y audio físico. Tolera pérdidas breves, renueva tokens caducados y detecta respuestas bloqueadas sin repetir acciones automáticamente. El [mapa de conexiones](openclaw/workspace/ATLAS-CONNECTIONS.md) enlaza los componentes, diagnósticos e instaladores. La [verificación de septiembre](docs/WEBSCREEN-RELIABILITY-2026-09-06.md) recoge pruebas, tiempos y límites de la validación.
 
-### App Android · preview 0.1
+### App Android · preview 0.2.1
 
-La [APK ATLAS](android/README.md) incorpora voz por pulsación, wake word en primer plano y chat progresivo, acciones configurables mediante presets, terminal PTY persistente, estado cacheado y protección biométrica. Usa la paleta oscura de ATLAS, ofrece revisión de permisos pendientes —incluida Accesibilidad—, actualizaciones verificadas desde las releases Android y widgets redimensionables desde 2×2 para acciones, estado, cuotas y accesos a Chat/Voz. La versión 0.2.0 añade APIs nativas del teléfono y un modo visual controlado; la validación final sobre One UI continúa correspondiendo al S23 Ultra físico.
+La [APK ATLAS](android/README.md) incorpora voz por pulsación, wake word en primer plano y chat progresivo, acciones configurables mediante presets, terminal PTY persistente, estado cacheado y protección biométrica. Usa la paleta oscura de ATLAS, ofrece revisión de permisos pendientes —incluida Accesibilidad—, actualizaciones verificadas desde las releases Android y widgets redimensionables desde 2×2 para acciones, estado, cuotas y accesos a Chat/Voz. La versión 0.2.1 añade APIs nativas del teléfono y un modo visual controlado, ya verificados en un S23 Ultra con One UI para los flujos no intrusivos. No se realizaron llamadas ni SMS y tampoco se tomó ninguna foto o se cambió la red Wi-Fi durante la validación.
 
-[ATLAS Companion](.atlas/companion/README.md) es un servicio separado para la app, con emparejamiento BLE privado, TLS fijado y mensajes AES-GCM. El transporte predeterminado es un WebSocket persistente sobre **Tailscale**, normalmente directo entre A1 y el teléfono y sin dominio, VPS ni puertos públicos. `atlas-app control` prioriza APIs nativas del móvil; `atlas-androiduse` limita la automatización visual con accesibilidad y capturas privadas. El antiguo relay de Cloudflare queda solo para compatibilidad. Nunca se expone WebScreen al exterior.
+[ATLAS Companion](.atlas/companion/README.md) es un servicio separado para la app, con emparejamiento BLE privado, TLS fijado y mensajes AES-GCM. El transporte predeterminado es un WebSocket persistente sobre **Tailscale**, normalmente directo entre A1 y el teléfono y sin dominio, VPS ni puertos públicos; un DERP sigue siendo Tailscale. `atlas-app control` prioriza APIs nativas del móvil; `atlas-androiduse` limita la automatización visual con accesibilidad, coordenadas normalizadas y capturas privadas. El servidor procesa RPC concurrente para poder recibir `app.reply` mientras espera una operación nativa reentrante. El antiguo relay de Cloudflare queda solo para compatibilidad explícita y nunca se activa automáticamente al fallar Tailscale. Nunca se expone WebScreen al exterior.
 
 ### Pantalla y terminal local
 
@@ -228,7 +232,7 @@ Un pequeño servicio espera eventos del teclado, sin sondeo periódico ni regist
 
 ## Releases
 
-Las imágenes saneadas de ATLAS OS y sus notas de versión se publican en [GitHub Releases](../../releases). Se distribuyen comprimidas como `.img.xz`; ATLAS Imager podrá descargarlas y preparar cada instalación con la configuración elegida por su propietario. Una imagen pública nunca debe contener redes Wi-Fi, tokens, API keys, cookies, sesiones, claves SSH ni datos personales de la instalación original.
+Las imágenes saneadas de ATLAS OS y sus notas de versión se publican en [GitHub Releases](https://github.com/samilososami/ATLAS/releases). Se distribuyen comprimidas como `.img.xz`; ATLAS Imager podrá descargarlas y preparar cada instalación con la configuración elegida por su propietario. Una imagen pública nunca debe contener redes Wi-Fi, tokens, API keys, cookies, sesiones, claves SSH ni datos personales de la instalación original.
 
 Consulta las [notas de ATLAS OS 1.0](docs/ATLAS-OS-1.0.md) para conocer el contenido, los requisitos, el proceso de primer arranque y las comprobaciones de seguridad.
 

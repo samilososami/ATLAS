@@ -52,6 +52,10 @@ class AtlasChatTests(unittest.TestCase):
         self.assertEqual(tools["atlas_routine"]["parameters"]["required"], ["action"])
         self.assertEqual(tools["atlas_phone"]["parameters"]["required"], ["operation"])
         self.assertEqual(tools["atlas_android"]["parameters"]["required"], ["operation"])
+        self.assertIn(
+            "androiduse.key",
+            tools["atlas_android"]["parameters"]["properties"]["operation"]["enum"],
+        )
         browser = (ROOT / ".atlas/webscreen/static/realtime.js").read_text()
         for name in tools:
             self.assertIn(f'name: "{name}"', browser)

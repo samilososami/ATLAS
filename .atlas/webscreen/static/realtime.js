@@ -62,6 +62,7 @@ Dispones de atlas_face. Tú, el mismo modelo Realtime, eliges semánticamente la
     "androiduse.status", "androiduse.start", "androiduse.stop",
     "androiduse.screenshot", "androiduse.tree", "androiduse.tap",
     "androiduse.long_press", "androiduse.swipe", "androiduse.text",
+    "androiduse.key",
     "androiduse.back", "androiduse.home", "androiduse.recents",
     "androiduse.launch", "androiduse.wait",
   ]);
@@ -89,7 +90,7 @@ Dispones de atlas_face. Tú, el mismo modelo Realtime, eliges semánticamente la
       properties: {
         operation: { type: "string", enum: ANDROID_OPERATIONS },
         params: { type: "object", additionalProperties: true,
-          description: "Coordenadas x/y o x1/y1/x2/y2, duration, text, package, uri o ms según la operación." },
+          description: "Usa coordenadas normalizadas 0..1 para x/y o x1/y1/x2/y2; duration, text, package, uri o ms según la operación." },
         inspectAfter: { type: "boolean",
           description: "Por defecto true: tras una acción correcta adjunta una captura actual. Usa false solo si de verdad no necesitas inspeccionarla." },
       },
@@ -97,7 +98,7 @@ Dispones de atlas_face. Tú, el mismo modelo Realtime, eliges semánticamente la
     },
   };
   const ANDROID_TOOL_INSTRUCTIONS = `CONTROL DEL TELÉFONO EMPAREJADO:
-Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques. Consulta capabilities si no conoces el permiso disponible. Usa atlas_android únicamente cuando no exista una operación nativa adecuada. En control visual: llama a androiduse.start, actúa sobre la captura más reciente, inspecciona el resultado tras cada paso y llama siempre a androiduse.stop al terminar, ante un bloqueo o antes de responder al usuario. La captura llega como imagen separada del resultado de herramienta; debes mirarla y no inventar posiciones ni estados. No afirmes que una acción se completó hasta que el resultado o la pantalla lo confirme. Si aparece "Error: Android device not connected", informa exactamente de que el móvil no está conectado. Si una API devuelve permission_required, unsupported o requires_user_action, dilo brevemente y no lo simules con éxito. No uses atlas_shell para saltarte estas reglas ni para fabricar llamadas al móvil.`;
+Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques. Consulta capabilities si no conoces el permiso disponible. Usa atlas_android únicamente cuando no exista una operación nativa adecuada. En control visual: llama a androiduse.start, usa siempre coordenadas normalizadas de 0 a 1, actúa sobre la captura más reciente, inspecciona el resultado tras cada paso y llama siempre a androiduse.stop al terminar, ante un bloqueo o antes de responder al usuario. La captura llega como imagen separada del resultado de herramienta; debes mirarla y no inventar posiciones ni estados. No afirmes que una acción se completó hasta que el resultado o la pantalla lo confirme. Si aparece "Error: Android device not connected", informa exactamente de que el móvil no está conectado. Si una API devuelve permission_required, unsupported o requires_user_action, dilo brevemente y no lo simules con éxito. No uses atlas_shell para saltarte estas reglas ni para fabricar llamadas al móvil.`;
 
   const REALTIME_TOOLS = [
     {

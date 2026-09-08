@@ -3,7 +3,10 @@
 `atlas-chat` is the text-only terminal surface for ATLAS. It opens a direct
 `gpt-realtime-2.1` session through the same OpenClaw OAuth reservation used by
 WebScreen, then loads the same `REALTIME_INSTRUCTIONS.md`, complete Markdown
-context, persistent Realtime conversation and direct tools. A final
+context, persistent Realtime conversation and direct tools. Besides
+`atlas_shell`, `atlas_web_search` and `atlas_routine`, it exposes the same
+closed phone contracts as WebScreen: `atlas_phone` for permission-backed
+native APIs and `atlas_android` for explicit Accessibility control. A final
 `TERMINAL_INSTRUCTIONS.md` layer changes only presentation: terminal responses
 can use concise Markdown, paths, digits and technical units instead of the
 speech-oriented formatting used by WebScreen.
@@ -27,9 +30,28 @@ atlas-chat --version
 ```
 
 Assistant text is streamed in white. Shell commands, web searches and their
-real output are shown separately in grey. Each turn includes first-token and
+real output are shown separately in grey. Native phone calls and visual Android
+steps use their own grey tool panels; they are not disguised as shell commands.
+Each turn includes first-token and
 total timing. Private history and JSONL diagnostics stay under
 `/home/atlas/.atlas/chat/` with restrictive permissions.
+
+`atlas_phone` accepts canonical operations such as `location.get`,
+`phone.capabilities` and `phone.call`. The friendly spellings `location`,
+`get_location`, `capabilities`, `call` and the historical `calls.place` are
+normalized to those canonical methods; an already prefixed `control.*` name is
+not double-prefixed. Prefer native calls whenever Android offers one.
+
+`atlas_android` accepts only the documented `androiduse.*` allowlist. A
+successful screenshot or inspected visual action is returned to Realtime as a
+separate `input_image`; its PNG bytes never appear in the function result,
+terminal transcript or durable history. Coordinates are normalized from `0`
+to `1`, so they remain valid even though the private image may be resized for
+the model. Its typed `androiduse.key` operation accepts `ENTER`; package names
+and allowed links are passed separately as `package` or `uri`. A visual flow
+always calls `androiduse.stop` after success and on
+cancellation, error or client exit. Accessibility-tree password fields and
+their descendants are returned as `[REDACTED]`.
 
 Normal turns read and write the persistent conversation shared with WebScreen.
 `--ephemeral` neither reads that history nor writes the diagnostic turn back.

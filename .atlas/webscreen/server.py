@@ -173,12 +173,13 @@ ATLAS_ANDROID_OPERATIONS = frozenset({
     "androiduse.status", "androiduse.start", "androiduse.stop",
     "androiduse.screenshot", "androiduse.tree", "androiduse.tap",
     "androiduse.long_press", "androiduse.swipe", "androiduse.text",
+    "androiduse.key",
     "androiduse.back", "androiduse.home", "androiduse.recents",
     "androiduse.launch", "androiduse.wait",
 })
 ATLAS_ANDROID_AUTO_INSPECT = frozenset({
     "androiduse.start", "androiduse.tap", "androiduse.long_press",
-    "androiduse.swipe", "androiduse.text", "androiduse.back",
+    "androiduse.swipe", "androiduse.text", "androiduse.key", "androiduse.back",
     "androiduse.home", "androiduse.recents", "androiduse.launch",
     "androiduse.wait",
 })
@@ -320,12 +321,17 @@ def normalize_android_screenshot(result: dict[str, Any]) -> dict[str, Any]:
     if not raw.startswith(b"\x89PNG\r\n\x1a\n"):
         raise RuntimeError("La captura del teléfono no es un PNG válido")
     try:
-        width, height = int(result.get("width")), int(result.get("height"))
+        screen_width, screen_height = int(result.get("width")), int(result.get("height"))
+        width = int(result.get("captureWidth") or screen_width)
+        height = int(result.get("captureHeight") or screen_height)
     except (TypeError, ValueError) as error:
         raise RuntimeError("La captura no incluye dimensiones válidas") from error
-    if not (1 <= width <= 10000 and 1 <= height <= 10000):
+    if not (1 <= width <= 10000 and 1 <= height <= 10000
+            and 1 <= screen_width <= 10000 and 1 <= screen_height <= 10000):
         raise RuntimeError("Las dimensiones de la captura están fuera de rango")
-    return {"pngBase64": encoded, "width": width, "height": height, "mime": "image/png"}
+    return {"pngBase64": encoded, "width": width, "height": height,
+            "screenWidth": screen_width, "screenHeight": screen_height,
+            "mime": "image/png"}
 
 
 def public_android_result(result: dict[str, Any]) -> dict[str, Any]:

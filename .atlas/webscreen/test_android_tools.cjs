@@ -24,8 +24,10 @@ assert.equal(tools.filter((tool) => tool.name === "atlas_phone").length, 1);
 assert.equal(tools.filter((tool) => tool.name === "atlas_android").length, 1);
 assert.ok(window.AtlasRealtime._test.phoneTool.parameters.properties.operation.enum.includes("get_location"));
 assert.ok(window.AtlasRealtime._test.androidTool.parameters.properties.operation.enum.includes("androiduse.screenshot"));
+assert.ok(window.AtlasRealtime._test.androidTool.parameters.properties.operation.enum.includes("androiduse.key"));
 assert.match(window.AtlasRealtime._test.androidInstructions, /Prioriza siempre atlas_phone/u);
 assert.match(window.AtlasRealtime._test.androidInstructions, /androiduse\.stop/u);
+assert.match(window.AtlasRealtime._test.androidInstructions, /coordenadas normalizadas/u);
 
 const controller = window.AtlasRealtime.create({});
 const sent = [];
