@@ -27,6 +27,15 @@ The flow for one visual action is: start, screenshot, decide from the current
 screen, perform one bounded action, capture again only if needed, then stop.
 While active, Android shows the ATLAS control notification, blue border and
 owner stop button, and blocks ordinary touches. The owner can stop at any time.
+If sami explicitly says "controla mi teléfono", `start` opens a multi-turn
+control session: keep it active for his next instructions and stop only when he
+asks, presses the red button, closes the client or the ten-minute idle timeout
+expires. Do not issue another `start` while it is already active.
+
+Opening a known app is not a visual task. Use the native operation
+`atlas-app control apps.launch --params '{"app":"Galería"}' --json`; it resolves
+common Spanish names and installed launcher labels without screenshots or
+coordinate guessing. Coordinates remain appropriate for actions inside an app.
 
 Screenshots and accessibility trees are current sensitive data. The wrapper
 validates each screenshot as PNG and saves it privately under
@@ -53,7 +62,8 @@ claiming success.
 
 Never infer that a tap worked: inspect the next screenshot or a deterministic
 native result. Do not retry an action after connection loss because it may
-already have executed. Call `stop` after success and from every error,
-cancellation, timeout and client-exit path. Stop immediately on a permission
+already have executed. Call `stop` after a bounded task and from every terminal
+error, cancellation, timeout and client-exit path; preserve only the explicit
+multi-turn mode above. Stop immediately on a permission
 screen, unexpected account switch, purchase, destructive confirmation or the
 exact error `Error: Android device not connected`.

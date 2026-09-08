@@ -246,6 +246,13 @@ important action and treat password nodes redacted by `tree` as inaccessible.
 `long_press` and `wait` are explicit operations. Never replay a tap, swipe,
 message, call or deletion after a lost socket.
 
+Open apps through the native `apps.launch` operation with a human app name; do
+not inspect the launcher or tap an icon by coordinates. Coordinates are for
+interaction inside an application. The phrase "controla mi teléfono" explicitly
+opens one multi-turn Android Use session: keep it active for subsequent requests
+until sami asks to stop, presses the red stop button, closes the client or it
+expires. All ordinary one-shot visual tasks still stop when complete.
+
 For native calls, use canonical names such as `location.get`,
 `phone.capabilities` and `phone.call`; the CLI accepts `location`/`get_location`,
 `capabilities`, `call` and `calls.place` only as aliases. `sms.send` takes

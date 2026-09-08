@@ -27,6 +27,13 @@ class AndroidControlTests(unittest.TestCase):
         self.assertIn("androiduse.key", SERVER.ATLAS_ANDROID_OPERATIONS)
         self.assertIn("androiduse.key", SERVER.ATLAS_ANDROID_AUTO_INSPECT)
 
+    def test_native_app_launch_and_fast_screenshot_timeout_are_enabled(self) -> None:
+        self.assertIn("apps.launch", SERVER.ATLAS_PHONE_OPERATIONS)
+        self.assertLess(
+            SERVER.ATLAS_APP_SCREENSHOT_TIMEOUT_SECONDS,
+            SERVER.ATLAS_APP_CONTROL_TIMEOUT_SECONDS,
+        )
+
     @mock.patch.object(SERVER.shutil, "which", return_value="/usr/local/bin/atlas-app")
     @mock.patch.object(SERVER.subprocess, "run")
     def test_native_alias_uses_argv_without_shell(self, run: mock.Mock, _which: mock.Mock) -> None:
@@ -95,6 +102,29 @@ class AndroidControlTests(unittest.TestCase):
         self.assertEqual(responses, [(503, {
             "error": "Error: Android device not connected",
         })])
+
+    @mock.patch.object(SERVER, "append_realtime_event")
+    @mock.patch.object(SERVER, "execute_atlas_app_control")
+    def test_completed_action_survives_failed_auto_inspection(
+        self, execute: mock.Mock, _event: mock.Mock,
+    ) -> None:
+        execute.side_effect = [
+            {"ok": True, "performed": True},
+            subprocess.TimeoutExpired(["atlas-app"], 8),
+        ]
+        responses: list[tuple[int, dict[str, object]]] = []
+        handler = SimpleNamespace(
+            _read_realtime_device_tool=lambda: (
+                "androiduse.home", {}, True, "interaction",
+            ),
+            log_client=lambda: {},
+            send_json=lambda status, payload: responses.append((status, payload)),
+        )
+        SERVER.AtlasScreenHandler.handle_realtime_android(handler)
+        self.assertEqual(responses[0][0], 200)
+        result = responses[0][1]["result"]
+        self.assertTrue(result["performed"])
+        self.assertIn("inspectionError", result)
 
     @mock.patch.object(SERVER, "append_realtime_event")
     @mock.patch.object(SERVER, "execute_atlas_app_control")

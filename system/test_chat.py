@@ -181,7 +181,7 @@ class AtlasChatTests(unittest.TestCase):
         self.assertFalse(chat._android_control_active)
         self.assertIsNone(chat.ws)
 
-    def test_failed_auto_inspection_stops_android_control(self):
+    def test_failed_auto_inspection_preserves_completed_action_and_control(self):
         module = self.load_client()
         chat = object.__new__(module.AtlasChat)
         capture = io.StringIO()
@@ -191,9 +191,7 @@ class AtlasChatTests(unittest.TestCase):
         chat.log = Mock()
         chat._android_control_active = False
         allowed = frozenset({"androiduse.start", "androiduse.screenshot", "androiduse.stop"})
-        execute = Mock(side_effect=[
-            {"ok": True}, RuntimeError("captura fallida"), {"ok": True},
-        ])
+        execute = Mock(side_effect=[{"ok": True}, RuntimeError("captura fallida")])
         chat.webscreen = SimpleNamespace(
             execute_atlas_app_control=execute,
             ATLAS_ANDROID_OPERATIONS=allowed,
@@ -206,11 +204,12 @@ class AtlasChatTests(unittest.TestCase):
             "operation": "androiduse.start", "params": {},
         }, "failed-inspection")
 
-        self.assertFalse(result["ok"])
-        self.assertFalse(chat._android_control_active)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["result"]["inspectionError"], "captura fallida")
+        self.assertTrue(chat._android_control_active)
         self.assertEqual(
             [call.args[0] for call in execute.call_args_list],
-            ["androiduse.start", "androiduse.screenshot", "androiduse.stop"],
+            ["androiduse.start", "androiduse.screenshot"],
         )
 
     def test_logs_never_receive_provider_secret_field(self):

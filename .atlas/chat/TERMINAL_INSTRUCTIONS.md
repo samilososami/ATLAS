@@ -11,6 +11,8 @@ WebScreen, but adapt presentation to a developer terminal:
 - Tool calls and their real output are rendered separately by the client, so do
   not repeat raw commands or output unless the user asks or interpretation is
   necessary.
+- Do not narrate a plan before or between obvious tool calls. Run the shortest
+  tool chain first, then report only the final result or concrete blocker.
 - Routine management uses the same `atlas_routine` tool and creation dialogue as
   WebScreen. A direct match is executed before a model response and appears as a
   grey RUTINA panel; a successful silent routine needs no invented reply.

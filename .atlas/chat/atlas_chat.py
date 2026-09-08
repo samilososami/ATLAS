@@ -63,7 +63,7 @@ PHONE_OPERATIONS = [
     "calendar.delete", "location.get", "notifications.list", "notifications.show",
     "wifi.panel", "wifi.connect", "files.list", "files.read", "files.move",
     "files.delete", "media.list", "media.recent", "media.delete", "camera.photo",
-    "camera.video", "sensors.summary",
+    "camera.video", "sensors.summary", "apps.launch",
 ]
 ANDROID_OPERATIONS = [
     "androiduse.status", "androiduse.start", "androiduse.stop",
@@ -75,12 +75,19 @@ ANDROID_OPERATIONS = [
 ]
 ANDROID_TOOL_INSTRUCTIONS = """CONTROL DEL TELÉFONO EMPAREJADO:
 Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques.
+Para abrir una aplicación usa atlas_phone apps.launch con {"app":"nombre"};
+es una sola llamada, no inicia control visual y no necesita ver la pantalla.
 Consulta capabilities si no conoces el permiso disponible. Usa atlas_android
 únicamente cuando no exista una operación nativa adecuada. En control visual:
 llama a androiduse.start, usa siempre coordenadas normalizadas de 0 a 1,
 actúa sobre la captura más reciente, inspecciona el
-resultado tras cada paso y llama siempre a androiduse.stop al terminar, ante un
-bloqueo o antes de responder al usuario. La captura llega como imagen separada
+resultado tras cada paso y llama a androiduse.stop al terminar una tarea puntual.
+Si el usuario dice "controla mi teléfono", inicia androiduse.start, confirma
+brevemente y MANTÉN la sesión activa para sus siguientes mensajes; no llames a
+stop hasta que pida parar, cierre el cliente, pulse el botón rojo o venza la
+sesión. Si ya está activa, no vuelvas a iniciarla. Las coordenadas se usan para
+acciones dentro de aplicaciones, nunca para lanzar una app conocida. Ante un
+bloqueo o error terminal, llama a stop. La captura llega como imagen separada
 del resultado de herramienta; debes mirarla y no inventar posiciones ni estados.
 No afirmes que una acción se completó hasta que el resultado o la pantalla lo
 confirme. Si aparece \"Error: Android device not connected\", informa exactamente
@@ -347,7 +354,7 @@ REALTIME_TOOLS: list[dict[str, Any]] = [
                     "additionalProperties": True,
                     "description": (
                         "Parámetros de la operación; por ejemplo number/text, query, "
-                        "title/begin/end, id o path."
+                        "title/begin/end, id, path o app para apps.launch."
                     ),
                 },
             },
@@ -705,7 +712,14 @@ class AtlasChat:
                     self._android_control_active = False
                 if (inspect_after and operation in self.webscreen.ATLAS_ANDROID_AUTO_INSPECT
                         and result.get("ok", True) is not False and not result.get("error")):
-                    _, screenshot = self._capture_android_screenshot()
+                    try:
+                        _, screenshot = self._capture_android_screenshot()
+                    except Exception as inspection_error:
+                        # Preserve the completed action and the active control
+                        # session. The model can retry a screenshot explicitly
+                        # or use the accessibility tree without repeating it.
+                        result = dict(result)
+                        result["inspectionError"] = str(inspection_error)[:300]
 
             public = self.webscreen.public_android_result(result)
             response: dict[str, Any] = {

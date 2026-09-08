@@ -49,6 +49,17 @@ assert.match(source, /\.put\("permissions",permissions\)/,
 assert.match(source, /\.put\("operations",operations\)/,
   "capabilities must expose callable-operation readiness");
 
+// Known applications launch by human name without Accessibility, screenshots
+// or coordinate guessing. Generic launcher labels remain discoverable.
+assert.match(source, /case "apps\.launch": return launchApp\(context,p\)/,
+  "apps.launch must be a first-class native phone operation");
+assert.match(source, /known\.put\("galeria","com\.sec\.android\.gallery3d"\)/,
+  "Samsung Gallery must have a deterministic Spanish alias");
+assert.match(source, /queryIntentActivities\(query,PackageManager\.MATCH_ALL\)/,
+  "unknown app names must resolve through launcher labels");
+assert.match(source, /getLaunchIntentSenderForPackage\(packageName\)/,
+  "launch must work through Android 11+ package visibility");
+
 // calendar.list returns event provenance plus calendar IDs and a ready-to-use
 // subset for calendar.create.
 assert.match(source, /CalendarContract\.Instances\.CALENDAR_ID/,

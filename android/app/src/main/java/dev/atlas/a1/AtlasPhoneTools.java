@@ -3,6 +3,7 @@ package dev.atlas.a1;
 import android.Manifest;
 import android.content.*;
 import android.content.pm.PackageManager;
+import android.content.pm.ResolveInfo;
 import android.database.Cursor;
 import android.hardware.*;
 import android.location.*;
@@ -38,6 +39,7 @@ final class AtlasPhoneTools {
             case "notifications.list": return new JSONObject().put("notifications",AtlasNotificationListenerService.active());
             case "notifications.show": return showNotification(context,p);
             case "notifications.access": return requestUserAction(context,new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS),"Permite a ATLAS leer notificaciones","Toca para abrir el acceso a notificaciones",93);
+            case "apps.launch": return launchApp(context,p);
             case "wifi.panel": return openWifiPanel(context);
             case "wifi.connect": throw new UnsupportedOperationException("unsupported: Android 10+ no permite garantizar una conexión Wi-Fi silenciosa; usa wifi.panel o Android Use");
             case "phone.answer": throw new UnsupportedOperationException("unsupported: contestar llamadas exige que ATLAS sea la app de teléfono predeterminada y un InCallService aprobado por el usuario");
@@ -104,7 +106,7 @@ final class AtlasPhoneTools {
             .put("sms.send",smsSend&&telephony).put("sms.unread",smsRead).put("sms.list",smsRead)
             .put("contacts.search",contactsRead)
             .put("calendar.list",calendarRead).put("calendar.create",calendarWrite).put("calendar.update",calendarWrite).put("calendar.delete",calendarWrite)
-            .put("location.get",locationFine).put("notifications.list",notificationAccess).put("notifications.show",notificationsPost).put("notifications.access",true)
+            .put("location.get",locationFine).put("notifications.list",notificationAccess).put("notifications.show",notificationsPost).put("notifications.access",true).put("apps.launch",true)
             .put("wifi.panel",wifiHardware).put("files.list",allFilesAccess).put("files.read",allFilesAccess).put("files.move",allFilesAccess).put("files.delete",allFilesAccess)
             .put("media.list",mediaList).put("media.delete",true)
             .put("camera.photo",cameraPhoto).put("camera.video",cameraVideo).put("sensors.summary",sensorHardware).put("androiduse",accessibility);
@@ -119,6 +121,43 @@ final class AtlasPhoneTools {
     private static JSONObject call(Context context,JSONObject p)throws Exception{
         if(context.checkSelfPermission(Manifest.permission.CALL_PHONE)!=PackageManager.PERMISSION_GRANTED)throw new SecurityException("permission_required: CALL_PHONE");String number=p.optString("number").replaceAll("[^+0-9*#]","");if(number.length()<3)throw new IllegalArgumentException("Número no válido");
         TelecomManager telecom=context.getSystemService(TelecomManager.class);if(telecom==null)throw new UnsupportedOperationException("unsupported: este dispositivo no ofrece telefonía");telecom.placeCall(Uri.parse("tel:"+Uri.encode(number)),Bundle.EMPTY);return new JSONObject().put("initiated",true);
+    }
+    private static String normalizedAppName(String value){
+        String lowered=java.text.Normalizer.normalize(value==null?"":value,java.text.Normalizer.Form.NFD)
+            .replaceAll("\\p{M}+","").toLowerCase(Locale.ROOT).trim();
+        return lowered.replaceAll("[^a-z0-9]+","");
+    }
+    private static JSONObject launchApp(Context context,JSONObject p)throws Exception{
+        String requested=p.optString("app",p.optString("name",p.optString("package",""))).trim();
+        if(requested.isEmpty())throw new IllegalArgumentException("Falta app, name o package");
+        PackageManager manager=context.getPackageManager();
+        String normalized=normalizedAppName(requested),packageName="",label="";
+        Map<String,String> known=new HashMap<>();
+        known.put("galeria","com.sec.android.gallery3d");known.put("gallery","com.sec.android.gallery3d");known.put("fotos","com.google.android.apps.photos");known.put("photos","com.google.android.apps.photos");
+        known.put("camara","com.sec.android.app.camera");known.put("camera","com.sec.android.app.camera");known.put("ajustes","com.android.settings");known.put("settings","com.android.settings");
+        known.put("chrome","com.android.chrome");known.put("spotify","com.spotify.music");known.put("youtube","com.google.android.youtube");known.put("maps","com.google.android.apps.maps");
+        if(requested.matches("[A-Za-z0-9_.]{3,160}")&&requested.contains("."))packageName=requested;
+        else if(known.containsKey(normalized))packageName=known.get(normalized);
+        Intent query=new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
+        ArrayList<JSONObject> candidates=new ArrayList<>();
+        for(ResolveInfo info:manager.queryIntentActivities(query,PackageManager.MATCH_ALL)){
+            if(info.activityInfo==null)continue;String candidatePackage=info.activityInfo.packageName;
+            String candidateLabel=String.valueOf(info.loadLabel(manager));String candidate=normalizedAppName(candidateLabel);
+            if(packageName.isEmpty()&&(candidate.equals(normalized)||candidatePackage.equalsIgnoreCase(requested))){packageName=candidatePackage;label=candidateLabel;break;}
+            if(packageName.isEmpty()&&(candidate.contains(normalized)||normalized.contains(candidate)))candidates.add(new JSONObject().put("name",candidateLabel).put("package",candidatePackage));
+            if(candidatePackage.equals(packageName))label=candidateLabel;
+        }
+        if(packageName.isEmpty()&&candidates.size()==1){JSONObject match=candidates.get(0);packageName=match.getString("package");label=match.getString("name");}
+        if(packageName.isEmpty()){
+            JSONArray choices=new JSONArray();for(int i=0;i<Math.min(8,candidates.size());i++)choices.put(candidates.get(i));
+            if(choices.length()>0)throw new IOException("Aplicación ambigua; candidatos: "+choices);
+            throw new IOException("Aplicación no instalada: "+requested);
+        }
+        try{
+            if(Build.VERSION.SDK_INT>=33)manager.getLaunchIntentSenderForPackage(packageName).sendIntent(context,0,null,null,null);
+            else {Intent launch=manager.getLaunchIntentForPackage(packageName);if(launch==null)throw new IOException("Aplicación no instalada: "+requested);launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);context.startActivity(launch);}
+        }catch(IntentSender.SendIntentException|IllegalArgumentException error){throw new IOException("No se pudo abrir "+requested,error);}
+        return new JSONObject().put("launched",true).put("app",label.isEmpty()?requested:label).put("package",packageName);
     }
     @SuppressWarnings("deprecation") private static JSONObject sendSms(Context context,JSONObject p)throws Exception{
         require(context,Manifest.permission.SEND_SMS);String number=p.optString("number").replaceAll("[^+0-9]",""),text=p.optString("text");if(number.length()<3||text.isBlank())throw new IllegalArgumentException("Destinatario o mensaje no válido");

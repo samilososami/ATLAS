@@ -86,6 +86,7 @@ Native Android APIs are preferred over screen automation:
 atlas-app control location.get
 atlas-app control capabilities
 atlas-app control contacts.search query=Papa
+atlas-app control apps.launch app=Galería
 atlas-app control phone.call number=600000000
 atlas-app control sms.send number=600000000 text='Llego pronto'
 atlas-app control calendar.list from=1788825600000 to=1789430400000
@@ -103,7 +104,7 @@ are Unix milliseconds; call `calendar.list` first and select an entry from
 `editableCalendars` to obtain the required `calendarId` before creating an
 event with `begin` and optional `end`.
 
-Supported families are location, notifications, contacts, calendar, calls,
+Supported families are application launch, location, notifications, contacts, calendar, calls,
 SMS, Wi-Fi, media/gallery, files, camera and sensors. The phone validates its
 runtime permission for every operation and returns an explicit permission error
 instead of silently falling back to taps.

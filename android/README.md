@@ -1,12 +1,13 @@
-# ATLAS Android · 0.2.1 preview
+# ATLAS Android · 0.2.2 preview
 
 Aplicación Android 11+ para hablar con ATLAS y controlar un ATLAS A1 propio. La
 APK se publica en [GitHub Releases](https://github.com/samilososami/ATLAS/releases).
 Es una preview firmada para desarrollo; no es la imagen de ATLAS OS.
 
-La versión 0.2.1 consolida la conexión principal sobre Tailscale, evita bloqueos
-reentrantes al invocar herramientas del teléfono y endurece tanto las APIs nativas
-como Android Use. Mantiene voz, chat, acciones, terminal, estado, widgets y
+La versión 0.2.2 hace más eficiente el control del teléfono: abre aplicaciones
+por su nombre con una única operación nativa, reserva Android Use para acciones
+dentro de las interfaces y permite mantener una sesión visual explícita entre
+varios mensajes. Mantiene voz, chat, acciones, terminal, estado, widgets y
 actualizaciones dentro de una sola aplicación.
 
 ## Primera conexión
@@ -74,7 +75,7 @@ service y conserva widgets, estado, terminales y herramientas del teléfono.
 
 ## Control del teléfono
 
-ATLAS prioriza APIs nativas para llamadas, SMS, contactos, calendario, ubicación,
+ATLAS prioriza APIs nativas para abrir aplicaciones, llamadas, SMS, contactos, calendario, ubicación,
 notificaciones, archivos, galería, cámara, sensores y panel Wi-Fi. Las operaciones
 devuelven `permission_required`, `unsupported` o `requires_user_action` cuando
 Android exige permiso, confirmación o no ofrece la capacidad; nunca simulan éxito.
@@ -83,7 +84,7 @@ WebScreen y `atlas-chat` comparten `atlas_phone` para esas APIs y
 `atlas_android` para el fallback visual. Los nombres `location`/`get_location`,
 `capabilities`, `call` y `calls.place` son aliases de `location.get`,
 `phone.capabilities` y `phone.call`. SMS usa `text`; las llamadas usan `number`;
-y la creación de calendario requiere descubrir antes un `calendarId` editable
+y `apps.launch {app}` abre por nombre sin capturas ni coordenadas. La creación de calendario requiere descubrir antes un `calendarId` editable
 con `calendar.list` y enviar `begin`/`end` en milisegundos Unix.
 
 `atlas-androiduse` es el fallback visual. El AccessibilityService puede observar
@@ -93,8 +94,9 @@ coordenadas normalizadas de `0` a `1`; la jerarquía redacta campos de contrase�
 y todos sus descendientes. Durante el control aparece una notificación, un aura
 azul, un bloqueo de entrada y un botón rojo para detenerlo. Cada acción importante
 se sigue con una nueva inspección. Realtime recibe el PNG como un `input_image`
-separado, nunca como base64 dentro del resultado, y la sesión se cierra al
-terminar, cancelar, fallar o por watchdog.
+separado, nunca como base64 dentro del resultado. Las tareas puntuales se cierran
+al terminar, cancelar, fallar o por watchdog; la orden explícita «controla mi
+teléfono» mantiene una sesión para instrucciones sucesivas hasta que se detenga.
 Accesibilidad se activa manualmente en Ajustes de Android.
 
 En A1 están disponibles `atlas-app control …` y `atlas-androiduse …`. Si el móvil

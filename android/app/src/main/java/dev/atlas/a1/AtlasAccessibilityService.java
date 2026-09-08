@@ -201,7 +201,7 @@ public final class AtlasAccessibilityService extends AccessibilityService {
         },delay);
     }
     private void startControl()throws Exception{onMain(()->{if(!controlling){controlling=true;showGuard();showNotification();}touchSession();return null;});}
-    private void touchSession(){main.removeCallbacks(idleStop);main.postDelayed(idleStop,120_000);}
+    private void touchSession(){main.removeCallbacks(idleStop);main.postDelayed(idleStop,600_000);}
     private void stopControl(){main.post(()->{main.removeCallbacks(idleStop);controlling=false;if(guard!=null){try{windows.removeView(guard);}catch(Exception ignored){}guard=null;guardParams=null;}getSystemService(NotificationManager.class).cancel(CONTROL_NOTIFICATION);});}
     private void setGuardPassThrough(boolean passThrough){
         if(guard==null||guardParams==null||windows==null)return;

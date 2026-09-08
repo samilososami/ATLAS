@@ -150,6 +150,7 @@ REALTIME_SHELL_MAX_COMMAND_CHARS = 4096
 REALTIME_SHELL_MAX_OUTPUT_CHARS = 12000
 ATLAS_APP_CONTROL_BIN = os.environ.get("ATLAS_APP_CONTROL_BIN", "atlas-app").strip() or "atlas-app"
 ATLAS_APP_CONTROL_TIMEOUT_SECONDS = int(os.environ.get("ATLAS_APP_CONTROL_TIMEOUT", "25"))
+ATLAS_APP_SCREENSHOT_TIMEOUT_SECONDS = int(os.environ.get("ATLAS_APP_SCREENSHOT_TIMEOUT", "8"))
 ATLAS_APP_CONTROL_MAX_PARAMS_CHARS = 8 * 1024
 ATLAS_APP_CONTROL_MAX_OUTPUT_CHARS = 12 * 1024 * 1024
 ATLAS_APP_CONTROL_MAX_PHONE_RESULT_CHARS = 128 * 1024
@@ -162,7 +163,7 @@ ATLAS_PHONE_OPERATIONS = frozenset({
     "notifications.list", "notifications.show", "wifi.panel", "wifi.connect",
     "files.list", "files.read", "files.move", "files.delete",
     "media.list", "media.recent", "media.delete",
-    "camera.photo", "camera.video", "sensors.summary",
+    "camera.photo", "camera.video", "sensors.summary", "apps.launch",
 })
 ATLAS_PHONE_OPERATION_ALIASES = {
     "capabilities": "phone.capabilities",
@@ -285,10 +286,13 @@ def execute_atlas_app_control(operation: Any, params: Any,
         _atlas_app_control_executable(), "control", canonical,
         "--params", params_json, "--json",
     ]
+    timeout_seconds = (ATLAS_APP_SCREENSHOT_TIMEOUT_SECONDS
+                       if canonical == "androiduse.screenshot"
+                       else ATLAS_APP_CONTROL_TIMEOUT_SECONDS)
     completed = subprocess.run(
         command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
         stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
-        timeout=ATLAS_APP_CONTROL_TIMEOUT_SECONDS, check=False,
+        timeout=timeout_seconds, check=False,
     )
     stdout = completed.stdout or ""
     stderr = completed.stderr or ""
@@ -3524,10 +3528,17 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
                 screenshot = normalize_android_screenshot(result)
             elif (inspect_after and operation in ATLAS_ANDROID_AUTO_INSPECT
                   and result.get("ok", True) is not False and not result.get("error")):
-                capture = execute_atlas_app_control(
-                    "androiduse.screenshot", {}, ATLAS_ANDROID_OPERATIONS,
-                )
-                screenshot = normalize_android_screenshot(capture)
+                try:
+                    capture = execute_atlas_app_control(
+                        "androiduse.screenshot", {}, ATLAS_ANDROID_OPERATIONS,
+                    )
+                    screenshot = normalize_android_screenshot(capture)
+                except (subprocess.TimeoutExpired, OSError, RuntimeError) as error:
+                    # The action already succeeded. A late inspection is useful
+                    # evidence, but must not turn that success into a failure or
+                    # tear down an explicit multi-turn control session.
+                    result = dict(result)
+                    result["inspectionError"] = str(error)[:300]
             public_result = public_android_result(result)
             append_realtime_event({
                 "interactionId": interaction_id, "stage": "android.completed",

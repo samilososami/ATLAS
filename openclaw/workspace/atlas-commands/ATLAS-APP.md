@@ -12,8 +12,8 @@ socket, resumable terminals and private Tailscale transport. Use
 - `atlas-app control OP ...`: call a permission-backed native phone operation.
 - `atlas-app legacy-relay ...`: compatibility only, not the default path.
 
-Prefer native operations for calls, SMS, contacts, calendar, notifications,
-location, files, media, Wi-Fi, camera and sensors. Use the generic form
+Prefer native operations for app launches, calls, SMS, contacts, calendar,
+notifications, location, files, media, Wi-Fi, camera and sensors. Use the generic form
 `atlas-app control OP [key=value ...] [--params JSON]`. If the phone is not
 online, report `Error: Android device not connected`; do not invent a result or
 replay the request after reconnecting.
@@ -25,6 +25,7 @@ request. Examples:
 
 ```sh
 atlas-app control phone.capabilities
+atlas-app control apps.launch app=Galería
 atlas-app control location.get
 atlas-app control contacts.search query=Papa
 atlas-app control phone.call number=600000000
