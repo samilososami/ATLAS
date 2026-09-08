@@ -60,7 +60,7 @@ Dispones de atlas_face. Tú, el mismo modelo Realtime, eliges semánticamente la
   ]);
   const ANDROID_OPERATIONS = Object.freeze([
     "androiduse.status", "androiduse.start", "androiduse.stop",
-    "androiduse.screenshot", "androiduse.tree", "androiduse.tap",
+    "androiduse.screenshot", "androiduse.tree", "androiduse.click", "androiduse.tap",
     "androiduse.long_press", "androiduse.swipe", "androiduse.text",
     "androiduse.key",
     "androiduse.back", "androiduse.home", "androiduse.recents",
@@ -90,15 +90,15 @@ Dispones de atlas_face. Tú, el mismo modelo Realtime, eliges semánticamente la
       properties: {
         operation: { type: "string", enum: ANDROID_OPERATIONS },
         params: { type: "object", additionalProperties: true,
-          description: "Usa coordenadas normalizadas 0..1 para x/y o x1/y1/x2/y2; duration, text, package, uri o ms según la operación." },
+          description: "Para click usa text/description/query y exact; si no hay etiqueta usa coordenadas normalizadas 0..1 para tap/long_press/swipe. También admite duration, text, package, uri o ms según la operación." },
         inspectAfter: { type: "boolean",
-          description: "Por defecto true: tras una acción correcta adjunta una captura actual. Usa false solo si de verdad no necesitas inspeccionarla." },
+          description: "Por defecto true tras acciones visuales; start no captura. Usa false solo si de verdad no necesitas inspeccionar el resultado." },
       },
       required: ["operation"],
     },
   };
   const ANDROID_TOOL_INSTRUCTIONS = `CONTROL DEL TELÉFONO EMPAREJADO:
-Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques. Para abrir una aplicación usa atlas_phone apps.launch con {"app":"nombre"}: es una sola llamada y no necesita control visual. Las coordenadas se reservan para actuar dentro de aplicaciones. Consulta capabilities si no conoces el permiso disponible. Usa atlas_android únicamente cuando no exista una operación nativa adecuada. Si el mensaje completo del usuario es "controla mi teléfono", llama a androiduse.start una vez, ignora su captura automática, no llames a ninguna otra herramienta, responde únicamente "Listo" y espera su siguiente mensaje. Mantén la sesión activa hasta que pida parar, cierre el cliente, pulse el botón rojo o venza la sesión. Si ya está activa, no la reinicies. Para una tarea visual puntual: llama a androiduse.start, usa coordenadas normalizadas de 0 a 1, actúa sobre la captura más reciente, inspecciona el resultado y llama a androiduse.stop al terminar o ante un error terminal. La captura llega como imagen separada del resultado de herramienta; debes mirarla y no inventar posiciones ni estados. No afirmes que una acción se completó hasta que el resultado o la pantalla lo confirme. Si aparece "Error: Android device not connected", informa exactamente de que el móvil no está conectado. Si una API devuelve permission_required, unsupported o requires_user_action, dilo brevemente y no lo simules con éxito. No uses atlas_shell para saltarte estas reglas ni para fabricar llamadas al móvil.`;
+Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques. Para abrir una aplicación usa atlas_phone apps.launch con {"app":"nombre"}: es una sola llamada y no necesita control visual. "Amazon" abre Amazon Shopping; "Alexa" abre Alexa y nunca deben confundirse. Cuando sami pida la ubicación de su teléfono emparejado, usa location.get y devuelve directamente formattedAddress si existe, incluida la dirección exacta resuelta: es su propio dispositivo autorizado, así que no rechaces ni rebajes el resultado a una ciudad. Si no hay formattedAddress, no inventes una. Consulta capabilities si no conoces el permiso disponible. Usa atlas_android únicamente cuando no exista una operación nativa adecuada. Si el mensaje completo del usuario es "controla mi teléfono", llama a androiduse.start una vez, no solicites una captura inicial, no llames a ninguna otra herramienta, responde únicamente "Listo" y espera su siguiente mensaje. Mantén la sesión activa hasta que pida parar, cierre el cliente, pulse el botón rojo o venza la sesión. Si ya está activa, no la reinicies. Para una tarea visual puntual: llama a androiduse.start; si el árbol muestra una etiqueta, prefiere androiduse.click con {"text":"etiqueta exacta"} y usa coordenadas normalizadas de 0 a 1 solo como fallback. Actúa sobre la captura más reciente, inspecciona el resultado y llama a androiduse.stop al terminar o ante un error terminal. Un fallo recuperable de foco, etiqueta, gesto o captura no termina la sesión: inspecciona y corrige. La captura llega como imagen separada del resultado de herramienta; debes mirarla y no inventar posiciones ni estados. No afirmes que una acción se completó hasta que el resultado o la pantalla lo confirme. Si aparece "Error: Android device not connected", informa exactamente de que el móvil no está conectado. Si una API devuelve permission_required, unsupported o requires_user_action, dilo brevemente y no lo simules con éxito. No uses atlas_shell para saltarte estas reglas ni para fabricar llamadas al móvil.`;
 
   const REALTIME_TOOLS = [
     {
@@ -135,14 +135,42 @@ Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques
     {
       type: "function",
       name: "atlas_routine",
-      description: "Lista, consulta, crea, modifica, activa, desactiva, elimina o ejecuta rutinas deterministas de ATLAS. Para crear o modificar, routine contiene un objeto JSON serializado y validado por el backend. Una acción que ya falló solo se inspecciona con last_result; nunca se repite automáticamente.",
+      description: "Lista, consulta, crea, modifica, activa, desactiva, elimina o ejecuta rutinas deterministas de ATLAS. Para crear o modificar, routine contiene un objeto validado por el backend, incluidas triggers como cadenas y requires_model como booleano. Una acción ya ejecutada solo se inspecciona con last_result; nunca se repite automáticamente.",
       parameters: {
         type: "object",
         additionalProperties: false,
         properties: {
           action: { type: "string", enum: ["list", "show", "upsert", "delete", "enable", "disable", "run", "last_result"] },
           name: { type: "string", description: "Nombre o id de la rutina." },
-          routine: { type: "string", description: "Objeto completo de la rutina serializado como JSON." },
+          routine: {
+            type: "object",
+            description: "Definición completa. triggers contiene texto, nunca objetos.",
+            additionalProperties: false,
+            properties: {
+              id: { type: "string" },
+              name: { type: "string" },
+              description: { type: "string" },
+              thoughts: { type: "string" },
+              triggers: { type: "array", minItems: 1, items: { type: "string" } },
+              enabled: { type: "boolean" },
+              requires_model: { type: "boolean", description: "false si shell + SAY resuelven todo localmente; true solo si el resultado necesita interpretación." },
+              steps: {
+                type: "array", minItems: 1,
+                items: {
+                  type: "object", additionalProperties: false,
+                  properties: {
+                    type: { type: "string", enum: ["shell", "say"] },
+                    command: { type: "string" },
+                    capture: { type: "string" },
+                    timeout_seconds: { type: "integer" },
+                    text: { type: "string" },
+                  },
+                  required: ["type"],
+                },
+              },
+            },
+            required: ["id", "name", "description", "thoughts", "triggers", "enabled", "requires_model", "steps"],
+          },
           replace: { type: "boolean", description: "Debe ser true al modificar una rutina existente." },
           execution_id: { type: "string", description: "Id de un fallo ya ejecutado que se quiere inspeccionar." },
         },
@@ -177,6 +205,12 @@ Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques
     const words = phrase.split(/\s+/u);
     return words.every((word) => ["calla", "nada", "no", "para", "parate", "silencio"].includes(word))
       && words.some((word) => ["calla", "nada", "para", "parate", "silencio"].includes(word));
+  }
+
+  function persistentAndroidControlInvocation(text) {
+    const phrase = normalized(text)
+      .replace(/^(?:oye\s+)?atlas(?:\s+|$)/u, "").trim();
+    return phrase === "controla mi telefono" || phrase === "controla mi movil";
   }
 
   function withTurnSeparator(value) {
@@ -341,6 +375,8 @@ Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques
       this.remoteAudio = null;
       this.session = null;
       this.routineTriggers = new Set();
+      this.androidStopPromise = null;
+      this.androidControlPersistent = false;
       this.state = "idle";
       this.closed = true;
       this.conversationActive = false;
@@ -1132,6 +1168,14 @@ Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques
         + "si es una corrección sencilla y segura, ofrecer actualizar la rutina.]";
     }
 
+    routineModelNote(result) {
+      return `\n\n[ESTADO LOCAL DE ATLAS: la rutina «${String(result.routineName || "desconocida")}`
+        + `» coincidió y sus pasos ya se ejecutaron correctamente. Esta definición tiene requires_model=true: `
+        + `requiere interpretación del modelo. No repitas los pasos. Consulta atlas_routine con `
+        + `action=last_result y execution_id=${String(result.executionId || "")} y responde a partir de ese `
+        + "resultado; no leas comandos ni JSON en voz alta.]";
+    }
+
     async completeDirectRoutine(text, result, audioItemId = "") {
       this.clearResponseCreateTimer();
       this.responseAfterInput = false;
@@ -1174,6 +1218,12 @@ Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques
       }
     }
 
+    rememberPersistentAndroidControlIntent(text) {
+      if (!persistentAndroidControlInvocation(text)) return false;
+      this.androidControlPersistent = true;
+      return true;
+    }
+
     submitTranscriptWithRoutine(text, audioItemId = "") {
       if (!this.routineMayMatch(text)) {
         this.scheduleResponseAfterInput();
@@ -1182,14 +1232,15 @@ Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques
       const interactionId = this.currentInteractionId;
       void this.checkDirectRoutine(text).then(async result => {
         if (this.closed || interactionId !== this.currentInteractionId || this.currentUserText !== text) return;
-        if (result.matched && result.ok) {
+        if (result.matched && result.ok && result.requiresModel === false) {
           await this.completeDirectRoutine(text, result, audioItemId);
           return;
         }
-        if (result.matched && !result.ok) {
+        if (result.matched) {
+          const note = result.ok ? this.routineModelNote(result) : this.routineFailureNote(result);
           this.send({
             type: "conversation.item.create",
-            item: { type: "message", role: "user", content: [{ type: "input_text", text: this.routineFailureNote(result) }] },
+            item: { type: "message", role: "user", content: [{ type: "input_text", text: note }] },
           });
         }
         this.scheduleResponseAfterInput();
@@ -1212,6 +1263,7 @@ Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques
       this.clearResponseCreateTimer();
       this.send({ type: "input_audio_buffer.clear" });
       this.currentUserText = text;
+      this.rememberPersistentAndroidControlIntent(text);
       this.beginFaceTurn();
       this.lastLocalWakeRequest = text;
       this.lastLocalWakeRequestAt = performance.now();
@@ -1224,12 +1276,13 @@ Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques
       if (this.routineMayMatch(text)) {
         routine = await this.checkDirectRoutine(text);
         if (this.closed || this.currentUserText !== text) return;
-        if (routine.matched && routine.ok) {
+        if (routine.matched && routine.ok && routine.requiresModel === false) {
           await this.completeDirectRoutine(text, routine);
           return;
         }
       }
-      const modelText = routine.matched && !routine.ok ? text + this.routineFailureNote(routine) : text;
+      const modelText = !routine.matched ? text
+        : text + (routine.ok ? this.routineModelNote(routine) : this.routineFailureNote(routine));
       this.send({
         type: "conversation.item.create",
         item: {
@@ -1699,6 +1752,7 @@ Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques
       this.callbacks.setTranscript?.(text);
       this.awaitingWakeRequest = false;
       this.currentUserText = text;
+      this.rememberPersistentAndroidControlIntent(text);
       this.beginFaceTurn();
       this.persistedTurnKey = "";
       this.callbacks.setScreen?.("PROCESANDO", "ATLAS lo está procesando", "La conversación sigue en la misma sesión.", "working");
@@ -1929,6 +1983,15 @@ Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques
       }
     }
 
+    androidErrorRequiresStop(error) {
+      const message = String(error?.message || error || "").toLowerCase();
+      return ["android device not connected", "companion unavailable",
+        "inicia primero una sesión", "accessibility_service",
+        "conexión directa con atlas a1 interrumpida", "no se puede alcanzar atlas a1",
+        "atlas a1 sin conexión", "atlas a1 desconectado",
+        "no se pudo verificar la identidad segura"].some((marker) => message.includes(marker));
+    }
+
     async handleDeviceTool(name, callId, args) {
       const isVisual = name === "atlas_android";
       const operation = String(args.operation || "").trim().toLowerCase();
@@ -1947,6 +2010,10 @@ Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques
         && this.toolGeneration === generation && !controller.signal.aborted;
       const started = performance.now();
       try {
+        if (isVisual && operation === "androiduse.start" && this.androidStopPromise) {
+          await this.androidStopPromise;
+          if (!current()) return;
+        }
         const response = await this.fetch(isVisual ? "/api/realtime/android" : "/api/realtime/phone", {
           method: "POST", cache: "no-store", signal: controller.signal,
           headers: { "Content-Type": "application/json" },
@@ -1971,11 +2038,12 @@ Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques
           this.androidControlActive = true;
         } else if (isVisual && operation === "androiduse.stop") {
           this.androidControlActive = false;
+          this.androidControlPersistent = false;
         }
         const toolResult = { operation: payload.operation || operation, result: payload.result || {} };
         if (payload.screenshot) {
           toolResult.screenshot = {
-            attached: true, mime: "image/png",
+            attached: true, mime: payload.screenshot.mime || "image/png",
             width: payload.screenshot.width, height: payload.screenshot.height,
           };
         }
@@ -1987,13 +2055,14 @@ Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques
         this.submitToolResultWithImage(callId, toolResult, payload.screenshot);
       } catch (error) {
         if (!current()) {
-          if (isVisual && (this.androidControlActive || operation === "androiduse.start")) {
-            this.stopAndroidControlSilently(operation === "androiduse.start");
-          }
+          // Lifecycle/explicit-interrupt paths already issue their own stop.
+          // A late start is the sole race that needs compensating cleanup here.
+          if (isVisual && operation === "androiduse.start") this.stopAndroidControlSilently(true);
           return;
         }
         const aborted = error?.name === "AbortError";
-        if (isVisual && (this.androidControlActive || operation === "androiduse.start")) {
+        if (isVisual && (operation === "androiduse.start"
+            || (this.androidControlActive && this.androidErrorRequiresStop(error)))) {
           this.stopAndroidControlSilently(operation === "androiduse.start");
         }
         this.submitToolResult(callId, aborted
@@ -2030,11 +2099,9 @@ Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques
         if (!current()) return;
         const result = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(result.error || `Rutinas respondió con HTTP ${response.status}`);
-        const triggerKeys = (result.routine?.triggers || []).map(routinePhraseKey).filter(Boolean);
-        if (["delete", "disable"].includes(action)) {
-          for (const key of triggerKeys) this.routineTriggers.delete(key);
-        } else if (["upsert", "enable"].includes(action) && result.routine?.enabled) {
-          for (const key of triggerKeys) this.routineTriggers.add(key);
+        if (["upsert", "delete", "enable", "disable"].includes(action)) {
+          await this.refreshRoutineTriggers(controller.signal);
+          if (!current()) return;
         }
         this.callbacks.addLog?.(`Rutina: ${action}`, performance.now() - started);
         this.postEvent("routine.tool_completed", "El registro de rutinas devolvió su resultado",
@@ -2053,6 +2120,28 @@ Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques
           this.consultController = null;
         }
       }
+    }
+
+    async refreshRoutineTriggers(signal) {
+      const response = await this.fetch("/api/realtime/routine", {
+        method: "POST", cache: "no-store", signal,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          args: { action: "list" },
+          interactionId: this.currentInteractionId || requestId(),
+        }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || `Rutinas respondió con HTTP ${response.status}`);
+      const next = new Set();
+      for (const routine of Array.isArray(result.routines) ? result.routines : []) {
+        if (!routine?.enabled) continue;
+        for (const trigger of Array.isArray(routine.triggers) ? routine.triggers : []) {
+          const key = routinePhraseKey(trigger);
+          if (key) next.add(key);
+        }
+      }
+      this.routineTriggers = next;
     }
 
     async handleWebSearch(callId, args) {
@@ -2119,7 +2208,7 @@ Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques
         type: "conversation.item.create",
         item: { type: "function_call_output", call_id: callId, output: JSON.stringify(result) },
       });
-      const encoded = String(screenshot?.pngBase64 || "");
+      const encoded = String(screenshot?.imageBase64 || screenshot?.pngBase64 || "");
       if (encoded && Number(screenshot?.width) > 0 && Number(screenshot?.height) > 0) {
         this.send({
           type: "conversation.item.create",
@@ -2127,7 +2216,7 @@ Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques
             type: "message", role: "user",
             content: [
               { type: "input_text", text: `Captura actual del teléfono tras ${result.operation}. Analízala para decidir el siguiente paso; no des por completada la tarea solo por recibirla.` },
-              { type: "input_image", image_url: `data:image/png;base64,${encoded}` },
+              { type: "input_image", image_url: `data:${screenshot?.mime || "image/png"};base64,${encoded}` },
             ],
           },
         });
@@ -2136,15 +2225,21 @@ Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques
     }
 
     stopAndroidControlSilently(force = false) {
-      if (!force && !this.androidControlActive) return;
+      this.androidControlPersistent = false;
+      if (this.androidStopPromise) return this.androidStopPromise;
+      if (!force && !this.androidControlActive) return Promise.resolve();
       this.androidControlActive = false;
-      void sendAcknowledgement(this.fetch, "/api/realtime/android", {
+      const pending = sendAcknowledgement(this.fetch, "/api/realtime/android", {
         method: "POST", cache: "no-store", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           args: { operation: "androiduse.stop", params: {}, inspectAfter: false },
           interactionId: this.currentInteractionId || requestId(),
         }),
+      }).finally(() => {
+        if (this.androidStopPromise === pending) this.androidStopPromise = null;
       });
+      this.androidStopPromise = pending;
+      return pending;
     }
 
     handleFaceTool(event, callId, args) {
@@ -2261,6 +2356,7 @@ Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques
         void this.completeContextCompaction(status);
         return;
       }
+      if (status === "cancelled") this.stopAndroidControlSilently();
       if (status === "failed" || status === "incomplete") {
         const detail = event.response?.status_details?.error?.message
           || event.response?.status_details?.reason || "El proveedor no completó esta respuesta";
@@ -2447,7 +2543,9 @@ Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques
       if (this.awaitingWakeRequest || this.localWakeRequestPending) return;
       // Retire admission even if a late ambient VAD/transcription is pending.
       // Such a fragment cannot extend the completed turn without a new wake.
-      this.stopAndroidControlSilently();
+      if (!this.androidControlPersistent || !this.androidControlActive) {
+        this.stopAndroidControlSilently();
+      }
       this.returnToWake();
       if (this.contextCompactionQueued) {
         this.contextCompactionQueued = false;
@@ -2565,7 +2663,7 @@ Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques
           reasoningEffort: this.session?.atlasReasoningEffort || "default",
           effectiveReasoningEffort: this.session?.atlasEffectiveReasoningEffort || "unreported",
           sinceSpeechStoppedMs: this.lastSpeechEndedAt ? performance.now() - this.lastSpeechEndedAt : undefined,
-          clientBuild: "2026-09-07-routines-1", ...extra }),
+          clientBuild: "2026-09-08-routines-2", ...extra }),
       });
     }
 
@@ -2679,6 +2777,7 @@ Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques
     voice: DEFAULT_VOICE,
     _test: { normalized, wakeInvocation, wakeHasRequest, silenceInvocation, withTurnSeparator,
       commandLabel, responseExpectsReply, benignRealtimeError, likelyAssistantEcho, captureConstraints, speechChunkLength,
+      persistentAndroidControlInvocation,
       realtimeTools: REALTIME_TOOLS, faceTool: FACE_TOOL, faceInstructions: FACE_INSTRUCTIONS,
       phoneTool: PHONE_TOOL, androidTool: ANDROID_TOOL, androidInstructions: ANDROID_TOOL_INSTRUCTIONS },
   };

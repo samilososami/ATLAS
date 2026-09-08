@@ -55,10 +55,23 @@ assert.match(source, /case "apps\.launch": return launchApp\(context,p\)/,
   "apps.launch must be a first-class native phone operation");
 assert.match(source, /known\.put\("galeria","com\.sec\.android\.gallery3d"\)/,
   "Samsung Gallery must have a deterministic Spanish alias");
+assert.match(source, /known\.put\("amazon","com\.amazon\.mShop\.android\.shopping"\)/,
+  "Amazon must deterministically launch Amazon Shopping");
+assert.match(source, /known\.put\("alexa","com\.amazon\.dee\.app"\)/,
+  "Alexa must remain a distinct deterministic app alias");
 assert.match(source, /queryIntentActivities\(query,PackageManager\.MATCH_ALL\)/,
   "unknown app names must resolve through launcher labels");
 assert.match(source, /getLaunchIntentSenderForPackage\(packageName\)/,
   "launch must work through Android 11+ package visibility");
+
+// The owner-authorized location call returns a directly usable postal address
+// when Android's Geocoder can resolve one, while retaining coordinates if it cannot.
+assert.match(source, /new Geocoder\(context,Locale\.getDefault\(\)\)/,
+  "location.get must reverse-geocode using Android's locale-aware Geocoder");
+assert.match(source, /\.put\("formattedAddress",address\.getString\("formatted"\)\)/,
+  "location.get must expose a human-readable formattedAddress");
+assert.match(source, /\.put\("addressAvailable",false\)/,
+  "reverse-geocoding failure must preserve the coordinate response");
 
 // calendar.list returns event provenance plus calendar IDs and a ready-to-use
 // subset for calendar.create.

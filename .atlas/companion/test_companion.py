@@ -42,6 +42,13 @@ class CryptoTests(unittest.TestCase):
 
 class CompanionTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):self.c=Companion(cfg())
+    async def test_tailscale_status_endpoint_prefers_private_ipv4(self):
+        status={'BackendState':'Running','Self':{'Online':True,'HostName':'atlas-a1',
+            'TailscaleIPs':['100.112.71.111','fd7a:115c:a1e0::1']},'Peer':{}}
+        with patch.object(self.c,'command',new=AsyncMock(return_value={'output':json.dumps(status)})):
+            result=await self.c.tailscale()
+        self.assertEqual(result['host'],'atlas-a1')
+        self.assertEqual(result['endpoint'],'wss://100.112.71.111:5010/app')
     async def test_command_requires_matching_unused_confirmation(self):
         client='client-test';rpc=lambda m,p:self.c.rpc({'client':client,'method':m,'params':p},'test')
         with self.assertRaises(ValueError):await rpc('command.execute',{'nonce':'fake'})
@@ -88,6 +95,23 @@ class CompanionTests(unittest.IsolatedAsyncioTestCase):
             acknowledgement=phone.open((await ws.receive_json(timeout=2))['box'])
             self.assertTrue(acknowledgement['result']['ok'])
             self.assertEqual(await pending,{'available':True})
+    async def test_socket_close_fails_bound_phone_request_without_full_timeout(self):
+        configuration=cfg();configuration['pairedDevice']='s23u'
+        app=application(configuration);app.cleanup_ctx.clear();companion=app['companion']
+        async with TestClient(TestServer(app)) as client:
+            ws=await client.ws_connect('/app');phone=Cipher(configuration['key'],'app')
+            await ws.send_json({'box':phone.seal({
+                'id':'connect-close','client':'close-client','device':'s23u',
+                'method':'ping','params':{},
+            })})
+            phone.open((await ws.receive_json(timeout=2))['box'])
+            pending=asyncio.create_task(companion.send_mobile(
+                'control.androiduse.screenshot',{},timeout=30,
+            ))
+            phone.open((await ws.receive_json(timeout=2))['box'])
+            await ws.close()
+            with self.assertRaisesRegex(ValueError,'Android device not connected'):
+                await asyncio.wait_for(pending,timeout=.75)
     async def test_direct_websocket_allows_reentrant_phone_tool_during_command(self):
         configuration=cfg();configuration['pairedDevice']='s23u'
         app=application(configuration);app.cleanup_ctx.clear();companion=app['companion']

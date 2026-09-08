@@ -21,11 +21,13 @@ keep installation-specific device identities in private records, not here.
 - [`ADB.md`](ADB.md): authorised Android transports, shared user/root identity,
   private read-only inventories and per-device notes.
 - [`ATLAS-APP.md`](atlas-commands/ATLAS-APP.md): paired Android companion,
-  Tailscale transport and permission-backed native phone tools. Tailscale may
-  be direct or DERP; it never falls back to the legacy relay automatically.
+  Tailscale transport and permission-backed native phone tools. Same-LAN peers
+  prefer direct P2P; encrypted DERP remains valid and never falls back to the
+  legacy relay automatically.
 - [`ATLAS-ANDROIDUSE.md`](atlas-commands/ATLAS-ANDROIDUSE.md): explicit,
-  screenshot-driven Accessibility fallback with normalized coordinates,
-  password redaction and owner-visible mandatory stop state.
+  semantic-click-first Accessibility fallback with reduced private screenshots,
+  normalized coordinate fallback, password redaction and owner-visible terminal
+  stop state.
   Companion pairing is not Bluetooth audio pairing or ADB approval.
 - [`ATLAS-RAFAS.md`](atlas-commands/ATLAS-RAFAS.md): broader Pi health and
   interactive recovery when the fault is below the browser/model layer.

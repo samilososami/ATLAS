@@ -136,6 +136,10 @@ final class AtlasPhoneTools {
         known.put("galeria","com.sec.android.gallery3d");known.put("gallery","com.sec.android.gallery3d");known.put("fotos","com.google.android.apps.photos");known.put("photos","com.google.android.apps.photos");
         known.put("camara","com.sec.android.app.camera");known.put("camera","com.sec.android.app.camera");known.put("ajustes","com.android.settings");known.put("settings","com.android.settings");
         known.put("chrome","com.android.chrome");known.put("spotify","com.spotify.music");known.put("youtube","com.google.android.youtube");known.put("maps","com.google.android.apps.maps");
+        // "Amazon" means the shopping app. Keep Alexa explicit so fuzzy launcher
+        // label matching can never open the wrong Amazon application.
+        known.put("amazon","com.amazon.mShop.android.shopping");known.put("amazonshopping","com.amazon.mShop.android.shopping");known.put("amazoncompras","com.amazon.mShop.android.shopping");known.put("comprasamazon","com.amazon.mShop.android.shopping");
+        known.put("alexa","com.amazon.dee.app");known.put("amazonalexa","com.amazon.dee.app");
         if(requested.matches("[A-Za-z0-9_.]{3,160}")&&requested.contains("."))packageName=requested;
         else if(known.containsKey(normalized))packageName=known.get(normalized);
         Intent query=new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
@@ -213,8 +217,37 @@ final class AtlasPhoneTools {
     private static JSONObject location(Context context)throws Exception{
         require(context,Manifest.permission.ACCESS_FINE_LOCATION);LocationManager manager=context.getSystemService(LocationManager.class);if(manager==null)throw new UnsupportedOperationException("unsupported: este dispositivo no ofrece ubicación");Location best=null;
         for(String provider:manager.getProviders(true))try{Location next=manager.getLastKnownLocation(provider);if(next!=null&&(best==null||next.getTime()>best.getTime()))best=next;}catch(SecurityException ignored){}
-        if(best==null)throw new IOException("Todavía no hay una ubicación disponible");return new JSONObject().put("latitude",best.getLatitude()).put("longitude",best.getLongitude()).put("accuracy",best.getAccuracy()).put("time",best.getTime());
+        if(best==null)throw new IOException("Todavía no hay una ubicación disponible");
+        JSONObject result=new JSONObject().put("latitude",best.getLatitude()).put("longitude",best.getLongitude()).put("accuracy",best.getAccuracy()).put("time",best.getTime());
+        try{
+            JSONObject address=reverseGeocode(context,best.getLatitude(),best.getLongitude());
+            if(address!=null){result.put("addressAvailable",true).put("formattedAddress",address.getString("formatted")).put("address",address);}
+            else result.put("addressAvailable",false);
+        }catch(Exception unavailable){result.put("addressAvailable",false).put("addressError","reverse_geocoding_unavailable");}
+        return result;
     }
+    private static JSONObject reverseGeocode(Context context,double latitude,double longitude)throws Exception{
+        if(!Geocoder.isPresent())return null;
+        Geocoder geocoder=new Geocoder(context,Locale.getDefault());List<Address> addresses;
+        if(Build.VERSION.SDK_INT>=33){
+            CompletableFuture<List<Address>> result=new CompletableFuture<>();
+            geocoder.getFromLocation(latitude,longitude,1,new Geocoder.GeocodeListener(){
+                @Override public void onGeocode(List<Address> values){result.complete(values);}
+                @Override public void onError(String message){result.completeExceptionally(new IOException(message==null?"Reverse geocoding failed":message));}
+            });
+            addresses=result.get(5,TimeUnit.SECONDS);
+        }else addresses=geocoder.getFromLocation(latitude,longitude,1);
+        if(addresses==null||addresses.isEmpty())return null;
+        Address value=addresses.get(0);JSONArray lines=new JSONArray();StringJoiner formatted=new StringJoiner(", ");
+        for(int i=0;i<=value.getMaxAddressLineIndex();i++){String line=value.getAddressLine(i);if(line!=null&&!line.isBlank()){lines.put(line);formatted.add(line);}}
+        if(formatted.length()==0){for(String part:new String[]{value.getFeatureName(),value.getThoroughfare(),value.getLocality(),value.getAdminArea(),value.getPostalCode(),value.getCountryName()})if(part!=null&&!part.isBlank())formatted.add(part);}
+        if(formatted.length()==0)return null;
+        JSONObject address=new JSONObject().put("formatted",formatted.toString()).put("lines",lines);
+        putAddressPart(address,"featureName",value.getFeatureName());putAddressPart(address,"streetNumber",value.getSubThoroughfare());putAddressPart(address,"street",value.getThoroughfare());
+        putAddressPart(address,"district",value.getSubLocality());putAddressPart(address,"city",value.getLocality());putAddressPart(address,"county",value.getSubAdminArea());putAddressPart(address,"region",value.getAdminArea());
+        putAddressPart(address,"postalCode",value.getPostalCode());putAddressPart(address,"country",value.getCountryName());putAddressPart(address,"countryCode",value.getCountryCode());return address;
+    }
+    private static void putAddressPart(JSONObject target,String key,String value)throws JSONException{if(value!=null&&!value.isBlank())target.put(key,value);}
     private static JSONObject showNotification(Context context,JSONObject p)throws Exception{
         if(Build.VERSION.SDK_INT>=33)require(context,Manifest.permission.POST_NOTIFICATIONS);android.app.NotificationManager manager=context.getSystemService(android.app.NotificationManager.class);String channel="atlas-messages";
         manager.createNotificationChannel(new android.app.NotificationChannel(channel,"Mensajes de ATLAS",android.app.NotificationManager.IMPORTANCE_DEFAULT));

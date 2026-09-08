@@ -59,12 +59,18 @@ permiten acciones potentes; el modo visual debe mostrar notificación, borde azu
 y un botón local para detenerlo. Las capturas son datos privados y no se publican
 ni se incrustan como base64 en resultados o logs: Realtime las recibe como un
 `input_image` separado. La jerarquía de Accesibilidad redacta texto y descripción
-de los nodos de contraseña y todos sus descendientes. Todo flujo visual debe
-ejecutar `androiduse.stop` al terminar, cancelar, fallar o agotar el tiempo.
+de los nodos de contraseña y todos sus descendientes. El click semántico por
+etiqueta accesible se prioriza frente a coordenadas. Un error recuperable de
+acción o inspección conserva la sesión para corregirla; todo flujo visual debe
+ejecutar `androiduse.stop` al terminar o abandonarse, cancelar, agotar el tiempo,
+cerrarse el cliente o perder de forma terminal el dispositivo, socket o servicio
+de Accesibilidad.
 Esto no limita lo que puede hacer el propietario que posee la clave.
 
-La conexión predeterminada viaja por el tailnet privado y conserva, además,
-sobres AES-256-GCM con protección de dirección, fecha y repetición. Tailscale y
+La conexión predeterminada usa el endpoint tailnet-only `100.x`; en la misma LAN
+prioriza la ruta Tailscale P2P directa y puede conservar un DERP cifrado como
+fallback. Mantiene, además, sobres AES-256-GCM con protección de dirección, fecha
+y repetición. Tailscale y
 el emparejamiento de ATLAS son dos capas distintas. No abras 5010 en el router
 ni expongas HTTP/5000 como alternativa. El relay antiguo está desactivado por
 defecto y nunca se habilita automáticamente si Tailscale falla; solo un modo de

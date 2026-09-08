@@ -26,6 +26,9 @@ public final class AtlasAccessibilityService extends AccessibilityService {
     private static final long GESTURE_OVERLAY_SETTLE_MS=80;
     private static final long SCREENSHOT_RETRY_DELAY_MS=350;
     private static final int SCREENSHOT_MAX_ATTEMPTS=2;
+    private static final int SCREENSHOT_MAX_WIDTH=640;
+    private static final int SCREENSHOT_JPEG_QUALITY=82;
+    private static final int SCREENSHOT_MAX_BYTES=600_000;
     private final Handler main=new Handler(Looper.getMainLooper());
     private final ExecutorService captureWorker=Executors.newSingleThreadExecutor();
     private WindowManager windows;
@@ -71,6 +74,7 @@ public final class AtlasAccessibilityService extends AccessibilityService {
         switch(action){
             case "screenshot": return screenshot();
             case "tree": return onMain(this::tree);
+            case "click": return onMain(()->clickLabel(p));
             case "tap": return gesture(point(p,"x"),point(p,"y"),point(p,"x"),point(p,"y"),80);
             case "long_press": return gesture(point(p,"x"),point(p,"y"),point(p,"x"),point(p,"y"),Math.max(550,p.optLong("duration",700)));
             case "swipe": return gesture(point(p,"x1"),point(p,"y1"),point(p,"x2"),point(p,"y2"),Math.max(120,Math.min(1800,p.optLong("duration",360))));
@@ -142,6 +146,23 @@ public final class AtlasAccessibilityService extends AccessibilityService {
         if(node==null)return null;if(node.isEditable())return AccessibilityNodeInfo.obtain(node);
         for(int i=0;i<node.getChildCount();i++){AccessibilityNodeInfo child=node.getChild(i),found=findEditable(child);if(child!=null)child.recycle();if(found!=null)return found;}return null;
     }
+    private String normalizedLabel(CharSequence value){return java.text.Normalizer.normalize(value==null?"":value.toString(),java.text.Normalizer.Form.NFD).replaceAll("\\p{M}+","").toLowerCase(Locale.ROOT).replaceAll("\\s+"," ").trim();}
+    private AccessibilityNodeInfo findLabel(AccessibilityNodeInfo node,String query,boolean exact){
+        if(node==null)return null;String text=normalizedLabel(node.getText()),description=normalizedLabel(node.getContentDescription());
+        if((exact&&(query.equals(text)||query.equals(description)))||(!exact&&(!text.isEmpty()&&text.contains(query)||!description.isEmpty()&&description.contains(query))))return AccessibilityNodeInfo.obtain(node);
+        for(int i=0;i<node.getChildCount();i++){AccessibilityNodeInfo child=node.getChild(i),found=findLabel(child,query,exact);if(child!=null)child.recycle();if(found!=null)return found;}return null;
+    }
+    private JSONObject clickLabel(JSONObject p)throws Exception{
+        String requested=p.optString("text",p.optString("description",p.optString("query",""))).trim();if(requested.isEmpty())throw new IllegalArgumentException("Falta text, description o query");
+        String query=normalizedLabel(requested);AccessibilityNodeInfo root=getRootInActiveWindow();if(root==null)throw new IOException("No hay una ventana activa");
+        AccessibilityNodeInfo target=findLabel(root,query,p.optBoolean("exact",true));root.recycle();if(target==null)throw new IOException("No se encontró el control: "+requested);
+        Rect bounds=new Rect();target.getBoundsInScreen(bounds);AccessibilityNodeInfo clickable=target;
+        while(clickable!=null&&!clickable.isClickable()){AccessibilityNodeInfo parent=clickable.getParent();clickable.recycle();clickable=parent;}
+        if(clickable==null)throw new IOException("El control no admite pulsación: "+requested);
+        boolean performed;try{performed=clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK);}finally{clickable.recycle();}
+        if(!performed)throw new IOException("Android rechazó la pulsación sobre: "+requested);
+        return new JSONObject().put("clicked",true).put("matched",requested).put("bounds",new JSONArray(Arrays.asList(bounds.left,bounds.top,bounds.right,bounds.bottom)));
+    }
     private JSONObject launch(JSONObject p)throws Exception{
         Intent intent;String packageName=p.optString("package").trim(),uri=p.optString("uri").trim();
         if(!packageName.isEmpty()){
@@ -169,7 +190,7 @@ public final class AtlasAccessibilityService extends AccessibilityService {
     private JSONObject screenshot()throws Exception{
         CompletableFuture<JSONObject> result=new CompletableFuture<>();onMain(()->{if(guard!=null)guard.setVisibility(View.INVISIBLE);return null;});
         requestScreenshot(result,0);
-        try{return result.get(12,TimeUnit.SECONDS);}
+        try{return result.get(6,TimeUnit.SECONDS);}
         finally{result.cancel(false);onMain(()->{if(guard!=null&&controlling)guard.setVisibility(View.VISIBLE);return null;});}
     }
     private void requestScreenshot(CompletableFuture<JSONObject> result,int attempt){
@@ -181,16 +202,16 @@ public final class AtlasAccessibilityService extends AccessibilityService {
                 try(HardwareBuffer buffer=shot.getHardwareBuffer()){
                     Bitmap hardware=Bitmap.wrapHardwareBuffer(buffer,shot.getColorSpace());if(hardware==null)throw new IOException("Android no entregó la captura");
                     Bitmap bitmap=hardware.copy(Bitmap.Config.ARGB_8888,false);int originalWidth=bitmap.getWidth(),originalHeight=bitmap.getHeight();
-                    if(bitmap.getWidth()>768){Bitmap scaled=Bitmap.createScaledBitmap(bitmap,768,Math.round(bitmap.getHeight()*(768f/bitmap.getWidth())),true);bitmap.recycle();bitmap=scaled;}
+                    if(bitmap.getWidth()>SCREENSHOT_MAX_WIDTH){Bitmap scaled=Bitmap.createScaledBitmap(bitmap,SCREENSHOT_MAX_WIDTH,Math.round(bitmap.getHeight()*(SCREENSHOT_MAX_WIDTH/(float)bitmap.getWidth())),true);bitmap.recycle();bitmap=scaled;}
                     byte[] encoded;int deliveredWidth,deliveredHeight;
                     while(true){
-                        ByteArrayOutputStream bytes=new ByteArrayOutputStream();bitmap.compress(Bitmap.CompressFormat.PNG,100,bytes);encoded=bytes.toByteArray();
+                        ByteArrayOutputStream bytes=new ByteArrayOutputStream();bitmap.compress(Bitmap.CompressFormat.JPEG,SCREENSHOT_JPEG_QUALITY,bytes);encoded=bytes.toByteArray();
                         deliveredWidth=bitmap.getWidth();deliveredHeight=bitmap.getHeight();
-                        if(encoded.length<=1_250_000||bitmap.getWidth()<=320)break;
+                        if(encoded.length<=SCREENSHOT_MAX_BYTES||bitmap.getWidth()<=320)break;
                         int width=Math.max(320,Math.round(bitmap.getWidth()*.78f));Bitmap scaled=Bitmap.createScaledBitmap(bitmap,width,Math.round(bitmap.getHeight()*(width/(float)bitmap.getWidth())),true);bitmap.recycle();bitmap=scaled;
                     }
                     bitmap.recycle();
-                    result.complete(new JSONObject().put("mime","image/png").put("width",originalWidth).put("height",originalHeight).put("captureWidth",deliveredWidth).put("captureHeight",deliveredHeight).put("bytes",encoded.length).put("pngBase64",android.util.Base64.encodeToString(encoded,android.util.Base64.NO_WRAP)));
+                    result.complete(new JSONObject().put("mime","image/jpeg").put("width",originalWidth).put("height",originalHeight).put("captureWidth",deliveredWidth).put("captureHeight",deliveredHeight).put("bytes",encoded.length).put("data",android.util.Base64.encodeToString(encoded,android.util.Base64.NO_WRAP)));
                 }catch(Exception e){result.completeExceptionally(e);}
             }
             @Override public void onFailure(int code){

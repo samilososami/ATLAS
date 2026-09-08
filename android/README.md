@@ -1,13 +1,15 @@
-# ATLAS Android · 0.2.3 preview
+# ATLAS Android · 0.2.4 preview
 
 Aplicación Android 11+ para hablar con ATLAS y controlar un ATLAS A1 propio. La
 APK se publica en [GitHub Releases](https://github.com/samilososami/ATLAS/releases).
 Es una preview firmada para desarrollo; no es la imagen de ATLAS OS.
 
-La versión 0.2.3 hace más eficiente el control del teléfono: abre aplicaciones
-por su nombre con una única operación nativa, reserva Android Use para acciones
-dentro de las interfaces y permite mantener una sesión visual explícita entre
-varios mensajes. Mantiene voz, chat, acciones, terminal, estado, widgets y
+La versión 0.2.4 hace más fiable y rápido el control del teléfono: abre
+aplicaciones por su nombre con una única operación nativa, distingue Amazon
+Shopping de Alexa, devuelve direcciones formateadas, pulsa controles por su
+etiqueta accesible y envía capturas JPEG más pequeñas. Reserva Android Use para
+acciones dentro de las interfaces y permite mantener una sesión visual explícita
+entre varios mensajes. Mantiene voz, chat, acciones, terminal, estado, widgets y
 actualizaciones dentro de una sola aplicación.
 
 ## Primera conexión
@@ -29,13 +31,16 @@ comprobarse al regresar desde Ajustes de Android.
 
 ## Conexión persistente
 
-Companion escucha en el canal privado `wss://atlas-a1:5010/app`. Tailscale intenta
-una ruta directa entre el teléfono y A1; si la red no permite UDP directo puede
-usar un relay DERP cifrado de Tailscale sin cambiar de protocolo. El antiguo
+Companion escucha en el canal privado `wss://100.x.y.z:5010/app`, accesible solo
+dentro del tailnet. Cuando el teléfono y A1 comparten LAN, Tailscale prioriza la
+ruta UDP directa P2P, de menor latencia; si no puede establecerla usa un relay
+DERP cifrado sin cambiar de protocolo. `tailscale ping` o `tailscale status`
+confirman la ruta real. El antiguo
 relay de Cloudflare solo existe como modo de compatibilidad seleccionado de forma
 explícita; un fallo de Tailscale nunca provoca fallback automático. Una
 instalación 0.1.x puede migrar a MagicDNS con la clave y el pin ya guardados, sin
-obligar a emparejar de nuevo.
+obligar a emparejar de nuevo. Ese nombre sigue resolviéndose dentro del tailnet;
+no es una dirección LAN ni un fallback fuera de Tailscale.
 
 Un foreground service conserva el WebSocket cifrado cuando la Activity queda en
 segundo plano, reacciona a cambios entre Wi-Fi y datos y aplica backoff acotado.
@@ -84,18 +89,28 @@ WebScreen y `atlas-chat` comparten `atlas_phone` para esas APIs y
 `atlas_android` para el fallback visual. Los nombres `location`/`get_location`,
 `capabilities`, `call` y `calls.place` son aliases de `location.get`,
 `phone.capabilities` y `phone.call`. SMS usa `text`; las llamadas usan `number`;
-y `apps.launch {app}` abre por nombre sin capturas ni coordenadas. La creación de calendario requiere descubrir antes un `calendarId` editable
+y `apps.launch {app}` abre por nombre sin capturas ni coordenadas. `Amazon`
+resuelve Amazon Shopping (`com.amazon.mShop.android.shopping`) y `Alexa` la app
+Amazon Alexa (`com.amazon.dee.app`), sin intercambiarlas. `location.get` entrega
+coordenadas y, cuando Android puede resolverla, la dirección completa exacta en
+`formattedAddress` junto a campos `address` estructurados; si falta, se conservan
+las coordenadas y el error de geocoding sin inventar una dirección. La creación de calendario requiere descubrir antes un `calendarId` editable
 con `calendar.list` y enviar `begin`/`end` en milisegundos Unix.
 
 `atlas-androiduse` es el fallback visual. El AccessibilityService puede observar
-la jerarquía, capturar la pantalla, tocar, mantener pulsado, deslizar, escribir,
+la jerarquía, pulsar una etiqueta accesible exacta, capturar la pantalla, tocar,
+mantener pulsado, deslizar, escribir,
 abrir paquetes o URI, esperar y usar Atrás/Inicio/Recientes/ENTER. Los gestos usan
 coordenadas normalizadas de `0` a `1`; la jerarquía redacta campos de contraseña
 y todos sus descendientes. Durante el control aparece una notificación, un aura
 azul, un bloqueo de entrada y un botón rojo para detenerlo. Cada acción importante
-se sigue con una nueva inspección. Realtime recibe el PNG como un `input_image`
-separado, nunca como base64 dentro del resultado. Las tareas puntuales se cierran
-al terminar, cancelar, fallar o por watchdog; la orden explícita «controla mi
+se sigue con una nueva inspección. `androiduse.click` es la primera opción cuando
+`tree` expone texto o descripción; las coordenadas son el fallback. La captura se
+reduce a un ancho máximo de 640 px y JPEG calidad 82 antes de entregarse a
+Realtime como un `input_image` separado, nunca como base64 dentro del resultado.
+Un fallo recuperable de acción o inspección conserva la sesión para corregirlo.
+Las tareas puntuales se cierran al terminar o abandonar, cancelar, perder el
+transporte/Accesibilidad o por watchdog; la orden explícita «controla mi
 teléfono» mantiene una sesión para instrucciones sucesivas hasta que se detenga.
 Accesibilidad se activa manualmente en Ajustes de Android.
 

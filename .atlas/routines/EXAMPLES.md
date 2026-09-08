@@ -11,6 +11,7 @@ hora en el momento de la llamada y la inserta en la respuesta:
   "thoughts": "date ofrece la hora local sin red; no hacen falta segundos.",
   "triggers": ["qué hora es"],
   "enabled": true,
+  "requires_model": false,
   "steps": [
     {
       "type": "shell",

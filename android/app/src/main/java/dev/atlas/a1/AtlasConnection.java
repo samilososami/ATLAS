@@ -176,6 +176,7 @@ final class AtlasConnection implements AutoCloseable {
             if(socket!=null&&socket!=relay)return;
         }
         failRelay(socket,error);
+        if(socket!=null)socket.cancel();
     }
     private String transportFailureMessage(Throwable error,boolean direct){
         Throwable cause=error;while(cause.getCause()!=null&&cause.getCause()!=cause)cause=cause.getCause();
@@ -290,7 +291,7 @@ final class AtlasConnection implements AutoCloseable {
         if(pairing==null)throw new IOException("Empareja primero tu ATLAS A1");
         CompletableFuture<Boolean> ready;
         openRelay();synchronized(this){ready=relayReady;}
-        try{if(ready==null||!ready.get(10,TimeUnit.SECONDS))throw new IOException("ATLAS A1 rechazó la conexión");}
+        try{if(ready==null||!ready.get(6,TimeUnit.SECONDS))throw new IOException("ATLAS A1 rechazó la conexión");}
         catch(ExecutionException error){
             Throwable cause=error.getCause();if(cause instanceof Exception)throw (Exception)cause;throw error;
         }

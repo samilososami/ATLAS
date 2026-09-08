@@ -141,6 +141,14 @@ REALTIME_VOICES = ("ash", "cedar", "marin", "verse")
 REALTIME_EXTERNAL_OUTPUTS = ("browser", "elevenlabs")
 REALTIME_OUTPUT_CHOICES = REALTIME_VOICES + REALTIME_EXTERNAL_OUTPUTS
 REALTIME_REASONING_CHOICES = ("default", "minimal", "low", "medium", "high", "xhigh")
+ELEVENLABS_REALTIME_MODEL = (
+    os.environ.get("ATLAS_WEBSCREEN_ELEVENLABS_MODEL", "eleven_flash_v2_5").strip()
+    or "eleven_flash_v2_5"
+)
+# HTTPResponse.read(8192) may aggregate several small upstream chunks before it
+# returns.  read1 keeps this generous ceiling but forwards the first available
+# ElevenLabs chunk immediately, which is the behavior a streaming proxy needs.
+ELEVENLABS_STREAM_READ_BYTES = 8192
 REALTIME_VAD_THRESHOLD = float(os.environ.get("ATLAS_REALTIME_VAD_THRESHOLD", "0.45"))
 REALTIME_SILENCE_MS = int(os.environ.get("ATLAS_REALTIME_SILENCE_MS", "500"))
 REALTIME_PREFIX_PADDING_MS = int(os.environ.get("ATLAS_REALTIME_PREFIX_PADDING_MS", "300"))
@@ -149,7 +157,7 @@ REALTIME_SHELL_MAX_TIMEOUT_SECONDS = 30
 REALTIME_SHELL_MAX_COMMAND_CHARS = 4096
 REALTIME_SHELL_MAX_OUTPUT_CHARS = 12000
 ATLAS_APP_CONTROL_BIN = os.environ.get("ATLAS_APP_CONTROL_BIN", "atlas-app").strip() or "atlas-app"
-ATLAS_APP_CONTROL_TIMEOUT_SECONDS = int(os.environ.get("ATLAS_APP_CONTROL_TIMEOUT", "25"))
+ATLAS_APP_CONTROL_TIMEOUT_SECONDS = int(os.environ.get("ATLAS_APP_CONTROL_TIMEOUT", "15"))
 ATLAS_APP_SCREENSHOT_TIMEOUT_SECONDS = int(os.environ.get("ATLAS_APP_SCREENSHOT_TIMEOUT", "8"))
 ATLAS_APP_CONTROL_MAX_PARAMS_CHARS = 8 * 1024
 ATLAS_APP_CONTROL_MAX_OUTPUT_CHARS = 12 * 1024 * 1024
@@ -172,14 +180,14 @@ ATLAS_PHONE_OPERATION_ALIASES = {
 }
 ATLAS_ANDROID_OPERATIONS = frozenset({
     "androiduse.status", "androiduse.start", "androiduse.stop",
-    "androiduse.screenshot", "androiduse.tree", "androiduse.tap",
+    "androiduse.screenshot", "androiduse.tree", "androiduse.click", "androiduse.tap",
     "androiduse.long_press", "androiduse.swipe", "androiduse.text",
     "androiduse.key",
     "androiduse.back", "androiduse.home", "androiduse.recents",
     "androiduse.launch", "androiduse.wait",
 })
 ATLAS_ANDROID_AUTO_INSPECT = frozenset({
-    "androiduse.start", "androiduse.tap", "androiduse.long_press",
+    "androiduse.click", "androiduse.tap", "androiduse.long_press",
     "androiduse.swipe", "androiduse.text", "androiduse.key", "androiduse.back",
     "androiduse.home", "androiduse.recents", "androiduse.launch",
     "androiduse.wait",
@@ -282,13 +290,17 @@ def execute_atlas_app_control(operation: Any, params: Any,
     params_json = json.dumps(params, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
     if len(params_json) > ATLAS_APP_CONTROL_MAX_PARAMS_CHARS:
         raise ValueError("Los parámetros de teléfono son demasiado grandes")
-    command = [
-        _atlas_app_control_executable(), "control", canonical,
-        "--params", params_json, "--json",
-    ]
     timeout_seconds = (ATLAS_APP_SCREENSHOT_TIMEOUT_SECONDS
                        if canonical == "androiduse.screenshot"
                        else ATLAS_APP_CONTROL_TIMEOUT_SECONDS)
+    # Give Companion a slightly shorter deadline than this supervising process.
+    # That prevents a killed CLI from leaving an orphaned phone request running
+    # until the old 35-second default expires.
+    remote_timeout_seconds = max(1, timeout_seconds - 1)
+    command = [
+        _atlas_app_control_executable(), "--timeout", str(remote_timeout_seconds), "control", canonical,
+        "--params", params_json, "--json",
+    ]
     completed = subprocess.run(
         command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
         stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace",
@@ -312,18 +324,19 @@ def execute_atlas_app_control(operation: Any, params: Any,
 
 
 def normalize_android_screenshot(result: dict[str, Any]) -> dict[str, Any]:
-    encoded = str(result.get("pngBase64") or result.get("data") or "").strip()
+    encoded = str(result.get("imageBase64") or result.get("pngBase64") or result.get("data") or "").strip()
     mime = str(result.get("mime") or "image/png").lower()
-    if not encoded or mime != "image/png":
-        raise RuntimeError("El teléfono no devolvió una captura PNG utilizable")
+    signatures = {"image/png": b"\x89PNG\r\n\x1a\n", "image/jpeg": b"\xff\xd8\xff"}
+    if not encoded or mime not in signatures:
+        raise RuntimeError("El teléfono no devolvió una captura PNG/JPEG utilizable")
     if len(encoded) > ATLAS_APP_CONTROL_MAX_OUTPUT_CHARS:
         raise RuntimeError("La captura del teléfono es demasiado grande")
     try:
         raw = base64.b64decode(encoded, validate=True)
     except (ValueError, TypeError, binascii.Error) as error:
         raise RuntimeError("La captura del teléfono no contiene Base64 válido") from error
-    if not raw.startswith(b"\x89PNG\r\n\x1a\n"):
-        raise RuntimeError("La captura del teléfono no es un PNG válido")
+    if not raw.startswith(signatures[mime]):
+        raise RuntimeError("La captura del teléfono no coincide con su formato declarado")
     try:
         screen_width, screen_height = int(result.get("width")), int(result.get("height"))
         width = int(result.get("captureWidth") or screen_width)
@@ -333,15 +346,21 @@ def normalize_android_screenshot(result: dict[str, Any]) -> dict[str, Any]:
     if not (1 <= width <= 10000 and 1 <= height <= 10000
             and 1 <= screen_width <= 10000 and 1 <= screen_height <= 10000):
         raise RuntimeError("Las dimensiones de la captura están fuera de rango")
-    return {"pngBase64": encoded, "width": width, "height": height,
-            "screenWidth": screen_width, "screenHeight": screen_height,
-            "mime": "image/png"}
+    normalized = {"imageBase64": encoded, "width": width, "height": height,
+                  "screenWidth": screen_width, "screenHeight": screen_height,
+                  "mime": mime}
+    # Preserve the legacy key only for actual PNG captures. New APKs send a
+    # substantially smaller JPEG through imageBase64.
+    if mime == "image/png":
+        normalized["pngBase64"] = encoded
+    return normalized
 
 
 def public_android_result(result: dict[str, Any]) -> dict[str, Any]:
     """Remove screenshot bytes before the result reaches function_call_output."""
     public = dict(result)
     had_image = bool(public.pop("data", None))
+    had_image = bool(public.pop("imageBase64", None)) or had_image
     had_image = bool(public.pop("pngBase64", None)) or had_image
     if had_image:
         public["captureAttached"] = True
@@ -1539,7 +1558,7 @@ def manage_realtime_routine(args: dict[str, Any]) -> dict[str, Any]:
         items = [{
             "id": item["id"], "name": item["name"],
             "description": item["description"], "triggers": item["triggers"],
-            "enabled": item["enabled"],
+            "enabled": item["enabled"], "requires_model": item["requires_model"],
         } for item in routines.list_routines()]
         return {"ok": True, "routines": items, "count": len(items)}
     if action == "show":
@@ -2377,9 +2396,9 @@ def elevenlabs_speech_request(text: str) -> urllib.request.Request:
                 f"{urllib.parse.quote(voice_id, safe='')}/stream"
                 "?output_format=mp3_44100_128")
     payload = json.dumps({
-        "text": text, "model_id": "eleven_v3", "language_code": "es",
+        "text": text, "model_id": ELEVENLABS_REALTIME_MODEL, "language_code": "es",
         "voice_settings": {"stability": 0.48, "similarity_boost": 0.78,
-                           "style": 0.08, "use_speaker_boost": False, "speed": 1.04},
+                           "style": 0.0, "use_speaker_boost": False, "speed": 1.04},
     }).encode()
     return urllib.request.Request(endpoint, data=payload, method="POST", headers={
         "Accept": "audio/mpeg", "Content-Type": "application/json", "xi-api-key": api_key,
@@ -2401,6 +2420,15 @@ def text_to_speech(text: str) -> bytes:
             return response.read()
     except RuntimeError:
         raise
+
+
+def iter_elevenlabs_audio(response: Any):
+    """Yield available upstream audio without coalescing it into full buffers."""
+    read = getattr(response, "read1", None)
+    if not callable(read):
+        read = response.read
+    while chunk := read(ELEVENLABS_STREAM_READ_BYTES):
+        yield chunk
 
 
 def create_tts_stream_ticket(text: str) -> str:
@@ -2933,7 +2961,9 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
                              "bridge": bridge_health},
                 "session": session_health(),
                 "tts": {"ready": True, "default": "browser", "browser": True,
-                        "elevenlabs": bool(api_key and voice_id)},
+                        "elevenlabs": bool(api_key and voice_id),
+                        "elevenlabsModel": ELEVENLABS_REALTIME_MODEL,
+                        "elevenlabsFormat": "mp3_44100_128"},
             })
             return
         if parsed.path == "/api/settings":
@@ -3218,6 +3248,7 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
         self.send_json(201, {
             "streamUrl": f"/api/tts/stream/{token}",
             "format": "mp3_44100_128",
+            "model": ELEVENLABS_REALTIME_MODEL,
         })
 
     def handle_tts_stream(self, token: str) -> None:
@@ -3241,7 +3272,7 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
         self.close_connection = True
         try:
             with response:
-                while chunk := response.read(8192):
+                for chunk in iter_elevenlabs_audio(response):
                     self.wfile.write(chunk)
                     self.wfile.flush()
         except (BrokenPipeError, ConnectionResetError, OSError):

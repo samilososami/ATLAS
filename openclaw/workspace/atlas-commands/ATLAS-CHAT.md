@@ -62,19 +62,23 @@ de terminal: Markdown conciso, rutas, cifras y unidades legibles.
 Para el teléfono, `atlas_phone` es siempre la primera opción. Acepta operaciones
 canónicas como `phone.capabilities`, `location.get` y `phone.call`, además de los
 aliases `capabilities`, `location`, `get_location`, `call` y `calls.place`.
+`Amazon` abre Amazon Shopping y `Alexa` abre la app Alexa, sin intercambiarlas;
+la ubicación del teléfono emparejado conserva y muestra su `formattedAddress`
+completa cuando Android la devuelve.
 `atlas_android` queda reservado para pantallas que haya que observar o tocar y
 solo admite su allowlist cerrada: `status`, `start`, `stop`, `screenshot`,
-`tree`, `tap`, `long_press`, `swipe`, `text`, `key`, `back`, `home`, `recents`,
+`tree`, `click`, `tap`, `long_press`, `swipe`, `text`, `key`, `back`, `home`, `recents`,
 `launch` y `wait`, todos bajo el prefijo `androiduse.`; `key` acepta `ENTER`.
-Sus gestos usan
-coordenadas normalizadas de `0` a `1`.
+`click` usa una etiqueta accesible exacta y tiene prioridad; sus gestos de
+fallback usan coordenadas normalizadas de `0` a `1`.
 
 Una captura no se devuelve como texto ni como base64: después del resultado de
-la función se añade un `input_image` privado para que Realtime pueda ver la
-pantalla. La jerarquía de Accesibilidad redacta campos de contraseña y sus
-descendientes. Todo flujo visual llama a `androiduse.stop` al finalizar y también
-ante error, cancelación, timeout o salida del cliente; nunca se deja el bloqueo
-de pantalla activo por una sesión de terminal terminada.
+la función se añade un `input_image` JPEG privado y reducido para que Realtime
+pueda ver la pantalla. La jerarquía de Accesibilidad redacta campos de contraseña
+y sus descendientes. Los fallos recuperables de acción o inspección mantienen la
+sesión para corregirla. Todo flujo visual llama a `androiduse.stop` al completar
+o abandonar la tarea, y ante cancelación, timeout, salida del cliente o pérdida
+terminal del dispositivo, socket o servicio de Accesibilidad.
 
 Puede invocarse como `sami` o como root. En ambos casos el proceso se ejecuta
 como el usuario de servicio `sami`, evitando archivos root dentro del estado de

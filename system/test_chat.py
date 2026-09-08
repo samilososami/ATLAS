@@ -50,10 +50,19 @@ class AtlasChatTests(unittest.TestCase):
         self.assertEqual(tools["atlas_shell"]["parameters"]["required"], ["command"])
         self.assertEqual(tools["atlas_web_search"]["parameters"]["required"], ["query"])
         self.assertEqual(tools["atlas_routine"]["parameters"]["required"], ["action"])
+        routine_schema = tools["atlas_routine"]["parameters"]["properties"]["routine"]
+        self.assertEqual(routine_schema["type"], "object")
+        self.assertEqual(routine_schema["properties"]["triggers"]["items"]["type"], "string")
+        self.assertEqual(routine_schema["properties"]["requires_model"]["type"], "boolean")
+        self.assertIn("requires_model", routine_schema["required"])
         self.assertEqual(tools["atlas_phone"]["parameters"]["required"], ["operation"])
         self.assertEqual(tools["atlas_android"]["parameters"]["required"], ["operation"])
         self.assertIn(
             "androiduse.key",
+            tools["atlas_android"]["parameters"]["properties"]["operation"]["enum"],
+        )
+        self.assertIn(
+            "androiduse.click",
             tools["atlas_android"]["parameters"]["properties"]["operation"]["enum"],
         )
         browser = (ROOT / ".atlas/webscreen/static/realtime.js").read_text()
@@ -87,7 +96,7 @@ class AtlasChatTests(unittest.TestCase):
         self.assertIsNone(chat._last_tool_image)
         self.assertIn("TELÉFONO", capture.getvalue())
 
-    def test_android_tool_auto_inspects_without_leaking_capture_bytes(self):
+    def test_android_visual_action_auto_inspects_without_leaking_capture_bytes(self):
         module = self.load_client()
         chat = object.__new__(module.AtlasChat)
         capture = io.StringIO()
@@ -95,15 +104,15 @@ class AtlasChatTests(unittest.TestCase):
         chat.tool_details = []
         chat.compact = True
         chat.log = Mock()
-        chat._android_control_active = False
+        chat._android_control_active = True
         png = base64.b64encode(b"\x89PNG\r\n\x1a\nmock").decode()
         raw_capture = {"ok": True, "pngBase64": png, "width": 1080, "height": 2316}
-        allowed = frozenset({"androiduse.start", "androiduse.screenshot", "androiduse.stop"})
+        allowed = frozenset({"androiduse.home", "androiduse.screenshot", "androiduse.stop"})
         execute = Mock(side_effect=[{"ok": True}, raw_capture])
         chat.webscreen = SimpleNamespace(
             execute_atlas_app_control=execute,
             ATLAS_ANDROID_OPERATIONS=allowed,
-            ATLAS_ANDROID_AUTO_INSPECT=frozenset({"androiduse.start"}),
+            ATLAS_ANDROID_AUTO_INSPECT=frozenset({"androiduse.home"}),
             normalize_android_screenshot=Mock(return_value={
                 "pngBase64": png, "width": 1080, "height": 2316, "mime": "image/png",
             }),
@@ -113,7 +122,7 @@ class AtlasChatTests(unittest.TestCase):
         )
 
         result = chat._run_tool("atlas_android", {
-            "operation": "androiduse.start", "params": {},
+            "operation": "androiduse.home", "params": {},
         }, "android-test")
 
         self.assertTrue(chat._android_control_active)
@@ -168,6 +177,7 @@ class AtlasChatTests(unittest.TestCase):
         ws = Mock()
         chat.ws = ws
         chat._android_control_active = True
+        chat._android_control_persistent = True
         chat.log = Mock()
         execute = Mock(return_value={"ok": True})
         allowed = frozenset({"androiduse.stop"})
@@ -179,7 +189,82 @@ class AtlasChatTests(unittest.TestCase):
         execute.assert_called_once_with("androiduse.stop", {}, allowed)
         ws.close.assert_called_once_with()
         self.assertFalse(chat._android_control_active)
+        self.assertFalse(chat._android_control_persistent)
         self.assertIsNone(chat.ws)
+
+    def test_exact_control_request_survives_turns_until_terminal_close(self):
+        module = self.load_client()
+        self.assertTrue(module.persistent_android_control_invocation("controla mi teléfono"))
+        self.assertTrue(module.persistent_android_control_invocation("Atlas, controla mi móvil."))
+        self.assertTrue(module.persistent_android_control_invocation("oye ATLAS controla mi telefono"))
+        self.assertFalse(module.persistent_android_control_invocation(
+            "controla mi teléfono y abre Ajustes"
+        ))
+        self.assertFalse(module.persistent_android_control_invocation("puedes controlar mi móvil"))
+
+        chat = object.__new__(module.AtlasChat)
+        chat.console = Console(file=io.StringIO(), width=100, color_system=None)
+        chat.verbose = False
+        chat.persist = False
+        chat.ws = Mock()
+        chat.session = {}
+        chat.tool_buffers = {}
+        chat.tool_details = []
+        chat.compact = True
+        chat.last_direct_routine_handled = False
+        chat._interrupted = False
+        chat._android_control_active = False
+        chat._android_control_persistent = False
+        chat._last_tool_image = None
+        chat.log = Mock()
+        chat._show_tool = Mock()
+        chat._show_tool_result = Mock()
+        execute = Mock(return_value={"ok": True})
+        allowed = frozenset({"androiduse.start", "androiduse.stop"})
+        chat.webscreen = SimpleNamespace(
+            execute_routine_phrase=Mock(return_value={"matched": False}),
+            execute_atlas_app_control=execute,
+            ATLAS_ANDROID_OPERATIONS=allowed,
+            ATLAS_ANDROID_AUTO_INSPECT=frozenset(),
+            public_android_result=lambda value: value,
+        )
+        chat._send = Mock()
+        chat._recv = Mock(side_effect=[
+            {
+                "type": "response.function_call_arguments.done",
+                "name": "atlas_android",
+                "call_id": "start-control",
+                "arguments": json.dumps({"operation": "androiduse.start"}),
+            },
+            {"type": "response.done", "response": {"status": "completed"}},
+            {"type": "response.output_text.delta", "item_id": "answer", "delta": "Listo"},
+            {"type": "response.done", "response": {"status": "completed"}},
+        ])
+
+        self.assertEqual(chat.ask("Atlas, controla mi móvil"), "Listo")
+        self.assertTrue(chat._android_control_active)
+        self.assertTrue(chat._android_control_persistent)
+        self.assertEqual([call.args[0] for call in execute.call_args_list], ["androiduse.start"])
+
+        chat._recv = Mock(side_effect=[
+            {"type": "response.output_text.delta", "item_id": "next", "delta": "Hecho"},
+            {"type": "response.done", "response": {"status": "completed"}},
+        ])
+        self.assertEqual(chat.ask("abre Ajustes"), "Hecho")
+        self.assertTrue(chat._android_control_active)
+        self.assertTrue(chat._android_control_persistent)
+        self.assertEqual([call.args[0] for call in execute.call_args_list], ["androiduse.start"])
+
+        chat._recv = Mock(side_effect=[
+            {"type": "response.done", "response": {"status": "cancelled"}},
+        ])
+        self.assertEqual(chat.ask("cancela"), "")
+        self.assertEqual(
+            [call.args[0] for call in execute.call_args_list],
+            ["androiduse.start", "androiduse.stop"],
+        )
+        self.assertFalse(chat._android_control_active)
+        self.assertFalse(chat._android_control_persistent)
 
     def test_failed_auto_inspection_preserves_completed_action_and_control(self):
         module = self.load_client()
@@ -189,19 +274,19 @@ class AtlasChatTests(unittest.TestCase):
         chat.tool_details = []
         chat.compact = True
         chat.log = Mock()
-        chat._android_control_active = False
-        allowed = frozenset({"androiduse.start", "androiduse.screenshot", "androiduse.stop"})
+        chat._android_control_active = True
+        allowed = frozenset({"androiduse.home", "androiduse.screenshot", "androiduse.stop"})
         execute = Mock(side_effect=[{"ok": True}, RuntimeError("captura fallida")])
         chat.webscreen = SimpleNamespace(
             execute_atlas_app_control=execute,
             ATLAS_ANDROID_OPERATIONS=allowed,
-            ATLAS_ANDROID_AUTO_INSPECT=frozenset({"androiduse.start"}),
+            ATLAS_ANDROID_AUTO_INSPECT=frozenset({"androiduse.home"}),
             normalize_android_screenshot=Mock(),
             public_android_result=lambda value: value,
         )
 
         result = chat._run_tool("atlas_android", {
-            "operation": "androiduse.start", "params": {},
+            "operation": "androiduse.home", "params": {},
         }, "failed-inspection")
 
         self.assertTrue(result["ok"])
@@ -209,8 +294,32 @@ class AtlasChatTests(unittest.TestCase):
         self.assertTrue(chat._android_control_active)
         self.assertEqual(
             [call.args[0] for call in execute.call_args_list],
-            ["androiduse.start", "androiduse.screenshot"],
+            ["androiduse.home", "androiduse.screenshot"],
         )
+
+    def test_recoverable_android_action_error_keeps_control_session(self):
+        module = self.load_client()
+        chat = object.__new__(module.AtlasChat)
+        chat.console = Console(file=io.StringIO(), width=80, color_system=None)
+        chat.tool_details = []
+        chat.compact = True
+        chat.log = Mock()
+        chat._android_control_active = True
+        execute = Mock(side_effect=RuntimeError("El teléfono no respondió a tiempo"))
+        chat.webscreen = SimpleNamespace(
+            execute_atlas_app_control=execute,
+            ATLAS_ANDROID_OPERATIONS=frozenset({"androiduse.click", "androiduse.stop"}),
+            ATLAS_ANDROID_AUTO_INSPECT=frozenset({"androiduse.click"}),
+            public_android_result=lambda value: value,
+        )
+
+        result = chat._run_tool("atlas_android", {
+            "operation": "androiduse.click", "params": {"text": "Buscar"},
+        }, "recoverable-action")
+
+        self.assertFalse(result["ok"])
+        self.assertTrue(chat._android_control_active)
+        self.assertEqual(execute.call_count, 1)
 
     def test_logs_never_receive_provider_secret_field(self):
         source = CLIENT.read_text()
@@ -387,6 +496,63 @@ class AtlasChatTests(unittest.TestCase):
         with self.assertRaises(module.AtlasChatError):
             chat.ask('timeout test')
         self.assertIsNone(chat.ws)
+
+    def test_local_routine_without_model_returns_only_resolved_say(self):
+        module = self.load_client()
+        chat = object.__new__(module.AtlasChat)
+        chat.console = Console(file=io.StringIO(), color_system=None)
+        chat.webscreen = SimpleNamespace(execute_routine_phrase=Mock(return_value={
+            'matched': True, 'ok': True, 'requiresModel': False,
+            'routineName': 'Hora', 'spokenText': 'Son las 22:15',
+        }))
+        chat.persist = False
+        chat.ws = None
+        chat.tool_buffers = {}
+        chat.tool_details = []
+        chat._show_tool = Mock()
+        chat._show_tool_result = Mock()
+        chat.log = Mock()
+        chat.connect = Mock()
+        chat._send = Mock()
+
+        self.assertEqual(chat.ask('qué hora es'), 'Son las 22:15')
+        chat.webscreen.execute_routine_phrase.assert_called_once_with('qué hora es')
+        chat.connect.assert_not_called()
+        chat._send.assert_not_called()
+
+    def test_routine_requiring_model_hands_off_record_without_rerunning(self):
+        module = self.load_client()
+        chat = object.__new__(module.AtlasChat)
+        chat.console = Console(file=io.StringIO(), color_system=None)
+        execute = Mock(return_value={
+            'matched': True, 'ok': True, 'requiresModel': True,
+            'routineName': 'Informe', 'executionId': 'b' * 32, 'spokenText': '',
+        })
+        chat.webscreen = SimpleNamespace(execute_routine_phrase=execute)
+        chat.persist = False
+        chat.verbose = False
+        chat.ws = Mock()
+        chat.tool_buffers = {}
+        chat.tool_details = []
+        chat._android_control_active = False
+        chat._last_tool_image = None
+        chat._show_tool = Mock()
+        chat._show_tool_result = Mock()
+        chat.log = Mock()
+        chat._send = Mock()
+        chat._recv = Mock(side_effect=[
+            {'type': 'response.output_text.delta', 'item_id': '1', 'delta': 'Informe listo'},
+            {'type': 'response.done', 'response': {'status': 'completed'}},
+        ])
+
+        self.assertEqual(chat.ask('genera el informe'), 'Informe listo')
+        execute.assert_called_once_with('genera el informe')
+        first_message = chat._send.call_args_list[0].args[0]
+        handoff = first_message['item']['content'][0]['text']
+        self.assertIn('No repitas los pasos', handoff)
+        self.assertIn('execution_id=' + 'b' * 32, handoff)
+        self.assertEqual(sum(call.args[0].get('type') == 'response.create'
+                             for call in chat._send.call_args_list), 1)
 
 
 if __name__ == "__main__":

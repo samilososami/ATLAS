@@ -70,6 +70,8 @@ atlas-app pair
 atlas-app tailscale
 atlas-app endpoint
 atlas-app control location.get
+atlas-app control apps.launch app=Amazon
+atlas-app control apps.launch app=Alexa
 atlas-app control capabilities
 atlas-app logs
 atlas-app restart
@@ -81,7 +83,12 @@ También se aceptan los aliases breves `location`, `get_location`,
 real: `sms.send number=... text=...`; para crear eventos consulta primero
 `calendar.list`, elige un `calendarId` editable y pasa `begin`/`end` en
 milisegundos Unix. `phone.call` recibe un `number`, por lo que un nombre debe
-resolverse antes con `contacts.search`.
+resolverse antes con `contacts.search`. `Amazon` abre Amazon Shopping y `Alexa`
+abre la app Alexa; no son aliases intercambiables. `location.get` incluye
+`formattedAddress` y campos estructurados cuando Android puede hacer geocoding;
+si el propietario pide dónde está su móvil, se devuelve esa dirección completa
+sin reducirla a una ciudad. En la misma LAN, la vía Tailscale preferida es P2P
+directa al endpoint privado `100.x`; DERP cifrado sigue siendo un fallback válido.
 
 Instalación y conexión por Internet: [ATLAS Companion](../.atlas/companion/README.md).
 
@@ -95,6 +102,7 @@ priorizan para llamadas, SMS, calendario, ubicación, archivos y notificaciones.
 atlas-androiduse start
 atlas-androiduse screenshot
 atlas-androiduse tree
+atlas-androiduse click 'Permitir'
 atlas-androiduse tap 0.50 0.52
 atlas-androiduse long_press 0.50 0.52 700
 atlas-androiduse swipe 0.75 0.80 0.75 0.25 300
@@ -109,11 +117,16 @@ atlas-androiduse launch https://example.com
 atlas-androiduse stop
 ```
 
-Una captura se guarda como PNG privado y devuelve su ruta, no una cadena base64.
-Los gestos usan coordenadas normalizadas de `0` a `1`; `launch` distingue
+La captura actual se reduce a un ancho máximo de 640 px, se codifica como JPEG
+calidad 82 y se guarda como fichero privado; el wrapper conserva compatibilidad
+con PNG antiguos y nunca imprime base64. `click` busca primero una etiqueta
+exacta accesible; los gestos de coordenadas son el fallback y usan valores
+normalizados de `0` a `1` sobre la pantalla física. `launch` distingue
 internamente `package` y `uri`. `tree` redacta los campos de contraseña y sus
-descendientes. Cada flujo visual debe terminar con `stop`, también tras error o
-cancelación; no se repiten acciones tras perder la conexión. [Manual operativo](../openclaw/workspace/atlas-commands/ATLAS-ANDROIDUSE.md).
+descendientes. Un error recuperable de acción o inspección conserva la sesión;
+`stop` sigue siendo obligatorio al terminar o abandonar la tarea y ante
+cancelación, timeout, salida o pérdida terminal de transporte/Accesibilidad. No
+se repiten acciones tras perder la conexión. [Manual operativo](../openclaw/workspace/atlas-commands/ATLAS-ANDROIDUSE.md).
 
 ## `atlas-chat`
 
@@ -123,10 +136,12 @@ se muestran en blanco; los comandos, búsquedas y resultados, en gris. También
 mide el tiempo hasta el primer texto y el tiempo total de cada turno.
 
 Además de shell, búsqueda y rutinas, registra `atlas_phone` para APIs nativas y
-`atlas_android` para Accessibility. Las capturas de este último se adjuntan al
-turno como `input_image` privado, sin incrustar base64 en la salida. Los aliases
+`atlas_android` para Accessibility. Las capturas JPEG reducidas de este último se
+adjuntan al turno como `input_image` privado, sin incrustar base64 en la salida.
+`androiduse.click` prioriza etiquetas accesibles sobre coordenadas. Los aliases
 `location`/`get_location`, `capabilities`, `call` y `calls.place` se normalizan a
-`location.get`, `phone.capabilities` y `phone.call`.
+`location.get`, `phone.capabilities` y `phone.call`; la ubicación conserva
+`formattedAddress`, y Amazon Shopping y Alexa se resuelven por separado.
 
 ```bash
 atlas-chat
@@ -155,6 +170,7 @@ paso `[SAY]` o terminar en silencio.
 
 ```bash
 atlas-routines list
+atlas-routines list --expand
 atlas-routines show hora
 atlas-routines create
 atlas-routines run hora
@@ -165,9 +181,12 @@ atlas-routines enable hora
 atlas-routines delete hora
 ```
 
-Los fallos se detienen y registran para que Realtime los explique sin repetir
-la acción. El wrapper funciona como `sami` y como root; root delega en el
-usuario de servicio.
+`list` muestra únicamente líneas como `1. hora · activa`; `list --expand`
+incluye la definición completa de cada entrada. `requires_model: false` marca
+las rutinas autocontenidas: ejecutan su comando y entregan únicamente el `[SAY]`
+resuelto, sin abrir una respuesta del modelo. Los fallos se detienen y registran
+para que Realtime los explique sin repetir la acción. El wrapper funciona como
+`sami` y como root; root delega en el usuario de servicio.
 
 ## `atlas-say`
 

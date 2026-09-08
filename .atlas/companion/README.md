@@ -25,7 +25,7 @@ pairing payload, certificate pin or AES key.
 six-digit `XXX-XXX` code. After the app submits the code, BLE returns a compact,
 single-GATT-value version-2 `atlas2:` payload containing:
 
-- `endpoint`: persistent `wss://HOST:5010/app` transport;
+- `endpoint`: persistent `wss://100.x.y.z:5010/app` tailnet transport;
 - `pin`: SHA-256 pin for A1's self-signed TLS certificate;
 - `key`: random AES-256-GCM pairing key.
 
@@ -41,12 +41,22 @@ before the old key and sockets are destroyed.
 
 ## Transport and wire protocol
 
-Port 5010 listens on A1 and is reached through Tailscale. WebScreen/5000 stays
-private to the trusted LAN and is never forwarded. The app keeps one WebSocket
+Port 5010 listens on A1 and is reached only through its private Tailscale
+`100.x` address. On the same LAN, Tailscale should upgrade the connection to a
+direct peer-to-peer UDP path; encrypted DERP remains a valid fallback if direct
+connectivity is unavailable. Check the actual path with `tailscale ping` or
+`tailscale status` instead of inferring it from a green VPN icon; see Tailscale's
+[connection-type reference](https://tailscale.com/docs/reference/connection-types).
+WebScreen/5000
+stays private to the trusted LAN and is never forwarded. The app keeps one WebSocket
 open while its foreground service lives. Every WebSocket frame remains an
 object shaped as `{"box":"<encrypted envelope>"}`; HTTP fallback uses the same
 box. AES-256-GCM uses direction-specific associated data, timestamps, random
 nonces and replay rejection. Keep phone and Pi clocks within two minutes.
+
+Current version-2 pairings store the `100.x` endpoint directly. The MagicDNS
+`atlas-a1` probe retained for old version-1 migrations is also tailnet-only; it
+is not a raw-LAN or public fallback.
 
 App requests decrypt to:
 
@@ -87,6 +97,8 @@ atlas-app control location.get
 atlas-app control capabilities
 atlas-app control contacts.search query=Papa
 atlas-app control apps.launch app=Galería
+atlas-app control apps.launch app=Amazon
+atlas-app control apps.launch app=Alexa
 atlas-app control phone.call number=600000000
 atlas-app control sms.send number=600000000 text='Llego pronto'
 atlas-app control calendar.list from=1788825600000 to=1789430400000
@@ -104,6 +116,14 @@ are Unix milliseconds; call `calendar.list` first and select an entry from
 `editableCalendars` to obtain the required `calendarId` before creating an
 event with `begin` and optional `end`.
 
+`Amazon` is the friendly alias for Amazon Shopping
+(`com.amazon.mShop.android.shopping`); `Alexa` is the separate Amazon Alexa app
+(`com.amazon.dee.app`). The launcher never substitutes one for the other.
+`location.get` returns coordinates and, when Android reverse geocoding succeeds,
+the exact `formattedAddress` plus structured `address` fields. Owner-facing
+answers should use that complete formatted address directly. If it is absent,
+report coordinates and the geocoding error rather than inventing an address.
+
 Supported families are application launch, location, notifications, contacts, calendar, calls,
 SMS, Wi-Fi, media/gallery, files, camera and sensors. The phone validates its
 runtime permission for every operation and returns an explicit permission error
@@ -116,6 +136,7 @@ atlas-androiduse start
 atlas-androiduse status
 atlas-androiduse screenshot
 atlas-androiduse tree
+atlas-androiduse click 'Permitir'
 atlas-androiduse tap 0.50 0.52
 atlas-androiduse long_press 0.50 0.52 700
 atlas-androiduse swipe 0.75 0.80 0.75 0.25 300
@@ -130,16 +151,23 @@ atlas-androiduse launch https://example.com
 atlas-androiduse stop
 ```
 
-`screenshot` saves a validated PNG to
-`~/.atlas/companion/screenshots/latest.png` by default and prints its path and
-dimensions; it does not dump base64 into model context. `start` must activate
-the Android control notification, touch-blocking stop surface and blue border.
-Use normalized coordinates from `0` to `1`; `launch` sends either `package` for
-an Android package name or `uri` for an allowed URL. `tree` redacts password
-nodes and all their descendants. `key ENTER` uses the focused field's safe IME
-action; `back`, `home` and `recents` are direct aliases for the corresponding
-global actions. `stop` is mandatory after the requested visual action and on
-every cancellation or failure path. Read
+`screenshot` normally saves a validated JPEG to
+`~/.atlas/companion/screenshots/latest.jpg`; the phone scales it to at most 640
+pixels wide at JPEG quality 82. The wrapper accepts older PNG replies, preserves
+their matching extension and never dumps base64 into model context. `start`
+must activate the Android control notification, touch-blocking stop surface and
+blue border. Prefer semantic `click` with an exact label from `tree`; it clicks
+the matching node or its clickable ancestor. Use normalized coordinates from
+`0` to `1` only as a fallback; they refer to the physical screen even when the
+attached image is smaller. `launch` sends either `package` for an Android package
+name or `uri` for an allowed URL. `tree` redacts password nodes and all their
+descendants. `key ENTER` uses the focused field's safe IME action; `back`, `home`
+and `recents` are direct aliases for the corresponding global actions.
+
+A recoverable click, gesture or screenshot failure leaves the active session in
+place so the caller can inspect or correct it. `stop` is mandatory after the
+requested visual task or when abandoning it, and on cancellation, overall
+timeout, client exit, lost socket/device or lost Accessibility control. Read
 [`ATLAS-ANDROIDUSE.md`](../../openclaw/workspace/atlas-commands/ATLAS-ANDROIDUSE.md)
 before using this fallback.
 

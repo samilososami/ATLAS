@@ -18,6 +18,9 @@ def parameters(action,values):
     if action=='tap':
         if len(values)!=2: raise SystemExit('Uso: atlas-androiduse tap X Y')
         return {'x':number(values[0],'X'),'y':number(values[1],'Y')}
+    if action=='click':
+        if not values: raise SystemExit('Uso: atlas-androiduse click ETIQUETA')
+        return {'text':' '.join(values),'exact':True}
     if action=='long_press':
         if len(values) not in (2,3): raise SystemExit('Uso: atlas-androiduse long_press X Y [DURACION_MS]')
         result={'x':number(values[0],'X'),'y':number(values[1],'Y')}
@@ -57,25 +60,31 @@ def call(action,params,timeout):
     except ValueError: raise SystemExit('Error: invalid response from Android device')
 
 def save_screenshot(result,target):
-    encoded=result.get('pngBase64')
+    encoded=result.get('imageBase64') or result.get('pngBase64') or result.get('data')
     if not isinstance(encoded,str) or not encoded: raise SystemExit('Error: Android screenshot was empty')
     try: image=base64.b64decode(encoded,validate=True)
     except ValueError: raise SystemExit('Error: Android screenshot was invalid')
-    if not image.startswith(b'\x89PNG\r\n\x1a\n'): raise SystemExit('Error: Android screenshot was not PNG')
-    path=pathlib.Path(target) if target else ROOT/'.atlas/companion/screenshots/latest.png'
+    mime=str(result.get('mime') or 'image/png').lower(); signatures={'image/png':b'\x89PNG\r\n\x1a\n','image/jpeg':b'\xff\xd8\xff'}
+    if mime not in signatures or not image.startswith(signatures[mime]): raise SystemExit('Error: Android screenshot format was invalid')
+    suffix='.jpg' if mime=='image/jpeg' else '.png'
+    path=pathlib.Path(target) if target else ROOT/f'.atlas/companion/screenshots/latest{suffix}'
+    compatible={'.jpg','.jpeg'} if mime=='image/jpeg' else {'.png'}
+    if path.suffix.lower() not in compatible:
+        if not path.suffix or path.suffix.lower() in {'.png','.jpg','.jpeg'}: path=path.with_suffix(suffix)
+        else: raise SystemExit(f'Error: screenshot target extension must match {mime}')
     if not path.is_absolute(): path=pathlib.Path.cwd()/path
     path.parent.mkdir(parents=True,exist_ok=True); temporary=path.with_suffix(path.suffix+'.tmp')
     temporary.write_bytes(image); temporary.chmod(0o600); os.replace(temporary,path)
     if os.geteuid()==0:
         owner=ROOT.stat(); os.chown(path,owner.st_uid,owner.st_gid); os.chown(path.parent,owner.st_uid,owner.st_gid)
-    return {'path':str(path),'width':result.get('width'),'height':result.get('height'),
+    return {'path':str(path),'width':result.get('captureWidth',result.get('width')),'height':result.get('captureHeight',result.get('height')),'mime':mime,
             'capturedAt':result.get('capturedAt',int(time.time()*1000))}
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--json',action='store_true')
     parser.add_argument('--timeout',type=float,default=35)
-    parser.add_argument('action',choices=('start','stop','status','screenshot','tree','tap','long_press','swipe',
+    parser.add_argument('action',choices=('start','stop','status','screenshot','tree','click','tap','long_press','swipe',
                                          'text','key','launch','back','home','recents','wait'))
     parser.add_argument('values',nargs='*')
     args=parser.parse_args(); target=''

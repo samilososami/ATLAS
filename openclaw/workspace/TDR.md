@@ -25,6 +25,8 @@ ATLAS puede convertir tareas recurrentes y con variación predecible en rutinas
 locales bajo `/home/atlas/.atlas/routines`. La frase exacta se comprueba antes
 de abrir una respuesta de Realtime, reduciendo latencia y tokens. El registro
 Markdown/JSON se valida y escribe de forma atómica; admite pasos de shell,
-variables capturadas y una respuesta `[SAY]` opcional. WebScreen y `atlas-chat`
+variables capturadas, una respuesta `[SAY]` opcional y un booleano
+`requires_model`. Con `false`, el `[SAY]` resuelto evita por completo al modelo;
+con `true`, Realtime interpreta el resultado ya ejecutado. WebScreen y `atlas-chat`
 comparten el mismo motor. Si una ejecución falla, se detiene y entrega su
 resultado a Realtime sin repetir automáticamente una acción con efectos.

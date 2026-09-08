@@ -29,6 +29,7 @@ class AndroidControlTests(unittest.TestCase):
 
     def test_native_app_launch_and_fast_screenshot_timeout_are_enabled(self) -> None:
         self.assertIn("apps.launch", SERVER.ATLAS_PHONE_OPERATIONS)
+        self.assertNotIn("androiduse.start", SERVER.ATLAS_ANDROID_AUTO_INSPECT)
         self.assertLess(
             SERVER.ATLAS_APP_SCREENSHOT_TIMEOUT_SECONDS,
             SERVER.ATLAS_APP_CONTROL_TIMEOUT_SECONDS,
@@ -44,9 +45,17 @@ class AndroidControlTests(unittest.TestCase):
         )
         self.assertTrue(result["ok"])
         argv = run.call_args.args[0]
-        self.assertEqual(argv[:3], ["/usr/local/bin/atlas-app", "control", "location.get"])
+        self.assertEqual(argv[:5], [
+            "/usr/local/bin/atlas-app", "--timeout",
+            str(SERVER.ATLAS_APP_CONTROL_TIMEOUT_SECONDS - 1),
+            "control", "location.get",
+        ])
         self.assertEqual(argv[-3:], ["--params", "{}", "--json"])
         self.assertNotIn("shell", run.call_args.kwargs)
+
+    def test_click_is_allowed_and_auto_inspected(self) -> None:
+        self.assertIn("androiduse.click", SERVER.ATLAS_ANDROID_OPERATIONS)
+        self.assertIn("androiduse.click", SERVER.ATLAS_ANDROID_AUTO_INSPECT)
 
     @mock.patch.object(SERVER.subprocess, "run")
     def test_unknown_operation_never_starts_process(self, run: mock.Mock) -> None:
@@ -84,6 +93,16 @@ class AndroidControlTests(unittest.TestCase):
         self.assertNotIn("data", public)
         self.assertNotIn("pngBase64", public)
         self.assertTrue(public["captureAttached"])
+
+    def test_jpeg_screenshot_uses_generic_image_field(self) -> None:
+        encoded = base64.b64encode(b"\xff\xd8\xfffixture").decode("ascii")
+        capture = SERVER.normalize_android_screenshot({
+            "mime": "image/jpeg", "width": 1440, "height": 3088,
+            "captureWidth": 640, "captureHeight": 1372, "data": encoded,
+        })
+        self.assertEqual(capture["imageBase64"], encoded)
+        self.assertNotIn("pngBase64", capture)
+        self.assertEqual((capture["width"], capture["height"]), (640, 1372))
 
     @mock.patch.object(SERVER, "execute_atlas_app_control")
     def test_http_handler_preserves_exact_offline_error(self, execute: mock.Mock) -> None:
@@ -152,14 +171,14 @@ class AndroidControlTests(unittest.TestCase):
 
     @mock.patch.object(SERVER, "append_realtime_event")
     @mock.patch.object(SERVER, "execute_atlas_app_control")
-    def test_start_does_not_inspect_until_the_next_visual_request(
+    def test_start_never_inspects_until_the_next_visual_request(
         self, execute: mock.Mock, _event: mock.Mock,
     ) -> None:
         execute.return_value = {"ok": True}
         responses: list[tuple[int, dict[str, object]]] = []
         handler = SimpleNamespace(
             _read_realtime_device_tool=lambda: (
-                "androiduse.start", {}, False, "interaction",
+                "androiduse.start", {}, True, "interaction",
             ),
             log_client=lambda: {},
             send_json=lambda status, payload: responses.append((status, payload)),

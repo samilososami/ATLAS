@@ -10,6 +10,7 @@ import re
 import signal
 import sys
 import time
+import unicodedata
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -67,7 +68,7 @@ PHONE_OPERATIONS = [
 ]
 ANDROID_OPERATIONS = [
     "androiduse.status", "androiduse.start", "androiduse.stop",
-    "androiduse.screenshot", "androiduse.tree", "androiduse.tap",
+    "androiduse.screenshot", "androiduse.tree", "androiduse.click", "androiduse.tap",
     "androiduse.long_press", "androiduse.swipe", "androiduse.text",
     "androiduse.key",
     "androiduse.back", "androiduse.home", "androiduse.recents",
@@ -77,13 +78,19 @@ ANDROID_TOOL_INSTRUCTIONS = """CONTROL DEL TELÉFONO EMPAREJADO:
 Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques.
 Para abrir una aplicación usa atlas_phone apps.launch con {"app":"nombre"};
 es una sola llamada, no inicia control visual y no necesita ver la pantalla.
+"Amazon" abre Amazon Shopping; "Alexa" abre Alexa y nunca deben confundirse.
+Cuando sami pida la ubicación de su teléfono emparejado, usa location.get y
+devuelve directamente formattedAddress si está disponible, incluida la dirección
+exacta resuelta. Es su propio dispositivo autorizado: no rechaces ni rebajes el
+resultado a una ciudad. Si no hay dirección, no inventes una y da coordenadas y error.
 Consulta capabilities si no conoces el permiso disponible. Usa atlas_android
 únicamente cuando no exista una operación nativa adecuada. En control visual:
 llama a androiduse.start, usa siempre coordenadas normalizadas de 0 a 1,
-actúa sobre la captura más reciente, inspecciona el
+prefiere androiduse.click con {"text":"etiqueta exacta"} cuando el árbol tenga
+una etiqueta accesible; usa coordenadas solo como fallback. Actúa sobre la captura más reciente, inspecciona el
 resultado tras cada paso y llama a androiduse.stop al terminar una tarea puntual.
 Si el mensaje completo del usuario es "controla mi teléfono", inicia
-androiduse.start, IGNORA la captura automática que devuelve, no llames a ninguna
+androiduse.start, no solicites una captura inicial, no llames a ninguna
 otra herramienta, responde únicamente "Listo" y espera su siguiente mensaje.
 MANTÉN la sesión activa; no llames a stop hasta que pida parar, cierre el
 cliente, pulse el botón rojo o venza la sesión. Si ya está activa, no vuelvas a
@@ -98,6 +105,15 @@ unsupported o requires_user_action, dilo brevemente y no lo simules con éxito.
 No uses atlas_shell para saltarte estas reglas ni para fabricar llamadas al móvil.
 """
 SCREENSHOT_RETRY_SECONDS = 0.4
+
+
+def persistent_android_control_invocation(value: str) -> bool:
+    """Recognise only the explicit multi-turn Android control request."""
+    phrase = unicodedata.normalize("NFD", str(value or ""))
+    phrase = "".join(character for character in phrase if not unicodedata.combining(character))
+    phrase = re.sub(r"[^a-z0-9]+", " ", phrase.casefold()).strip()
+    phrase = re.sub(r"^(?:oye\s+)?atlas(?:\s+|$)", "", phrase).strip()
+    return phrase in {"controla mi telefono", "controla mi movil"}
 
 
 def terminal_text(value: str) -> str:
@@ -313,8 +329,9 @@ REALTIME_TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "name": "atlas_routine",
         "description": (
-            "Gestiona rutinas deterministas de ATLAS. Usa routine como JSON serializado. "
-            "Un fallo ya ejecutado se inspecciona con last_result y nunca se repite automáticamente."
+            "Gestiona rutinas deterministas de ATLAS. Usa routine como objeto JSON. "
+            "Incluye triggers como cadenas y requires_model como booleano. Una ejecución previa "
+            "se inspecciona con last_result y nunca se repite automáticamente."
         ),
         "parameters": {
             "type": "object",
@@ -324,7 +341,42 @@ REALTIME_TOOLS: list[dict[str, Any]] = [
                     "list", "show", "upsert", "delete", "enable", "disable", "run", "last_result",
                 ]},
                 "name": {"type": "string"},
-                "routine": {"type": "string", "description": "Objeto completo serializado como JSON."},
+                "routine": {
+                    "type": "object",
+                    "description": "Definición completa; triggers contiene texto, nunca objetos.",
+                    "additionalProperties": False,
+                    "properties": {
+                        "id": {"type": "string"},
+                        "name": {"type": "string"},
+                        "description": {"type": "string"},
+                        "thoughts": {"type": "string"},
+                        "triggers": {"type": "array", "minItems": 1,
+                                     "items": {"type": "string"}},
+                        "enabled": {"type": "boolean"},
+                        "requires_model": {
+                            "type": "boolean",
+                            "description": "False si shell + SAY resuelven todo localmente.",
+                        },
+                        "steps": {
+                            "type": "array", "minItems": 1,
+                            "items": {
+                                "type": "object", "additionalProperties": False,
+                                "properties": {
+                                    "type": {"type": "string", "enum": ["shell", "say"]},
+                                    "command": {"type": "string"},
+                                    "capture": {"type": "string"},
+                                    "timeout_seconds": {"type": "integer"},
+                                    "text": {"type": "string"},
+                                },
+                                "required": ["type"],
+                            },
+                        },
+                    },
+                    "required": [
+                        "id", "name", "description", "thoughts", "triggers",
+                        "enabled", "requires_model", "steps",
+                    ],
+                },
                 "replace": {"type": "boolean"},
                 "execution_id": {"type": "string"},
             },
@@ -387,8 +439,8 @@ REALTIME_TOOLS: list[dict[str, Any]] = [
                 "inspectAfter": {
                     "type": "boolean",
                     "description": (
-                        "Por defecto true: tras una acción correcta adjunta una captura "
-                        "actual. Usa false solo si de verdad no necesitas inspeccionarla."
+                        "Por defecto true tras acciones visuales; start no captura. "
+                        "Usa false solo si de verdad no necesitas inspeccionar el resultado."
                     ),
                 },
             },
@@ -425,6 +477,7 @@ class AtlasChat:
         self.tool_details: list[tuple[str, str]] = []
         self.last_direct_routine_handled = False
         self._android_control_active = False
+        self._android_control_persistent = False
         self._last_tool_image: dict[str, Any] | None = None
         self._prepare_storage()
 
@@ -639,6 +692,18 @@ class AtlasChat:
             or "capturar la pantalla (3)" in message
         )
 
+    @staticmethod
+    def _android_error_requires_stop(error: BaseException) -> bool:
+        """Only transport/control-loss failures invalidate an active UI session."""
+        message = str(error).casefold()
+        return any(marker in message for marker in (
+            "android device not connected", "companion unavailable",
+            "inicia primero una sesión", "accessibility_service",
+            "conexión directa con atlas a1 interrumpida",
+            "no se puede alcanzar atlas a1", "atlas a1 sin conexión",
+            "atlas a1 desconectado", "no se pudo verificar la identidad segura",
+        ))
+
     def _capture_android_screenshot(self) -> tuple[dict[str, Any], dict[str, Any]]:
         """Capture once, retrying only Android's documented short-interval failure."""
         last_error: BaseException | None = None
@@ -659,6 +724,7 @@ class AtlasChat:
 
     def _stop_android_control(self, *, force: bool = False) -> bool:
         """Best-effort synchronous stop used by every terminal exit/error path."""
+        self._android_control_persistent = False
         if not force and not getattr(self, "_android_control_active", False):
             return True
         try:
@@ -696,6 +762,8 @@ class AtlasChat:
 
     def _run_android_tool(self, args: dict[str, Any]) -> dict[str, Any]:
         operation = str(args.get("operation") or "").strip().lower()
+        if operation == "androiduse.stop":
+            self._android_control_persistent = False
         params = args.get("params", {})
         default_inspect = operation != "androiduse.start"
         inspect_after = args.get(
@@ -736,7 +804,7 @@ class AtlasChat:
                 self._last_tool_image = screenshot
                 response["screenshot"] = {
                     "attached": True,
-                    "mime": "image/png",
+                    "mime": screenshot["mime"],
                     "width": screenshot["width"],
                     "height": screenshot["height"],
                 }
@@ -744,8 +812,10 @@ class AtlasChat:
                     and (public.get("ok", True) is False or public.get("error"))):
                 self._stop_android_control(force=True)
             return response
-        except Exception:
-            if operation == "androiduse.start" or getattr(self, "_android_control_active", False):
+        except Exception as error:
+            if (operation == "androiduse.start"
+                    or (getattr(self, "_android_control_active", False)
+                        and self._android_error_requires_stop(error))):
                 self._stop_android_control(force=operation == "androiduse.start")
             raise
 
@@ -777,7 +847,8 @@ class AtlasChat:
             else:
                 result = {"ok": False, "error": f"Herramienta Realtime no disponible: {name}"}
         except Exception as error:
-            if name == "atlas_android" and getattr(self, "_android_control_active", False):
+            if (name == "atlas_android" and getattr(self, "_android_control_active", False)
+                    and self._android_error_requires_stop(error)):
                 self._stop_android_control()
             result = {"ok": False, "error": str(error), "output": str(error)}
         result.setdefault("durationMs", round((time.perf_counter() - started) * 1000, 1))
@@ -798,11 +869,12 @@ class AtlasChat:
         })
         if screenshot is None:
             return
-        encoded = str(screenshot.get("pngBase64") or "")
+        encoded = str(screenshot.get("imageBase64") or screenshot.get("pngBase64") or "")
         width = int(screenshot.get("width") or 0)
         height = int(screenshot.get("height") or 0)
         if not encoded or width <= 0 or height <= 0:
             return
+        mime = str(screenshot.get("mime") or "image/png")
         operation = str(result.get("operation") or "androiduse.screenshot")
         self._send({
             "type": "conversation.item.create",
@@ -820,7 +892,7 @@ class AtlasChat:
                     },
                     {
                         "type": "input_image",
-                        "image_url": f"data:image/png;base64,{encoded}",
+                        "image_url": f"data:{mime};base64,{encoded}",
                     },
                 ],
             },
@@ -841,7 +913,7 @@ class AtlasChat:
             self._show_tool("atlas_routine", {"action": "run", "name": direct.get("routineName")})
             self._show_tool_result(direct)
             self.log("routine.direct", interactionId=interaction_id, prompt=prompt, result=direct)
-            if direct.get("ok"):
+            if direct.get("ok") and direct.get("requiresModel") is False:
                 self.last_direct_routine_handled = True
                 answer = str(direct.get("spokenText") or "").strip()
                 if answer:
@@ -852,14 +924,25 @@ class AtlasChat:
                         except Exception as error:
                             self.log("context.persist_error", error=str(error))
                 return answer
-            prompt_for_model = (
-                f"{prompt}\n\n[ESTADO LOCAL DE ATLAS: la rutina «{direct.get('routineName', 'desconocida')}» "
-                f"ya se ejecutó y falló. No repitas la acción. Consulta atlas_routine con action=last_result "
-                f"y execution_id={direct.get('executionId', '')}; explica el fallo y corrige la rutina solo "
-                "si es sencillo, seguro y está autorizado.]"
-            )
+            if direct.get("ok"):
+                prompt_for_model = (
+                    f"{prompt}\n\n[ESTADO LOCAL DE ATLAS: la rutina «{direct.get('routineName', 'desconocida')}» "
+                    "coincidió y sus pasos ya se ejecutaron correctamente. Esta definición requiere "
+                    "interpretación del modelo. No repitas los pasos. Consulta atlas_routine con "
+                    f"action=last_result y execution_id={direct.get('executionId', '')}; responde a partir "
+                    "del resultado y no muestres comandos ni JSON salvo que se pidan.]"
+                )
+            else:
+                prompt_for_model = (
+                    f"{prompt}\n\n[ESTADO LOCAL DE ATLAS: la rutina «{direct.get('routineName', 'desconocida')}» "
+                    f"ya se ejecutó y falló. No repitas la acción. Consulta atlas_routine con action=last_result "
+                    f"y execution_id={direct.get('executionId', '')}; explica el fallo y corrige la rutina solo "
+                    "si es sencillo, seguro y está autorizado.]"
+                )
         else:
             prompt_for_model = prompt
+        if persistent_android_control_invocation(prompt):
+            self._android_control_persistent = True
         if self.ws is None:
             self.connect()
         started = time.perf_counter()
@@ -957,6 +1040,8 @@ class AtlasChat:
                     if status not in {"completed", "cancelled"}:
                         detail = event.get("response", {}).get("status_details")
                         raise AtlasChatError(f"Respuesta {status}: {detail or 'sin detalle'}")
+                    if status == "cancelled":
+                        self._stop_android_control()
                     if pending_continuation:
                         pending_continuation = False
                         self._send({"type": "response.create"})
@@ -998,7 +1083,9 @@ class AtlasChat:
                         self.console.print("[grey42]  El contexto conversacional está listo para compactarse.[/]")
                 except Exception as error:
                     self.log("context.persist_error", error=str(error))
-            self._stop_android_control()
+            if not (getattr(self, "_android_control_persistent", False)
+                    and getattr(self, "_android_control_active", False)):
+                self._stop_android_control()
             return answer
         except KeyboardInterrupt:
             spinner.stop()

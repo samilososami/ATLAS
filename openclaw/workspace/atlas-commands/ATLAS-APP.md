@@ -34,6 +34,15 @@ atlas-app control calendar.list from=1788825600000 to=1789430400000
 atlas-app control calendar.create --params '{"calendarId":1,"title":"Dentista","begin":1788865200000,"end":1788868800000}'
 ```
 
+`apps.launch app=Amazon` means **Amazon Shopping**
+(`com.amazon.mShop.android.shopping`); `app=Alexa` means the distinct Amazon
+Alexa app (`com.amazon.dee.app`). Use the requested human name and never treat
+those aliases as interchangeable. When the owner asks where the paired phone
+is, return `location.get.formattedAddress` exactly when present, including the
+full resolved address. Its structured `address` fields remain available for
+programmatic use. If reverse geocoding fails, report the coordinates and error
+without inventing or shortening an address.
+
 Resolve a contact before calling and pass `number`, not a display name. SMS uses
 `text`, not `message`. Calendar times are Unix milliseconds: first inspect
 `calendar.list`, choose an entry from `editableCalendars`, then use its `id` as
@@ -45,17 +54,18 @@ takes the WebScreen lease; reading status does not. The persistent Companion
 WebSocket is independent from that model lease.
 
 WebScreen and `atlas-chat` expose these native methods through the typed
-`atlas_phone` tool. Their typed `atlas_android` fallback attaches a fresh phone
-capture as a separate Realtime `input_image`, so the model can inspect the
-result without receiving PNG base64 in the function output.
+`atlas_phone` tool. Their typed `atlas_android` fallback attaches a fresh,
+reduced JPEG capture as a separate Realtime `input_image`, so the model can
+inspect the result without receiving image base64 in the function output.
 
-The default endpoint is `wss://<A1 MagicDNS>:5010/app` inside the owner's
-tailnet. TLS pinning and encrypted AES-GCM boxes remain mandatory. Tailscale
-membership and ATLAS BLE pairing are separate trust layers. Never expose
-WebScreen/5000 or pairing material. A direct route and a Tailscale DERP route
-are both valid Tailscale transport; loss of either never enables the legacy
-Cloudflare relay automatically. Only `atlas-app legacy-relay ...` may select
-that compatibility mode explicitly.
+The default endpoint is tailnet-only `wss://<A1 100.x address>:5010/app`. TLS
+pinning and encrypted AES-GCM boxes remain mandatory. Tailscale membership and
+ATLAS BLE pairing are separate trust layers. Never expose WebScreen/5000 or
+pairing material. When A1 and the phone share a LAN, prefer and verify the direct
+peer-to-peer Tailscale path for the lowest latency; an encrypted Tailscale DERP
+path remains a valid fallback when direct UDP cannot be established. Loss of
+either never enables the legacy Cloudflare relay automatically. Only
+`atlas-app legacy-relay ...` may select that compatibility mode explicitly.
 
 Companion reads and dispatches encrypted WebSocket RPC concurrently. This lets
 the socket receive `app.reply` while the originating RPC waits for a native

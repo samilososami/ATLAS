@@ -259,13 +259,47 @@ class RealtimeBackendTests(unittest.TestCase):
         self.assertEqual(session["atlasOutput"], "elevenlabs")
         self.assertEqual(session["atlasSelection"], "elevenlabs")
 
-    def test_elevenlabs_uses_maximum_free_format_and_conversational_model(self):
-        with patch.object(app, "get_tts_settings", return_value=("test-key", "test-voice")):
+    def test_elevenlabs_uses_maximum_free_format_and_low_latency_model(self):
+        with patch.object(app, "get_tts_settings", return_value=("test-key", "test-voice")), \
+             patch.object(app, "ELEVENLABS_REALTIME_MODEL", "eleven_flash_v2_5"):
             request = app.elevenlabs_speech_request("Hola, sami")
         self.assertIn("output_format=mp3_44100_128", request.full_url)
         self.assertNotIn("optimize_streaming_latency", request.full_url)
-        payload = request.data.decode("utf-8")
-        self.assertIn('"model_id": "eleven_v3"', payload)
+        payload = json.loads(request.data)
+        self.assertEqual(payload["model_id"], "eleven_flash_v2_5")
+        self.assertEqual(payload["language_code"], "es")
+        self.assertEqual(payload["voice_settings"]["style"], 0.0)
+        self.assertFalse(payload["voice_settings"]["use_speaker_boost"])
+
+    def test_elevenlabs_proxy_forwards_the_first_available_upstream_chunk(self):
+        class ChunkedResponse:
+            def __init__(self):
+                self.chunks = iter((b"first", b"second", b""))
+                self.read1_calls = []
+
+            def read1(self, maximum):
+                self.read1_calls.append(maximum)
+                return next(self.chunks)
+
+            def read(self, _maximum):
+                raise AssertionError("read() would coalesce the streaming response")
+
+        response = ChunkedResponse()
+        self.assertEqual(list(app.iter_elevenlabs_audio(response)), [b"first", b"second"])
+        self.assertEqual(response.read1_calls, [app.ELEVENLABS_STREAM_READ_BYTES] * 3)
+
+    def test_elevenlabs_proxy_keeps_a_read_fallback_for_non_http_test_streams(self):
+        class BufferedResponse:
+            def __init__(self):
+                self.chunks = iter((b"audio", b""))
+
+            def read(self, maximum):
+                self.asserted_maximum = maximum
+                return next(self.chunks)
+
+        response = BufferedResponse()
+        self.assertEqual(list(app.iter_elevenlabs_audio(response)), [b"audio"])
+        self.assertEqual(response.asserted_maximum, app.ELEVENLABS_STREAM_READ_BYTES)
 
     def test_tts_stream_ticket_is_opaque_and_expires(self):
         now = 100.0
@@ -276,6 +310,18 @@ class RealtimeBackendTests(unittest.TestCase):
         with patch.object(app.time, "monotonic", return_value=now + app.TTS_STREAM_TICKET_SECONDS + 1):
             with self.assertRaises(KeyError):
                 app.resolve_tts_stream_ticket(token)
+
+    def test_tts_stream_ticket_reports_the_effective_model_and_format(self):
+        handler = self.handler()
+        handler.read_json_payload = Mock(return_value={"text": "Respuesta breve"})
+        with patch.object(app, "ELEVENLABS_REALTIME_MODEL", "eleven_flash_v2_5"), \
+             patch.object(app, "create_tts_stream_ticket", return_value="a" * 32):
+            handler.handle_tts_stream_ticket()
+        handler.send_json.assert_called_once_with(201, {
+            "streamUrl": f"/api/tts/stream/{'a' * 32}",
+            "format": "mp3_44100_128",
+            "model": "eleven_flash_v2_5",
+        })
 
     def test_realtime_direct_event_creates_its_own_log(self):
         with tempfile.TemporaryDirectory() as directory, patch.object(app, "LOG_DIR", Path(directory)):

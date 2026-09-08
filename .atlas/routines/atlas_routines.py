@@ -13,17 +13,23 @@ from pathlib import Path
 import routine_engine as engine
 
 
-def print_routine(routine: dict) -> None:
+def print_routine(routine: dict, number: int | None = None, detailed: bool = True) -> None:
     state = "activa" if routine["enabled"] else "desactivada"
-    print(f"{routine['name']} ({routine['id']}) · {state}")
-    print(f"  {routine['description'] or 'Sin descripción'}")
-    print(f"  Frases: {', '.join(routine['triggers'])}")
+    prefix = f"{number}. " if number is not None else ""
+    print(f"{prefix}{routine['name']} · {state}")
+    if not detailed:
+        return
+    print(f"   ID: {routine['id']}")
+    print(f"   {routine['description'] or 'Sin descripción'}")
+    print(f"   Frases: {', '.join(routine['triggers'])}")
+    print(f"   Modelo: {'sí' if routine['requires_model'] else 'no'}")
+    print("   Pasos:")
     for index, step in enumerate(routine["steps"], 1):
         if step["type"] == "shell":
             capture = f" → {step['capture']}" if step.get("capture") else ""
-            print(f"  {index}. $ {step['command']}{capture}")
+            print(f"     {index}. $ {step['command']}{capture} · {step['timeout_seconds']} s")
         else:
-            print(f"  {index}. [SAY] {step['text']}")
+            print(f"     {index}. [SAY] {step['text']}")
 
 
 def interactive_create() -> dict:
@@ -46,7 +52,7 @@ def interactive_create() -> dict:
         raise engine.RoutineError("La rutina necesita al menos un comando o un texto SAY")
     return {"id": engine.slugify(name), "name": name, "description": description,
             "thoughts": "Creada mediante la guía SSH.", "triggers": [trigger],
-            "enabled": True, "steps": steps}
+            "enabled": True, "requires_model": False, "steps": steps}
 
 
 def edit_registry() -> None:
@@ -70,14 +76,17 @@ def edit_registry() -> None:
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(prog="atlas-routines", description="Rutinas deterministas de ATLAS")
     sub = root.add_subparsers(dest="action")
-    sub.add_parser("list", help="listar rutinas")
+    list_command = sub.add_parser("list", help="listar rutinas")
+    list_command.add_argument("--expand", action="store_true", help="mostrar todos los detalles")
     show = sub.add_parser("show", help="ver una rutina"); show.add_argument("name")
     run = sub.add_parser("run", help="ejecutar por nombre"); run.add_argument("name")
     match = sub.add_parser("match", help="probar una frase exacta"); match.add_argument("phrase")
     create = sub.add_parser("create", help="crear una rutina")
+    create.add_argument("--id", help="id estable; por defecto se deriva del nombre")
     create.add_argument("--name"); create.add_argument("--description", default="")
     create.add_argument("--trigger"); create.add_argument("--command"); create.add_argument("--capture")
     create.add_argument("--say"); create.add_argument("--thoughts", default="")
+    create.add_argument("--requires-model", action=argparse.BooleanOptionalAction, default=False)
     create.add_argument("--replace", action="store_true")
     for action in ("delete", "enable", "disable"):
         command = sub.add_parser(action); command.add_argument("name")
@@ -95,8 +104,11 @@ def main() -> int:
             routines = engine.list_routines()
             if not routines:
                 print("No hay rutinas guardadas.")
-            for routine in routines:
-                print_routine(routine)
+            for number, routine in enumerate(routines, 1):
+                expanded = bool(getattr(args, "expand", False))
+                print_routine(routine, number=number, detailed=expanded)
+                if expanded and number < len(routines):
+                    print()
         elif action == "show":
             print_routine(engine.get_routine(args.name))
         elif action == "run":
@@ -117,9 +129,10 @@ def main() -> int:
                     steps.append(shell)
                 if args.say:
                     steps.append({"type": "say", "text": args.say})
-                routine = {"id": engine.slugify(args.name), "name": args.name,
+                routine = {"id": args.id or engine.slugify(args.name), "name": args.name,
                            "description": args.description, "thoughts": args.thoughts,
-                           "triggers": [args.trigger], "enabled": True, "steps": steps}
+                           "triggers": [args.trigger], "enabled": True,
+                           "requires_model": args.requires_model, "steps": steps}
             else:
                 routine = interactive_create()
             print_routine(engine.upsert_routine(routine, replace=args.replace))

@@ -25,6 +25,18 @@ assert.match(source,
   "only the short-interval screenshot error may retry");
 assert.match(source, /SCREENSHOT_MAX_ATTEMPTS=2/,
   "screenshots must make at most one retry");
+assert.match(source, /SCREENSHOT_MAX_WIDTH=640/,
+  "captures must be resized before transport");
+assert.match(source, /Bitmap\.CompressFormat\.JPEG,SCREENSHOT_JPEG_QUALITY/,
+  "captures must use the smaller server-compatible JPEG payload");
+assert.match(source, /result\.get\(6,TimeUnit\.SECONDS\)/,
+  "a stuck Android capture must fail within the bounded fast deadline");
+assert.match(source, /case "click": return onMain\(\(\)->clickLabel\(p\)\)/,
+  "semantic click must be a first-class Android Use action");
+assert.match(source, /performAction\(AccessibilityNodeInfo\.ACTION_CLICK\)/,
+  "semantic click must invoke the accessibility action instead of guessing coordinates");
+assert.match(source, /Normalizer\.normalize/,
+  "semantic label matching must tolerate case and accents");
 assert.match(source, /setGuardPassThrough\(true\)[\s\S]*main\.postDelayed[\s\S]*dispatchGesture/,
   "the overlay must become pass-through before gesture dispatch");
 assert.match(source, /GESTURE_OVERLAY_SETTLE_MS=80/,

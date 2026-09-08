@@ -16,6 +16,10 @@ Cada rutina contiene:
 - Una o varias `triggers`. La comparación ignora mayúsculas, acentos,
   puntuación y un `ATLAS` inicial, pero no hace coincidencias difusas.
 - `enabled`, para desactivarla sin eliminarla.
+- `requires_model`, un booleano explícito. En `false`, el resultado es
+  completamente local: no se abre una respuesta del modelo y solo se entrega
+  el texto `[SAY]` ya resuelto. En `true`, los pasos se ejecutan una vez y el
+  modelo recibe el resultado registrado para interpretarlo, sin repetirlos.
 - `steps`, ejecutados en orden. `shell` ejecuta un comando acotado y puede
   capturar su salida; `say` prepara el texto que ATLAS debe pronunciar.
 
@@ -29,6 +33,7 @@ proponer una corrección; nunca repite por su cuenta una acción con efectos.
 
 ```bash
 atlas-routines list
+atlas-routines list --expand
 atlas-routines show hora
 atlas-routines create
 atlas-routines run hora
@@ -39,7 +44,13 @@ atlas-routines enable hora
 atlas-routines delete hora
 ```
 
-`atlas-routines create` guía una creación sencilla. `edit` abre una copia
+`list` imprime una línea numerada por rutina; `list --expand` añade id,
+descripción, frases, uso del modelo y pasos. `atlas-routines create` guía una
+creación sencilla con `requires_model: false`; el modo no interactivo acepta
+`--requires-model` cuando la salida realmente necesite interpretación y
+`--no-requires-model` para dejar explícita la vía local. Al reemplazar una
+entrada cuyo id no sea el slug actual del nombre, usa `--id ID --replace`.
+`edit` abre una copia
 temporal en `$EDITOR`, la valida y solo entonces sustituye el registro. El mismo
 comando funciona como `sami` y como root; root delega al usuario de ATLAS para
 no dejar archivos con propietario incorrecto.
@@ -57,6 +68,10 @@ antes de guardar, siempre dentro de las reglas normales de autorización. Debe
 conservar después el comando directo más corto que haya sido realmente
 verificado. Probar una televisión, por ejemplo, no autoriza a inventar su IP ni
 a saltarse una confirmación ADB.
+
+Las frases se guardan como texto (`"qué hora es"`), no como objetos. El lector
+acepta y normaliza el antiguo objeto `{"type":"phrase","value":"..."}` para
+recuperar registros ya creados, pero toda escritura usa la forma canónica.
 
 Consulta `EXAMPLES.md` para ver una rutina de hora sin añadirla al registro
 activo.

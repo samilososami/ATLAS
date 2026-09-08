@@ -4,6 +4,8 @@ import importlib.machinery
 import importlib.util
 import json
 import pathlib
+import base64
+import tempfile
 import types
 import unittest
 from unittest import mock
@@ -25,6 +27,22 @@ ANDROID_USE = load_script("atlas_androiduse_wrapper", "atlas-androiduse")
 
 
 class AtlasAppControlContractTests(unittest.TestCase):
+    def test_tailscale_status_endpoint_prefers_private_ipv4(self):
+        payload = {
+            "BackendState": "Running",
+            "Self": {
+                "Online": True, "HostName": "atlas-a1",
+                "TailscaleIPs": ["100.112.71.111", "fd7a:115c:a1e0::1"],
+            },
+            "Peer": {},
+        }
+        completed = types.SimpleNamespace(stdout=json.dumps(payload))
+        with mock.patch.object(ATLAS_APP.subprocess, "run", return_value=completed), \
+             mock.patch("shutil.which", return_value="/usr/bin/tailscale"):
+            result = ATLAS_APP.tailscale_state()
+        self.assertEqual(result["host"], "atlas-a1")
+        self.assertEqual(result["endpoint"], "wss://100.112.71.111:5010/app")
+
     def test_friendly_aliases_are_normalized_to_wire_methods(self):
         expected = {
             "location": "control.location.get",
@@ -70,6 +88,12 @@ class AndroidUseParameterTests(unittest.TestCase):
             ANDROID_USE.parameters("long_press", ["0.5", "0.6", "900"]),
             {"x": 0.5, "y": 0.6, "duration": 900},
         )
+
+    def test_semantic_click_joins_the_human_label(self):
+        self.assertEqual(
+            ANDROID_USE.parameters("click", ["Buscar", "en", "Amazon"]),
+            {"text": "Buscar en Amazon", "exact": True},
+        )
         self.assertEqual(
             ANDROID_USE.parameters("swipe", ["0.5", "0.8", "0.5", "0.2", "420"]),
             {"x1": 0.5, "y1": 0.8, "x2": 0.5, "y2": 0.2, "duration": 420},
@@ -95,6 +119,22 @@ class AndroidUseParameterTests(unittest.TestCase):
         command = run.call_args.args[0]
         self.assertEqual(command[-2:], ["control", "androiduse.home"])
         self.assertEqual(json.loads(command[command.index("--params") + 1]), {})
+
+    def test_jpeg_screenshot_is_saved_with_capture_dimensions(self):
+        encoded = base64.b64encode(b"\xff\xd8\xfffixture").decode("ascii")
+        with tempfile.TemporaryDirectory() as directory:
+            requested = pathlib.Path(directory) / "capture.png"
+            result = ANDROID_USE.save_screenshot({
+                "mime": "image/jpeg", "data": encoded,
+                "width": 1440, "height": 3088,
+                "captureWidth": 640, "captureHeight": 1372,
+            }, str(requested))
+            target = pathlib.Path(result["path"])
+            self.assertEqual(target.suffix, ".jpg")
+            self.assertFalse(requested.exists())
+            self.assertEqual(target.read_bytes(), b"\xff\xd8\xfffixture")
+            self.assertEqual((result["width"], result["height"]), (640, 1372))
+            self.assertEqual(result["mime"], "image/jpeg")
 
 
 if __name__ == "__main__":

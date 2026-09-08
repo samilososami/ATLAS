@@ -31,8 +31,8 @@ Realtime handles the conversation directly with shared Markdown and explicit
 tools. The archived starter/Whisper pipeline is not an automatic fallback.
 `atlas-chat` shares that model/context/tool path, including typed `atlas_phone`
 and `atlas_android`, but not browser ownership or microphone/playback. Visual
-captures are attached to Realtime as private `input_image` items rather than
-filesystem paths or base64 tool output. Companion BLE pairing, Tailscale membership, Bluetooth
+captures are reduced JPEGs attached to Realtime as private `input_image` items
+rather than filesystem paths or base64 tool output. Companion BLE pairing, Tailscale membership, Bluetooth
 speaker pairing, Accessibility and Android ADB authorisation are independent
 relationships. A green VPN icon is not proof of a live Companion socket.
 
@@ -97,6 +97,10 @@ to the Internet or put lease tokens in URLs, logs or public files.
 6. For the ATLAS app, run `atlas-app status --json`, then `tailscale ping s23u`
    only when the saved device alias resolves. Distinguish Tailscale `Running`, a
    direct/DERP path, Companion/5010 and the app's persistent encrypted socket.
+   The endpoint stays on the A1's private `100.x` address. On a shared LAN the
+   preferred state is direct P2P; `tailscale ping`/`status` is the evidence, and
+   an encrypted DERP fallback is still a valid connection rather than a second
+   application protocol.
    Never open 5010 publicly as a repair and never enable the legacy relay as an
    automatic fallback. Companion dispatches socket RPC concurrently so a
    waiting native tool cannot block the `app.reply` that completes it; keep
@@ -107,10 +111,17 @@ to the Internet or put lease tokens in URLs, logs or public files.
    server as an automatic fix. Cached private records are context, not liveness.
 8. For an agent-driven phone action, check `atlas_phone` first. Canonical
    methods include `location.get`, `phone.capabilities` and `phone.call`; aliases
-   are only input conveniences. If visual control is necessary, use normalized
-   coordinates, inspect each important result and guarantee `androiduse.stop`
-   from success, error, cancellation and timeout paths. A password-redacted tree
-   is not a signal to inspect the corresponding screen by another route.
+   are only input conveniences. Keep Amazon Shopping and Alexa as distinct
+   `apps.launch` targets. For the paired owner's location, return the complete
+   `formattedAddress` when present; otherwise report coordinates and the
+   reverse-geocoding error without inventing an address. If visual control is
+   necessary, prefer an exact accessible-label `androiduse.click`, then use
+   normalized coordinates as fallback and inspect each important result. A
+   recoverable action/inspection error keeps the session alive. Guarantee
+   `androiduse.stop` after completion or abandonment and on cancellation,
+   overall timeout, client exit or terminal transport/Accessibility loss. A
+   password-redacted tree is not a signal to inspect the corresponding screen
+   by another route.
 
 Do not reset Wi-Fi, remove Bluetooth pairings, disconnect unrelated devices or
 restart BlueZ/PipeWire/the browser together to “see if it helps”. Prefer the
@@ -158,6 +169,12 @@ The **1–3 s** first-spoken-response goal is a measured target, not a guarantee
 Keep sample count, selected output mode, cold/warm status and limitations with
 results. Use `atlas-chat --ephemeral -p "..."` for isolated logical/read-only
 tests; it does not validate wake detection, speech synthesis or room acoustics.
+
+For external ElevenLabs speech, WebScreen defaults to `eleven_flash_v2_5` and
+forwards each available upstream HTTP chunk instead of waiting to fill 8 KiB.
+`tts.playback_started` still measures the browser's actual `playing` event, so
+network, provider inference and Chrome buffering remain part of the observed
+latency.
 
 Check a warm wake request, rejection of speech without a new ATLAS, cancellation, lost control,
 transient reconnect and the requested read-only device operation. Test physical

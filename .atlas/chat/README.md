@@ -12,8 +12,11 @@ can use concise Markdown, paths, digits and technical units instead of the
 speech-oriented formatting used by WebScreen.
 
 Before opening a model response, the client checks the same exact local routine
-registry as WebScreen. A match appears as a grey `RUTINA` panel. Its `[SAY]`
-text is printed in white; a successful routine without `[SAY]` stays silent.
+registry as WebScreen. A match appears as a grey `RUTINA` panel. With
+`requires_model: false`, its resolved `[SAY]` text is the only answer printed in
+white; a successful routine without `[SAY]` stays silent. A routine marked
+`requires_model: true` hands its already-recorded result to Realtime without
+executing the steps a second time.
 Failures are passed to Realtime with their execution id and are never replayed
 automatically. The model also receives `atlas_routine` for list/show/create,
 modify and delete flows.
@@ -40,18 +43,25 @@ total timing. Private history and JSONL diagnostics stay under
 `phone.capabilities` and `phone.call`. The friendly spellings `location`,
 `get_location`, `capabilities`, `call` and the historical `calls.place` are
 normalized to those canonical methods; an already prefixed `control.*` name is
-not double-prefixed. Prefer native calls whenever Android offers one.
+not double-prefixed. Prefer native calls whenever Android offers one. `Amazon`
+launches Amazon Shopping and `Alexa` launches the separate Alexa app. A paired
+owner's location result keeps the exact `formattedAddress` and structured
+address fields; if reverse geocoding fails, return coordinates and the error
+instead of inventing or shortening an address.
 
 `atlas_android` accepts only the documented `androiduse.*` allowlist. A
 successful screenshot or inspected visual action is returned to Realtime as a
-separate `input_image`; its PNG bytes never appear in the function result,
-terminal transcript or durable history. Coordinates are normalized from `0`
-to `1`, so they remain valid even though the private image may be resized for
-the model. Its typed `androiduse.key` operation accepts `ENTER`; package names
-and allowed links are passed separately as `package` or `uri`. A visual flow
-always calls `androiduse.stop` after success and on
-cancellation, error or client exit. Accessibility-tree password fields and
-their descendants are returned as `[REDACTED]`.
+separate reduced JPEG `input_image`; its bytes never appear in the function
+result, terminal transcript or durable history. Prefer `androiduse.click` with
+an exact label from the Accessibility tree; coordinates normalized from `0` to
+`1` are the fallback and still refer to the physical screen when the image has
+been resized. Its typed `androiduse.key` operation accepts `ENTER`; package names
+and allowed links are passed separately as `package` or `uri`. A recoverable
+action or inspection error preserves the session for correction. A visual flow
+calls `androiduse.stop` after completion or abandonment and on cancellation,
+overall timeout, client exit or terminal device/socket/Accessibility loss.
+Accessibility-tree password fields and their descendants are returned as
+`[REDACTED]`.
 
 Normal turns read and write the persistent conversation shared with WebScreen.
 `--ephemeral` neither reads that history nor writes the diagnostic turn back.

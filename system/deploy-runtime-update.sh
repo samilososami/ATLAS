@@ -19,7 +19,10 @@ test -d "$atlas_home/.atlas"
 mode_before=$(tr -d '[:space:]' <"$atlas_home/.atlas/screen/mode")
 kiosk_before=$(systemctl is-active atlas-screen-kiosk.service || true)
 overlay_before=$(systemctl is-active atlas-screen-black-overlay.service || true)
-test "$mode_before" = atlas-hide
+case "$mode_before" in
+  desktop|terminal|atlas|atlas-new|atlas-hide|rafas) ;;
+  *) printf 'Unknown ATLAS screen mode: %s\n' "$mode_before" >&2; exit 1 ;;
+esac
 
 owner=$(stat -c %U "$atlas_home")
 group=$(id -gn "$owner")
@@ -51,6 +54,7 @@ install_context_doc "$repo/openclaw/workspace/TOOLS.md" "$workspace/TOOLS.md"
 install_context_doc "$repo/openclaw/workspace/atlas-commands/ATLAS-WEBSCREEN.md" "$workspace/atlas-commands/ATLAS-WEBSCREEN.md"
 install_context_doc "$repo/atlas-commands/README.md" "$workspace/atlas-commands/README.md"
 
+ATLAS_HOME="$atlas_home" bash "$repo/system/install-routines.sh"
 ATLAS_HOME="$atlas_home" bash "$repo/system/install-webscreen-resilience.sh" --restart
 ATLAS_HOME="$atlas_home" bash "$repo/system/install-chat.sh"
 ATLAS_HOME="$atlas_home" bash "$repo/system/install-companion.sh"

@@ -142,8 +142,10 @@ and `--atlas-hide` behavior. HTTP success alone does not prove renderer health.
 
 The current conversation uses direct `gpt-realtime-2.1`, the shared Markdown
 context and typed shell, web-search, routine, native-phone and Android Use
-tools. Android screenshots are attached as private `input_image` items; visual
-control uses normalized coordinates, password-redacted trees and mandatory
+tools. Android screenshots are attached as reduced private JPEG `input_image`
+items; visual control prefers exact accessible-label clicks, uses normalized
+coordinates as fallback and keeps password-redacted trees. Recoverable visual
+errors preserve the session; completion, abandonment and terminal loss require
 `androiduse.stop`. Chrome validates the local ATLAS
 wake word; do not describe the recognizer as a guaranteed offline speech engine.
 Partial/final recognition results must not create duplicate turns. Permission
@@ -223,6 +225,9 @@ Distinguish cold connection setup, end-of-user-speech to first model text, and
 actual playback start. `output.first_delta`, `audio.playback_started` and
 `tts.playback_started` expose different milestones; the external TTS event's
 duration is measured from queuing that speech chunk, not the entire turn.
+ElevenLabs defaults to `eleven_flash_v2_5`; its proxy forwards each available
+HTTP fragment instead of waiting for a full 8 KiB read, but provider, network
+and Chrome buffering still count until the `playing` event.
 Text-only `atlas-chat` measures neither wake detection nor physical audibility.
 The desired 1–3 seconds is a warm-turn target to measure, not a guarantee or a
 reason to label a generated token as audible speech.

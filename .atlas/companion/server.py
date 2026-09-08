@@ -35,7 +35,8 @@ class Companion:
         sockets=list(self.sockets.values()); self.sockets.clear()
         for ws in sockets:
             with contextlib.suppress(Exception): await ws.close(code=4001,message=b'pairing revoked')
-        for future in self.mobile_pending.values():
+        for pending in self.mobile_pending.values():
+            future=pending['future']
             if not future.done(): future.set_exception(ValueError('Android device not connected'))
         self.mobile_pending.clear(); self.cipher=Cipher(self.config['key'],'pi')
     async def request(self,path,data=None):
@@ -96,6 +97,7 @@ class Companion:
             own=raw.get('Self') or {}; ips=own.get('TailscaleIPs') or []
             ipv4=next((value for value in ips if '.' in value),'')
             host=own.get('HostName') or ipv4
+            endpoint_host=ipv4 or host
             peer=next((value for value in (raw.get('Peer') or {}).values()
                        if str(value.get('HostName','')).lower()==str(self.paired_device or '').lower()),None)
             if peer and peer.get('CurAddr'): path='direct'
@@ -103,7 +105,7 @@ class Companion:
             elif peer and peer.get('Online'): path='idle'
             else: path='not-connected'
             return {'installed':True,'state':raw.get('BackendState','Unknown'),'online':bool(own.get('Online')),
-                    'host':host,'ip':ipv4,'endpoint':f'wss://{host}:5010/app' if host else '',
+                    'host':host,'ip':ipv4,'endpoint':f'wss://{endpoint_host}:5010/app' if endpoint_host else '',
                     'deviceOnline':bool(peer and peer.get('Online')),'path':path}
         except Exception:
             installed=bool(__import__('shutil').which('tailscale'))
@@ -158,7 +160,7 @@ class Companion:
         if not live: raise ValueError('Android device not connected')
         _,client,ws=max(live)
         request_id=secrets.token_hex(16); future=asyncio.get_running_loop().create_future()
-        self.mobile_pending[request_id]=future
+        self.mobile_pending[request_id]={'future':future,'socket':ws,'client':client}
         message={'id':request_id,'method':method,'params':params,'serverRequest':True}
         try:
             await ws.send_json({'box':self.cipher.seal(message)})
@@ -168,6 +170,13 @@ class Companion:
         finally: self.mobile_pending.pop(request_id,None)
         if reply.get('error'): raise ValueError(str(reply['error'])[:240])
         return reply.get('result',{})
+    def disconnect_mobile(self,ws):
+        """Fail requests bound to a closed socket instead of waiting for timeout."""
+        for request_id,pending in list(self.mobile_pending.items()):
+            if pending['socket'] is not ws: continue
+            future=pending['future']
+            if not future.done(): future.set_exception(ConnectionError('Android device not connected'))
+            self.mobile_pending.pop(request_id,None)
     async def rpc(self,msg,peer,ws=None):
         if not isinstance(msg,dict): raise ValueError('Petición inválida')
         client=msg.get('client','')
@@ -178,7 +187,7 @@ class Companion:
         method=msg.get('method'); p=msg.get('params') or {}
         if not isinstance(method,str) or not isinstance(p,dict): raise ValueError('Petición inválida')
         if method=='app.reply':
-            request_id=p.get('requestId',''); future=self.mobile_pending.get(request_id)
+            request_id=p.get('requestId',''); pending=self.mobile_pending.get(request_id);future=pending['future'] if pending else None
             if future and not future.done(): future.set_result({'result':p.get('result',{}),'error':p.get('error')})
             return {'ok':bool(future)}
         if method=='pairing.unpair':
@@ -330,6 +339,7 @@ def application(config):
         finally:
             for task in tasks: task.cancel()
             await asyncio.gather(*tasks,return_exceptions=True)
+            c.disconnect_mobile(ws)
             disconnected=[client for client,value in c.sockets.items() if value is ws]
             c.sockets={client:value for client,value in c.sockets.items() if value is not ws}
             for client in disconnected: c.clients.pop(client,None)

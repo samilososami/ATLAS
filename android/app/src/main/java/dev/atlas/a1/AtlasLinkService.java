@@ -12,7 +12,7 @@ public final class AtlasLinkService extends Service {
     static final String CHANNEL="atlas-link";
     private static final int NOTIFICATION_ID=41;
     private static final long OFFLINE_FALLBACK_MS=300_000;
-    private static final long MAX_RETRY_MS=60_000;
+    private static final long MAX_RETRY_MS=15_000;
 
     private final Object scheduleLock=new Object();
     private final AtlasConnection.RelayObserver relayObserver=this::relayChanged;

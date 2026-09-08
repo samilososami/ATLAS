@@ -17,10 +17,21 @@ assert.match(source, /x1, y1, x2 e y2 normalizados entre 0 y 1/,
   "the Android tool description must require normalized swipe coordinates");
 assert.match(source, /No uses coordenadas en píxeles/,
   "the session policy must explicitly reject pixel coordinates");
+assert.match(source, /\['click','tap','long_press'/,
+  "semantic clicks must receive the same post-action inspection as gestures");
 assert.match(source, /androidControlActive=false/,
   "Realtime must track whether Android Use is active");
 assert.match(source, /const androidStop=this\.stopAndroidControlSilently\(true\)/,
   "closing Realtime must attempt to stop Android Use first");
+assert.match(source,
+  /action==='start'&&this\.androidStopPromise\)await this\.androidStopPromise/,
+  "a new Android Use start must wait for an earlier stop to settle");
+assert.doesNotMatch(source,
+  /case'error':[^{]*\{this\.stopAndroidControlSilently\(\)/,
+  "generic Realtime provider errors must not stop Android Use");
+assert.doesNotMatch(source,
+  /\['failed','incomplete'\][^}]*this\.stopAndroidControlSilently\(\)/,
+  "failed or incomplete model responses must not stop Android Use");
 assert.doesNotMatch(activitySource, /case "realtimeWarmup":\s*event\("realtimeState"/,
   "native warmup must not overwrite the WebRTC-owned connection indicator");
 assert.match(source, /async background\(\)\{this\.holding=false;await this\.close\(true\);\}/,
@@ -126,6 +137,114 @@ const voice = context.window.voice;
   "cleanup must preserve the function output and response chaining");
   assert.equal(sent[0].item.type, "function_call_output");
   assert.equal(sent[0].item.call_id, "call-test");
+
+  nativeCalls.length = 0;
+  sent.length = 0;
+  nativeHandler = (_method, params) => {
+    if (params.method === "androiduse.click") {
+      return Promise.reject(new Error("El teléfono no respondió a tiempo"));
+    }
+    if (params.method === "androiduse.stop") return Promise.resolve({ ok: true });
+    return Promise.resolve({});
+  };
+  await voice.tool({
+    name: "atlas_android",
+    arguments: JSON.stringify({ action: "click", params: { text: "Buscar" } }),
+    call_id: "call-recoverable",
+  });
+  assert.equal(voice.androidControlActive, true,
+    "a recoverable semantic-click miss must preserve the explicit session");
+  assert.equal(nativeCalls.some(({ params }) => params.method === "androiduse.stop"), false,
+    "a recoverable action error must not issue androiduse.stop");
+  assert.match(sent[0].item.output, /no respondió a tiempo/);
+
+  nativeCalls.length = 0;
+  sent.length = 0;
+  nativeHandler = (_method, params) => {
+    if (params.method === "androiduse.home") return Promise.resolve({ ok: true });
+    if (params.method === "androiduse.tree") {
+      return Promise.reject(new Error("No hay una ventana activa"));
+    }
+    if (params.method === "androiduse.stop") return Promise.resolve({ ok: true });
+    return Promise.resolve({});
+  };
+  await voice.tool({
+    name: "atlas_android",
+    arguments: JSON.stringify({ action: "home" }),
+    call_id: "call-inspection",
+  });
+  assert.equal(voice.androidControlActive, true,
+    "a failed inspection after a completed action must preserve the session");
+  assert.match(sent[0].item.output, /inspectionError/,
+    "the completed action must be returned with its inspection error");
+  assert.equal(nativeCalls.some(({ params }) => params.method === "androiduse.stop"), false);
+
+  nativeCalls.length = 0;
+  voice.androidControlActive = true;
+  voice.turn = "";
+  voice.response = "";
+  voice.event({
+    type: "error",
+    error: { code: "provider_error", message: "OpenAI Realtime falló" },
+  });
+  voice.event({
+    type: "response.done",
+    response: { status: "failed", status_details: { error: { message: "Respuesta fallida" } } },
+  });
+  voice.event({
+    type: "response.done",
+    response: { status: "incomplete", status_details: {} },
+  });
+  assert.equal(voice.androidControlActive, true,
+    "provider and response failures must preserve explicit Android control");
+  assert.equal(nativeCalls.some(({ params }) => params?.method === "androiduse.stop"), false,
+    "provider and response failures must not issue androiduse.stop");
+
+  nativeCalls.length = 0;
+  sent.length = 0;
+  nativeHandler = (_method, params) => {
+    if (params.method === "androiduse.click") {
+      return Promise.reject(new Error("Android device not connected"));
+    }
+    if (params.method === "androiduse.stop") return Promise.resolve({ ok: true });
+    return Promise.resolve({});
+  };
+  await voice.tool({
+    name: "atlas_android",
+    arguments: JSON.stringify({ action: "click", params: { text: "Buscar" } }),
+    call_id: "call-terminal",
+  });
+  await Promise.resolve();
+  assert.equal(voice.androidControlActive, false,
+    "a terminal Android transport failure must still clear the session");
+  assert.equal(nativeCalls.filter(({ params }) =>
+    params?.method === "androiduse.stop").length, 1,
+  "terminal Android failures must still issue one stop");
+
+  let releaseStop;
+  const pendingStop = new Promise((resolve) => { releaseStop = resolve; });
+  voice.androidStopPromise = pendingStop;
+  nativeCalls.length = 0;
+  sent.length = 0;
+  nativeHandler = (_method, params) => Promise.resolve(
+    params.method === "androiduse.start" ? { ok: true } : {},
+  );
+  const starting = voice.tool({
+    name: "atlas_android",
+    arguments: JSON.stringify({ action: "start" }),
+    call_id: "call-after-stop",
+  });
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(nativeCalls.some(({ params }) => params?.method === "androiduse.start"), false,
+    "start must not overtake a pending stop");
+  releaseStop();
+  await starting;
+  assert.equal(nativeCalls.filter(({ params }) =>
+    params?.method === "androiduse.start").length, 1,
+  "start must run once after the pending stop settles");
+  voice.androidStopPromise = null;
+  assert.equal(voice.androidControlActive, true);
 
   console.log("Realtime Android bridge contracts passed");
 })().catch((error) => {

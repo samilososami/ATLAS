@@ -166,8 +166,10 @@ The live definitions are in `/home/atlas/.atlas/routines/ROUTINES.md`; use
 `atlas-routines` or `atlas_routine` instead of hand-writing unvalidated JSON.
 `/home/atlas/.atlas/webscreen/REALTIME_INSTRUCTIONS.md` holds the current voice,
 brevity and direct-answer rules; edit those sections instead of hiding prompts
-in Python. Routine successful actions need only a short acknowledgement, not
-offers or hypothetical troubleshooting. Expand when sami asks for detail.
+in Python. A routine with `requires_model: false` supplies its own resolved
+answer or silence; one with `true` is interpreted once from its recorded result.
+Ordinary successful actions need only a short acknowledgement, not offers or
+hypothetical troubleshooting. Expand when sami asks for detail.
 `WEBSCREEN_INSTRUCTIONS.md` documents the archived pipeline, not current Realtime.
 The repository's main README introduces ATLAS, and
 `atlas-commands/README.md` describes the executable wrappers for humans.
@@ -203,8 +205,8 @@ Use them when they match the task. Detailed command docs live in `atlas-commands
 - `atlas-commands/ATLAS-DESKTOP.md` — `atlas-desktop`, visual desktop, windows, browser, screenshots, clicks, and wallpapers.
 - `atlas-commands/ATLAS-SCREEN.md` — `atlas-screen`, physical SunFounder power, desktop, root terminal, and touchscreen WebScreen kiosk.
 - `atlas-commands/ATLAS-RAFAS.md` — `atlas-rafas`, system/network diagnostics, safe interactive doctor and local root recovery.
-- `atlas-commands/ATLAS-APP.md` — `atlas-app`, Android companion, private BLE pairing, Tailscale state and native phone tools.
-- `atlas-commands/ATLAS-ANDROIDUSE.md` — `atlas-androiduse`, explicit Accessibility screen control, private screenshots and mandatory stop flow.
+- `atlas-commands/ATLAS-APP.md` — `atlas-app`, Android companion, private BLE pairing, direct/DERP Tailscale state and native phone tools.
+- `atlas-commands/ATLAS-ANDROIDUSE.md` — `atlas-androiduse`, semantic Accessibility clicks, reduced private screenshots and terminal stop flow.
 - `atlas-commands/ATLAS-CAST.md` — `atlas-cast`, Chromecast discovery, connection, stream quality, and stop/status.
 - `atlas-commands/ATLAS-AUDIO.md` — `atlas-audio`, speaker/audio output control, fast Bluetooth/HDMI switching, volume, mute, and tests.
 - `atlas-commands/ATLAS-SAY.md` — `atlas-say`, spoken output through the current default audio output.
@@ -219,15 +221,17 @@ diagnosis. Use `atlas-chat -p "..."` for one non-interactive turn and
 the persistent conversation. It is an interactive client, not a service, so it
 does not belong in `atlas-status` service health. It has the same typed mobile
 tools as WebScreen: `atlas_phone` for the native allowlist and `atlas_android`
-for visual Accessibility. A visual screenshot arrives as a separate
-`input_image`, not a filesystem path the model is expected to guess or read.
+for visual Accessibility. A reduced visual screenshot arrives as a separate
+JPEG `input_image`, not a filesystem path the model is expected to guess or read.
 
 Routine phrases are checked locally before a Realtime response is created.
-Successful steps therefore do not need a second model acknowledgement: a
-`say` step provides the response, while routines without it intentionally end
-silently. If a routine fails, inspect its recorded result and never repeat the
-operation automatically. Use Realtime to create or repair a definition only
-after its intent, exact phrase and name are clear.
+When `requires_model` is false, successful steps therefore do not need a second
+model acknowledgement: the resolved `say` text is the entire response, while a
+routine without it intentionally ends silently. When `requires_model` is true,
+the steps have already run once; inspect the recorded result and never repeat
+them. Apply the same no-repeat rule after failure. Use Realtime to create or
+repair a definition only after its intent, exact string trigger, name and model
+requirement are clear.
 
 For connection problems, follow [`ATLAS-CONNECTIONS.md`](ATLAS-CONNECTIONS.md)
 and the relevant command manual. Inspect logs before repairs; preserve private
@@ -239,17 +243,22 @@ physical action. Measure the corresponding surface before claiming success.
 For phone tasks, prefer `atlas-app control` permission-backed native operations
 over visual automation. Use `atlas-androiduse` only when the current screen must
 be inspected or touched: start explicitly, take the minimum screenshots/actions,
-honour the owner's stop control and always stop after the task, error,
-cancellation or timeout. Use normalized `0..1` coordinates, inspect after each
-important action and treat password nodes redacted by `tree` as inaccessible.
-`launch` requires a package or allowed URI; `ENTER`, `back`, `home`, `recents`,
-`long_press` and `wait` are explicit operations. Never replay a tap, swipe,
-message, call or deletion after a lost socket.
+honour the owner's stop control and stop after completion or abandonment,
+cancellation, overall timeout, client exit or terminal device/socket/
+Accessibility loss. A recoverable click, gesture or inspection error preserves
+the healthy session for correction. Prefer `click` with the exact accessible
+label exposed by `tree`; use normalized `0..1` coordinates only as fallback,
+inspect after each important action and treat password nodes redacted by `tree`
+as inaccessible. `launch` requires a package or allowed URI; `ENTER`, `back`,
+`home`, `recents`, `long_press` and `wait` are explicit operations. Never replay
+a click, tap, swipe, message, call or deletion after a lost socket.
 
 Open apps through the native `apps.launch` operation with a human app name; do
 not inspect the launcher or tap an icon by coordinates. Coordinates are for
-interaction inside an application. If the complete request is only "controla mi
-teléfono", call `androiduse.start` once, ignore its automatic screenshot, make no
+interaction inside an application. `Amazon` means Amazon Shopping and `Alexa`
+means the distinct Alexa app; never substitute one for the other. If the
+complete request is only "controla mi
+teléfono", call `androiduse.start` once, do not request an initial screenshot, make no
 other tool call, answer only "Listo" and wait. This opens one multi-turn Android
 Use session: keep it active for subsequent requests until sami asks to stop,
 presses the red stop button, closes the client or it expires. All ordinary
@@ -260,13 +269,18 @@ For native calls, use canonical names such as `location.get`,
 `capabilities`, `call` and `calls.place` only as aliases. `sms.send` takes
 `number` and `text`. Resolve contact names before `phone.call`; for
 `calendar.create`, first obtain an editable `calendarId` from `calendar.list`
-and pass `begin`/`end` as Unix milliseconds.
+and pass `begin`/`end` as Unix milliseconds. When sami asks where his paired
+phone is, use `location.get` and answer with its complete `formattedAddress`
+exactly when present. Do not shorten it to a city; if reverse geocoding failed,
+give coordinates and the error without inventing an address.
 
-The app transport is Tailscale. A direct path or a Tailscale DERP path is valid;
-never interpret failure as permission to enable the legacy relay. That mode
-requires an explicit owner-selected `atlas-app legacy-relay ...`. Companion RPC
-must remain concurrently readable while a Pi-initiated phone request waits for
-`app.reply`, otherwise re-entrant native tools deadlock.
+The app endpoint is tailnet-only `wss://100.x:5010/app`. When A1 and the phone
+share a LAN, prefer and verify Tailscale's lower-latency direct P2P path; an
+encrypted Tailscale DERP path remains valid when direct UDP is unavailable.
+Never interpret either path failing as permission to enable the legacy relay.
+That mode requires an explicit owner-selected `atlas-app legacy-relay ...`.
+Companion RPC must remain concurrently readable while a Pi-initiated phone
+request waits for `app.reply`, otherwise re-entrant native tools deadlock.
 
 **Working areas:** Keep the main OpenClaw workspace clean. It holds memory, identity, docs, and project context. Do not dump temporary files or throwaway generated projects there.
 

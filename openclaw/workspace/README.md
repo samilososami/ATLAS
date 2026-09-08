@@ -21,7 +21,8 @@ Este directorio contiene la base de contexto que convierte una instalación de O
 - `atlas-commands/`: documentación actual de cada comando para el agente,
   incluidos `ATLAS-CHAT.md` para el cliente Realtime de terminal con tools
   tipadas de móvil, `ATLAS-APP.md` para el contrato nativo y transporte
-  Tailscale, `ATLAS-ANDROIDUSE.md` para el fallback visual con capturas privadas,
+  Tailscale directo/DERP, `ATLAS-ANDROIDUSE.md` para el fallback visual con click
+  semántico y capturas privadas reducidas,
   y `ATLAS-ROUTINES.md` para las automatizaciones locales deterministas.
 
 El runtime de voz y pantalla vive en [`../../.atlas`](../../.atlas), separado de la identidad y memoria de OpenClaw.

@@ -55,7 +55,9 @@ owner's tailnet. Tailscale `Running`, Companion active and a live app socket are
 separate states. Native phone tools live behind `atlas-app control`; only use
 `atlas-androiduse` when a task truly requires visual Accessibility control.
 WebScreen and `atlas-chat` expose those paths as typed `atlas_phone` and
-`atlas_android` tools; screenshots are separate private `input_image` items.
-Tailscale can be direct or DERP and never selects the legacy relay automatically.
+`atlas_android` tools; screenshots are reduced private JPEG `input_image` items.
+The app endpoint is the A1's tailnet-only `100.x` address. Same-LAN peers prefer
+Tailscale's direct P2P route; encrypted DERP remains a valid fallback, and
+neither state ever selects the legacy relay automatically.
 Companion must keep reading concurrent RPC while a native request waits for the
 phone's `app.reply`.

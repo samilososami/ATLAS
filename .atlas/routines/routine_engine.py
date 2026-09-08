@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import ast
 import fcntl
 import json
 import os
@@ -141,6 +142,31 @@ def _validate_command(command: str) -> None:
             raise RoutineError("ATLAS no guarda rm recursivo y forzado")
 
 
+def _trigger_text(trigger: Any, routine_name: str) -> str:
+    """Accept the canonical string plus the legacy phrase object without stringifying it."""
+    candidate = trigger
+    if isinstance(candidate, str):
+        stripped = candidate.strip()
+        # An early model-created registry stored Python's representation of a
+        # phrase object as text. Read that narrow legacy shape so installing a
+        # fixed engine immediately restores matching; the next save writes the
+        # canonical string form.
+        if stripped.startswith("{") and stripped.endswith("}"):
+            try:
+                decoded = ast.literal_eval(stripped)
+            except (SyntaxError, ValueError):
+                decoded = None
+            if isinstance(decoded, dict):
+                candidate = decoded
+    if isinstance(candidate, dict):
+        if str(candidate.get("type") or "").strip().lower() != "phrase":
+            raise RoutineError(f"{routine_name}: tipo de activación no disponible")
+        candidate = candidate.get("value")
+    if not isinstance(candidate, str):
+        raise RoutineError(f"{routine_name}: cada frase de activación debe ser texto")
+    return " ".join(candidate.split())[:240]
+
+
 def validate_routine(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise RoutineError("Cada rutina debe ser un objeto")
@@ -154,7 +180,7 @@ def validate_routine(value: Any) -> dict[str, Any]:
     clean_triggers: list[str] = []
     seen: set[str] = set()
     for trigger in triggers:
-        display = " ".join(str(trigger or "").split())[:240]
+        display = _trigger_text(trigger, name)
         normalized = normalize_phrase(display)
         if not normalized or normalized in seen:
             continue
@@ -162,6 +188,9 @@ def validate_routine(value: Any) -> dict[str, Any]:
         clean_triggers.append(display)
     if not clean_triggers:
         raise RoutineError(f"{name}: todas las frases están vacías")
+    requires_model = value.get("requires_model", False)
+    if not isinstance(requires_model, bool):
+        raise RoutineError(f"{name}: requires_model debe ser true o false")
     steps = value.get("steps")
     if not isinstance(steps, list) or not steps or len(steps) > MAX_STEPS:
         raise RoutineError(f"{name}: necesita entre 1 y {MAX_STEPS} pasos")
@@ -199,6 +228,7 @@ def validate_routine(value: Any) -> dict[str, Any]:
         "thoughts": " ".join(str(value.get("thoughts") or "").split())[:1200],
         "triggers": clean_triggers,
         "enabled": bool(value.get("enabled", True)),
+        "requires_model": requires_model,
         "steps": clean_steps,
     }
 
@@ -331,6 +361,15 @@ def execute_routine(routine: dict[str, Any], invoked_phrase: str = "") -> dict[s
     for index, step in enumerate(routine["steps"], 1):
         if step["type"] == "say":
             text = _expand(step["text"], variables)
+            unresolved = sorted({match.group(1) or match.group(2)
+                                 for match in VARIABLE.finditer(text)})
+            if unresolved:
+                ok = False
+                names = ", ".join(unresolved)
+                error = f"El paso {index} SAY usa variables sin resolver: {names}"
+                steps.append({"index": index, "type": "say", "ok": False,
+                              "text": text, "output": error})
+                break
             spoken.append(text)
             steps.append({"index": index, "type": "say", "ok": True, "text": text})
             continue
@@ -376,6 +415,7 @@ def execute_routine(routine: dict[str, Any], invoked_phrase: str = "") -> dict[s
         "timestamp": datetime.now().astimezone().isoformat(timespec="milliseconds"),
         "routineId": routine["id"], "routineName": routine["name"],
         "invokedPhrase": invoked_phrase, "matched": True, "ok": ok,
+        "requiresModel": routine["requires_model"],
         "spokenText": " ".join(spoken) if ok else "", "error": error,
         "steps": steps, "durationMs": round((time.perf_counter() - started) * 1000, 1),
     }

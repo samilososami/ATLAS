@@ -25,17 +25,22 @@ class WebscreenRoutineTests(unittest.TestCase):
         return {
             "id": "saludo-local", "name": "Saludo local", "description": "Prueba",
             "thoughts": "No llama al modelo", "triggers": ["saluda localmente"],
-            "enabled": True, "steps": [{"type": "say", "text": "Hola desde la rutina"}],
+            "enabled": True, "requires_model": False,
+            "steps": [{"type": "say", "text": "Hola desde la rutina"}],
         }
 
     def test_manage_and_direct_execute_share_registry(self):
         saved = server.manage_realtime_routine({
-            "action": "upsert", "routine": __import__("json").dumps(self.routine()),
+            "action": "upsert", "routine": self.routine(),
         })
         self.assertTrue(saved["ok"])
         result = server.execute_routine_phrase("Atlas, saluda localmente")
         self.assertTrue(result["ok"])
         self.assertEqual(result["spokenText"], "Hola desde la rutina")
+        self.assertFalse(result["requiresModel"])
+
+        listed = server.manage_realtime_routine({"action": "list"})
+        self.assertFalse(listed["routines"][0]["requires_model"])
 
     def test_failed_result_is_retrievable_without_reexecution(self):
         routine = self.routine() | {"id": "falla", "name": "Falla", "triggers": ["falla"],

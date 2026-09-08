@@ -15,9 +15,12 @@ The private APK and single paired phone reduce exposure but do not remove the
 need for those checks.
 
 Visual control is a separate Accessibility fallback. `atlas_android` starts an
-owner-visible guarded session, uses normalized coordinates, attaches private
-screenshots as separate `input_image` items and redacts password nodes and their
-descendants from the accessibility tree. Every success, error, cancellation or
-timeout path must issue `androiduse.stop`.
+owner-visible guarded session, prefers an exact accessible-label `click` before
+normalized coordinate gestures, attaches reduced private JPEG screenshots as
+separate `input_image` items and redacts password nodes and their descendants
+from the accessibility tree. Recoverable action or inspection errors keep the
+guarded session active for correction. Completion, abandonment, cancellation,
+overall timeout, client exit or terminal device/socket/Accessibility loss must
+issue `androiduse.stop`.
 
 Android may restrict SMS, call-log, phone, background sensors, Wi-Fi and all-files access depending on OS version, device policy or distribution channel. The app must treat refusal or platform restriction as a normal state.

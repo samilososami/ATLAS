@@ -50,6 +50,7 @@ def tailscale_state(device=None):
     try:
         raw=json.loads(process.stdout); own=raw.get('Self') or {}; addresses=own.get('TailscaleIPs') or []
         ipv4=next((value for value in addresses if '.' in value),''); host=own.get('HostName') or ipv4
+        endpoint_host=ipv4 or host
         peer=next((value for value in (raw.get('Peer') or {}).values()
                    if str(value.get('HostName','')).lower()==str(device or '').lower()),None)
         if peer and peer.get('CurAddr'): path='direct'
@@ -57,7 +58,7 @@ def tailscale_state(device=None):
         elif peer and peer.get('Online'): path='idle'
         else: path='not-connected'
         return {'installed':True,'state':raw.get('BackendState','Unknown'),'online':bool(own.get('Online')),
-                'host':host,'ip':ipv4,'endpoint':f'wss://{host}:5010/app' if host else '',
+                'host':host,'ip':ipv4,'endpoint':f'wss://{endpoint_host}:5010/app' if endpoint_host else '',
                 'deviceOnline':bool(peer and peer.get('Online')),'path':path}
     except (ValueError,TypeError):
         return {'installed':True,'state':'NeedsLogin','online':False,'host':'','ip':'','endpoint':''}

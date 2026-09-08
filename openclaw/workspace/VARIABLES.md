@@ -8,5 +8,8 @@ borrowing somebody else's settings.
 - WebScreen projects: `/home/atlas/.atlas/webscreen/workspace`.
 - Model: use the model configured locally in OpenClaw.
 - Voice: choose locally in WebScreen settings.
+- WebScreen ElevenLabs model: `eleven_flash_v2_5` by default for interactive
+  latency; override it with `ATLAS_WEBSCREEN_ELEVENLABS_MODEL` only when a
+  different quality/latency trade-off is intentional.
 
 Never put API keys, OAuth tokens, passwords or Wi-Fi credentials in this file.

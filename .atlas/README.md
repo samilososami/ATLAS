@@ -15,13 +15,16 @@ live here; OpenClaw keeps your identity and memory in its own workspace.
 - `chat/`: text-only terminal client for the same `gpt-realtime-2.1`, OAuth,
   Markdown context, persistent conversation and direct tools as WebScreen.
   This includes typed `atlas_phone` and `atlas_android`; visual results arrive
-  as private `input_image` items and every control path guarantees `stop`.
+  as reduced private JPEG `input_image` items. Semantic accessible-label clicks
+  precede coordinate fallback; recoverable visual errors keep the session alive,
+  while completion, abandonment and terminal loss guarantee `stop`.
   Its private history and diagnostic logs are created only on the live A1.
 - `routines/`: validated deterministic automations shared by WebScreen and
   `atlas-chat`. Exact phrases run locally before a model response; the live
   registry, results and logs remain private on A1.
 - `companion/`: authenticated Android service with a persistent encrypted
-  WebSocket over the owner's Tailscale network. `atlas-app` manages BLE pairing,
+  WebSocket to the A1's private Tailscale `100.x` endpoint. Same-LAN peers prefer
+  the direct P2P path and retain encrypted DERP as fallback. `atlas-app` manages BLE pairing,
   native phone tools and connection state; `atlas-androiduse` is the bounded
   Accessibility fallback. The old blind relay is explicit compatibility-only
   and is never selected after a Tailscale failure. Companion dispatches bounded
