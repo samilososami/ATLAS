@@ -105,7 +105,6 @@ const voice = context.window.voice;
   voice.send = (event) => sent.push(event);
   nativeHandler = (_method, params) => {
     if (params.method === "androiduse.start") return Promise.resolve({ ok: true });
-    if (params.method === "androiduse.tree") return Promise.reject(new Error("No hay una ventana activa"));
     if (params.method === "androiduse.stop") return Promise.resolve({ ok: true });
     return Promise.resolve({});
   };
@@ -115,11 +114,13 @@ const voice = context.window.voice;
     call_id: "call-test",
   });
   await Promise.resolve();
-  assert.equal(voice.androidControlActive, false,
-    "a terminal inspection failure must clear tracked Android control state");
+  assert.equal(voice.androidControlActive, true,
+    "a successful explicit start must retain tracked Android control state");
+  assert.equal(nativeCalls.some(({ params }) => params.method === "androiduse.tree"), false,
+    "start must not trigger an unsolicited accessibility inspection");
   assert.equal(nativeCalls.filter(({ params }) =>
-    params.method === "androiduse.stop").length, 1,
-  "a terminal inspection failure must best-effort stop Android Use");
+    params.method === "androiduse.stop").length, 0,
+  "start must not immediately stop the explicit Android Use session");
   assert.deepEqual(sent.map((event) => event.type),
     ["conversation.item.create", "response.create"],
   "cleanup must preserve the function output and response chaining");

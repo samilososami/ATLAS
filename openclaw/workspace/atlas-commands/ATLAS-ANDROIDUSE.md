@@ -27,10 +27,12 @@ The flow for one visual action is: start, screenshot, decide from the current
 screen, perform one bounded action, capture again only if needed, then stop.
 While active, Android shows the ATLAS control notification, blue border and
 owner stop button, and blocks ordinary touches. The owner can stop at any time.
-If sami explicitly says "controla mi teléfono", `start` opens a multi-turn
-control session: keep it active for his next instructions and stop only when he
-asks, presses the red button, closes the client or the ten-minute idle timeout
-expires. Do not issue another `start` while it is already active.
+If sami's complete request is only "controla mi teléfono", run `start` once,
+ignore the automatic screenshot returned by `start`, do not inspect or touch
+anything else, answer only `Listo` and wait for his next instruction. This opens
+a multi-turn control session: keep it active for his next instructions and stop
+only when he asks, presses the red button, closes the client or the ten-minute
+idle timeout expires. Do not issue another `start` while it is already active.
 
 Opening a known app is not a visual task. Use the native operation
 `atlas-app control apps.launch --params '{"app":"Galería"}' --json`; it resolves

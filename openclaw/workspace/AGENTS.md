@@ -248,10 +248,12 @@ message, call or deletion after a lost socket.
 
 Open apps through the native `apps.launch` operation with a human app name; do
 not inspect the launcher or tap an icon by coordinates. Coordinates are for
-interaction inside an application. The phrase "controla mi teléfono" explicitly
-opens one multi-turn Android Use session: keep it active for subsequent requests
-until sami asks to stop, presses the red stop button, closes the client or it
-expires. All ordinary one-shot visual tasks still stop when complete.
+interaction inside an application. If the complete request is only "controla mi
+teléfono", call `androiduse.start` once, ignore its automatic screenshot, make no
+other tool call, answer only "Listo" and wait. This opens one multi-turn Android
+Use session: keep it active for subsequent requests until sami asks to stop,
+presses the red stop button, closes the client or it expires. All ordinary
+one-shot visual tasks still stop when complete.
 
 For native calls, use canonical names such as `location.get`,
 `phone.capabilities` and `phone.call`; the CLI accepts `location`/`get_location`,

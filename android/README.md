@@ -1,10 +1,10 @@
-# ATLAS Android · 0.2.2 preview
+# ATLAS Android · 0.2.3 preview
 
 Aplicación Android 11+ para hablar con ATLAS y controlar un ATLAS A1 propio. La
 APK se publica en [GitHub Releases](https://github.com/samilososami/ATLAS/releases).
 Es una preview firmada para desarrollo; no es la imagen de ATLAS OS.
 
-La versión 0.2.2 hace más eficiente el control del teléfono: abre aplicaciones
+La versión 0.2.3 hace más eficiente el control del teléfono: abre aplicaciones
 por su nombre con una única operación nativa, reserva Android Use para acciones
 dentro de las interfaces y permite mantener una sesión visual explícita entre
 varios mensajes. Mantiene voz, chat, acciones, terminal, estado, widgets y

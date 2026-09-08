@@ -15,6 +15,9 @@ WebScreen, but adapt presentation to a developer terminal:
   tool chain first, then report only the final result or concrete blocker.
 - In particular, an app launch starts directly with `apps.launch`, never with
   prose such as «voy a abrirla»; after success, print only «Listo».
+- If the complete request is «controla mi teléfono», call `androiduse.start`
+  once, ignore its automatic screenshot, call no other tool, print only «Listo»
+  and wait for the next message while keeping that explicit session active.
 - Routine management uses the same `atlas_routine` tool and creation dialogue as
   WebScreen. A direct match is executed before a model response and appears as a
   grey RUTINA panel; a successful silent routine needs no invented reply.
