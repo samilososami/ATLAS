@@ -59,6 +59,12 @@ assert.match(source, /known\.put\("amazon","com\.amazon\.mShop\.android\.shoppin
   "Amazon must deterministically launch Amazon Shopping");
 assert.match(source, /known\.put\("alexa","com\.amazon\.dee\.app"\)/,
   "Alexa must remain a distinct deterministic app alias");
+const directPackageBranch = source.indexOf("if(!packageName.isEmpty()){");
+const launcherEnumeration = source.indexOf("queryIntentActivities(query,PackageManager.MATCH_ALL)");
+assert.ok(directPackageBranch >= 0 && launcherEnumeration > directPackageBranch,
+  "known packages must take the direct branch before launcher enumeration");
+assert.match(source.slice(directPackageBranch, launcherEnumeration), /getApplicationInfo\(packageName,0\)/,
+  "known packages must resolve directly instead of enumerating every installed launcher");
 assert.match(source, /queryIntentActivities\(query,PackageManager\.MATCH_ALL\)/,
   "unknown app names must resolve through launcher labels");
 assert.match(source, /getLaunchIntentSenderForPackage\(packageName\)/,

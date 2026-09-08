@@ -142,14 +142,18 @@ final class AtlasPhoneTools {
         known.put("alexa","com.amazon.dee.app");known.put("amazonalexa","com.amazon.dee.app");
         if(requested.matches("[A-Za-z0-9_.]{3,160}")&&requested.contains("."))packageName=requested;
         else if(known.containsKey(normalized))packageName=known.get(normalized);
-        Intent query=new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
         ArrayList<JSONObject> candidates=new ArrayList<>();
-        for(ResolveInfo info:manager.queryIntentActivities(query,PackageManager.MATCH_ALL)){
-            if(info.activityInfo==null)continue;String candidatePackage=info.activityInfo.packageName;
-            String candidateLabel=String.valueOf(info.loadLabel(manager));String candidate=normalizedAppName(candidateLabel);
-            if(packageName.isEmpty()&&(candidate.equals(normalized)||candidatePackage.equalsIgnoreCase(requested))){packageName=candidatePackage;label=candidateLabel;break;}
-            if(packageName.isEmpty()&&(candidate.contains(normalized)||normalized.contains(candidate)))candidates.add(new JSONObject().put("name",candidateLabel).put("package",candidatePackage));
-            if(candidatePackage.equals(packageName))label=candidateLabel;
+        if(!packageName.isEmpty()){
+            try{label=String.valueOf(manager.getApplicationLabel(manager.getApplicationInfo(packageName,0)));}
+            catch(PackageManager.NameNotFoundException error){throw new IOException("Aplicación no instalada: "+requested,error);}
+        }else{
+            Intent query=new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
+            for(ResolveInfo info:manager.queryIntentActivities(query,PackageManager.MATCH_ALL)){
+                if(info.activityInfo==null)continue;String candidatePackage=info.activityInfo.packageName;
+                String candidateLabel=String.valueOf(info.loadLabel(manager));String candidate=normalizedAppName(candidateLabel);
+                if(candidate.equals(normalized)||candidatePackage.equalsIgnoreCase(requested)){packageName=candidatePackage;label=candidateLabel;break;}
+                if(candidate.contains(normalized)||normalized.contains(candidate))candidates.add(new JSONObject().put("name",candidateLabel).put("package",candidatePackage));
+            }
         }
         if(packageName.isEmpty()&&candidates.size()==1){JSONObject match=candidates.get(0);packageName=match.getString("package");label=match.getString("name");}
         if(packageName.isEmpty()){
