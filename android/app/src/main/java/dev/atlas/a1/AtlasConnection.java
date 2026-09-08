@@ -15,6 +15,7 @@ import android.view.*;
 import android.webkit.*;
 import android.widget.*;
 import java.io.*;
+import java.net.*;
 import java.nio.charset.StandardCharsets;
 import java.security.*;
 import java.security.cert.*;
@@ -176,6 +177,13 @@ final class AtlasConnection implements AutoCloseable {
         }
         failRelay(socket,error);
     }
+    private String transportFailureMessage(Throwable error,boolean direct){
+        Throwable cause=error;while(cause.getCause()!=null&&cause.getCause()!=cause)cause=cause.getCause();
+        if(cause instanceof SSLException)return "No se pudo verificar la identidad segura de ATLAS A1";
+        if(direct&&(cause instanceof ConnectException||cause instanceof SocketTimeoutException||cause instanceof NoRouteToHostException||cause instanceof UnknownHostException))
+            return "No se puede alcanzar ATLAS A1. Activa Tailscale en este teléfono e inténtalo de nuevo";
+        return direct?"Conexión directa con ATLAS A1 interrumpida":"Conexión al relay interrumpida";
+    }
     private synchronized boolean current(WebSocket socket){return socket!=null&&socket==relay;}
     private synchronized CompletableFuture<Boolean> currentReady(WebSocket socket){return current(socket)?relayReady:null;}
     private JSONObject directPing(String id){return object("id",id,"client",clientId,"device",deviceName,"method","ping","params",new JSONObject());}
@@ -241,7 +249,7 @@ final class AtlasConnection implements AutoCloseable {
                     a1Unavailable(v.optString("error","ATLAS A1 no está conectado"));
                 }
             }catch(Exception e){failTransport(w,"No se pudo autenticar la respuesta de A1",direct);}}
-            @Override public void onFailure(WebSocket w,Throwable t,Response r){failTransport(w,direct?"Conexión directa con A1 interrumpida":"Conexión al relay interrumpida",direct);}
+            @Override public void onFailure(WebSocket w,Throwable t,Response r){failTransport(w,transportFailureMessage(t,direct),direct);}
             @Override public void onClosed(WebSocket w,int code,String reason){failTransport(w,direct?"ATLAS A1 desconectado":"Relay desconectado",direct);}
         });
     }
@@ -282,7 +290,10 @@ final class AtlasConnection implements AutoCloseable {
         if(pairing==null)throw new IOException("Empareja primero tu ATLAS A1");
         CompletableFuture<Boolean> ready;
         openRelay();synchronized(this){ready=relayReady;}
-        if(ready==null||!ready.get(10,TimeUnit.SECONDS))throw new IOException("ATLAS A1 rechazó la conexión");
+        try{if(ready==null||!ready.get(10,TimeUnit.SECONDS))throw new IOException("ATLAS A1 rechazó la conexión");}
+        catch(ExecutionException error){
+            Throwable cause=error.getCause();if(cause instanceof Exception)throw (Exception)cause;throw error;
+        }
     }
     JSONObject rpc(String method,JSONObject params)throws Exception{
         if(pairing==null)throw new IOException("Empareja primero tu ATLAS A1");
