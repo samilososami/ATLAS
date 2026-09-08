@@ -4,7 +4,8 @@ Actualización de fiabilidad, precisión y latencia del control del teléfono:
 
 - `apps.launch` conserva una sola operación nativa y separa explícitamente
   Amazon Shopping (`com.amazon.mShop.android.shopping`) de Amazon Alexa
-  (`com.amazon.dee.app`).
+  (`com.amazon.dee.app`). Para las aplicaciones conocidas consulta directamente
+  su paquete, sin enumerar todo el launcher ni recurrir a Android Use.
 - `location.get` añade la dirección completa en `formattedAddress` y sus campos
   estructurados cuando Android puede resolver las coordenadas. Si no puede, se
   devuelve el error de geocoding sin inventar una dirección.
