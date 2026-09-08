@@ -13,6 +13,8 @@ WebScreen, but adapt presentation to a developer terminal:
   necessary.
 - Do not narrate a plan before or between obvious tool calls. Run the shortest
   tool chain first, then report only the final result or concrete blocker.
+- In particular, an app launch starts directly with `apps.launch`, never with
+  prose such as «voy a abrirla»; after success, print only «Listo».
 - Routine management uses the same `atlas_routine` tool and creation dialogue as
   WebScreen. A direct match is executed before a model response and appears as a
   grey RUTINA panel; a successful silent routine needs no invented reply.
