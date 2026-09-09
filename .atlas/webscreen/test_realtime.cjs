@@ -391,6 +391,14 @@ assert.match(source, /interrupt_response:\s*!this\.physicalAtlasA1/);
 assert.match(source, /language:\s*"es"/);
 assert.match(source, /noise_reduction:\s*\{\s*type:\s*"far_field"\s*\}/);
 assert.match(source, /session\.atlasContext/);
+assert.match(source, /const offerBody = new FormData\(\)/,
+  'large initial context must be uploaded over HTTP multipart');
+assert.match(source, /offerBody\.append\("session"/,
+  'the initial Realtime session must accompany the SDP offer');
+assert.doesNotMatch(source, /this\.send\(\{\s*type: "session\.update",\s*session: \{\s*type: "realtime",\s*output_modalities:/,
+  'the initial private context must not be sent through one data-channel frame');
+assert.match(source, /case "session\.created":\s*case "session\.updated":/,
+  'both initial and later configuration confirmations must mark Realtime ready');
 assert.match(source, /output_audio_buffer\.stopped/);
 assert.match(source, /localWakeDetectorReady/);
 assert.doesNotMatch(source, /prompt:\s*"Conversación en español/);
@@ -438,7 +446,7 @@ assert.equal(fallbackSent.some(event => event.type === 'conversation.item.delete
   && event.item_id === 'late-copy'), true);
 fallback.stop(false);
 
-// Startup is still gated until session.updated, but after that the clean AEC
+// Startup is gated until the configured session is created (or updated), then the clean AEC
 // source stays attached while ATLAS speaks so natural full-duplex can work.
 (async () => {
   const inputTrack = { id: 'usb-microphone' };
@@ -456,7 +464,7 @@ fallback.stop(false);
   assert.equal(gated.realtimeInputEnabled, false);
   assert.equal(replacements.length, 1);
   gated.session = {};
-  gated.markReady();
+  gated.handleEvent(JSON.stringify({ type: 'session.created', session: {} }));
   await gated.inputSwitchPromise;
   assert.equal(sender.track, inputTrack);
   assert.equal(gated.realtimeInputEnabled, true);

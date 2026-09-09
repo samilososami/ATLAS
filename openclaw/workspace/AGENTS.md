@@ -244,8 +244,11 @@ For phone tasks, prefer `atlas-app control` permission-backed native operations
 over visual automation. Use `atlas-androiduse` only when the current screen must
 be inspected or touched: start explicitly, take the minimum screenshots/actions,
 honour the owner's stop control and stop after completion or abandonment,
-cancellation, overall timeout, client exit or terminal device/socket/
-Accessibility loss. A recoverable click, gesture or inspection error preserves
+cancellation, overall control timeout, Companion/app-process exit or terminal
+device/socket/Accessibility loss. The Realtime turn lifecycle is separate:
+finishing a response, renewing WebRTC, releasing it in the background or
+reconnecting voice/chat must never issue `androiduse.stop`. A recoverable click,
+gesture or inspection error preserves
 the healthy session for correction. Prefer `click` with the exact accessible
 label exposed by `tree`; use normalized `0..1` coordinates only as fallback,
 inspect after each important action and treat password nodes redacted by `tree`

@@ -21,8 +21,22 @@ assert.match(source, /\['click','tap','long_press'/,
   "semantic clicks must receive the same post-action inspection as gestures");
 assert.match(source, /androidControlActive=false/,
   "Realtime must track whether Android Use is active");
-assert.match(source, /const androidStop=this\.stopAndroidControlSilently\(true\)/,
-  "closing Realtime must attempt to stop Android Use first");
+assert.doesNotMatch(source, /const androidStop=this\.stopAndroidControlSilently\(true\)/,
+  "closing or renewing Realtime must preserve explicit Android Use");
+assert.doesNotMatch(source,
+  /\['failed','closed'\][^}]*this\.stopAndroidControlSilently\(\)/,
+  "peer failures must not stop Android Use");
+assert.doesNotMatch(source,
+  /dc\.onclose=[^;]*this\.stopAndroidControlSilently\(\)/,
+  "data-channel renewal must not stop Android Use");
+assert.match(source, /sdp:offer\.sdp,session:initialSession/,
+  "the large initial configuration must travel with the HTTP offer");
+assert.match(source, /case'session\.created':case'session\.updated'/,
+  "the app must accept the initial configured session event");
+assert.doesNotMatch(source, /this\.send\(\{type:'session\.update',session:s\}\)/,
+  "the private context must never be sent as one data-channel frame");
+assert.match(activitySource, /new MultipartBody\.Builder\(\)\.setType\(MultipartBody\.FORM\)/,
+  "the native offer bridge must upload SDP and initial session as multipart");
 assert.match(source,
   /action==='start'&&this\.androidStopPromise\)await this\.androidStopPromise/,
   "a new Android Use start must wait for an earlier stop to settle");
@@ -35,7 +49,7 @@ assert.doesNotMatch(source,
 assert.doesNotMatch(activitySource, /case "realtimeWarmup":\s*event\("realtimeState"/,
   "native warmup must not overwrite the WebRTC-owned connection indicator");
 assert.match(source, /async background\(\)\{this\.holding=false;await this\.close\(true\);\}/,
-  "backgrounding must release the costly WebRTC session while the A1 link service remains alive");
+  "backgrounding must release costly WebRTC while preserving Android Use and the A1 link");
 
 function node() {
   return {

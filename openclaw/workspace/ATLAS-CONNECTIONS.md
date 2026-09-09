@@ -59,6 +59,10 @@ second audio capture path or interfere with Realtime recovery.
 - Realtime has **25 s startup**, **12 s response acknowledgement**, and **30 s
   no-progress** bounds. Running tools use their own deadline and are exempt from
   the model no-progress timer. Brief WebRTC disconnections have **8 s** grace.
+- The initial Realtime configuration and private Markdown travel with the SDP
+  offer as HTTP multipart. Never move the full context back into one
+  data-channel `session.update`: it can exceed the negotiated SCTP message size
+  and create a permanent connect/reconnect loop.
 - Renew the Realtime session after **50 min**, deferred until idle. After a
   completed answer, require a fresh local **ATLAS**. There is no automatic
   follow-up window; a bare wake word still allows completing that same request.
@@ -117,9 +121,11 @@ to the Internet or put lease tokens in URLs, logs or public files.
    reverse-geocoding error without inventing an address. If visual control is
    necessary, prefer an exact accessible-label `androiduse.click`, then use
    normalized coordinates as fallback and inspect each important result. A
-   recoverable action/inspection error keeps the session alive. Guarantee
-   `androiduse.stop` after completion or abandonment and on cancellation,
-   overall timeout, client exit or terminal transport/Accessibility loss. A
+   recoverable action/inspection error keeps the session alive. A Realtime turn,
+   renewal, background release or voice reconnect does not own that lifecycle
+   and must never issue `androiduse.stop`. Guarantee the stop after explicit
+   completion or abandonment and on user cancellation, Companion/app-process
+   exit, overall control timeout or terminal transport/Accessibility loss. A
    password-redacted tree is not a signal to inspect the corresponding screen
    by another route.
 

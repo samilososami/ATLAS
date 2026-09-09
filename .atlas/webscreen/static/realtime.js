@@ -528,6 +528,43 @@ Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques
           (Array.isArray(session.atlasRoutineTriggers) ? session.atlasRoutineTriggers : [])
             .map(routinePhraseKey).filter(Boolean),
         );
+        // Send the initial configuration alongside the SDP offer. The private
+        // workspace can be much larger than a WebRTC data-channel frame; a
+        // session.update here used to throw max-message-size and restart the
+        // whole UI forever. The create-call HTTP endpoint accepts this config
+        // as a multipart JSON part and leaves the data channel for small live
+        // events only.
+        const channelInstructions = String(session.atlasInstructions || "").trim();
+        const workspaceContext = String(session.atlasContext || "").trim();
+        const sessionTools = this.configureFaceTools();
+        const instructions = [
+          channelInstructions || ATLAS_REALTIME_FALLBACK_INSTRUCTIONS,
+          workspaceContext,
+          this.faceToolEnabled ? FACE_INSTRUCTIONS : "",
+          ANDROID_TOOL_INSTRUCTIONS,
+        ].filter(Boolean).join("\n\n");
+        const initialSession = {
+          type: "realtime",
+          output_modalities: [this.usesExternalTts() ? "text" : "audio"],
+          instructions,
+          tools: sessionTools,
+          tool_choice: "auto",
+          truncation: { type: "retention_ratio", retention_ratio: 0.8 },
+          audio: {
+            input: {
+              noise_reduction: { type: "far_field" },
+              transcription: { model: "gpt-4o-mini-transcribe", language: "es" },
+              turn_detection: {
+                type: "server_vad",
+                threshold: Number(session.vadThreshold || VAD_THRESHOLD),
+                silence_duration_ms: Number(session.silenceDurationMs || SILENCE_DURATION_MS),
+                prefix_padding_ms: Number(session.prefixPaddingMs || PREFIX_PADDING_MS),
+                create_response: false,
+                interrupt_response: !this.physicalAtlasA1,
+              },
+            },
+          },
+        };
         const peer = new RTCPeerConnection();
         this.peer = peer;
         peer.addEventListener("track", (event) => { if (current()) this.attachRemoteAudio(event); });
@@ -566,53 +603,6 @@ Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques
         this.channel.addEventListener("open", () => {
           if (!current()) return;
           this.state = "configuring";
-          const channelInstructions = String(session.atlasInstructions || "").trim();
-          const workspaceContext = String(session.atlasContext || "").trim();
-          const sessionTools = this.configureFaceTools();
-          const instructions = [
-            channelInstructions || ATLAS_REALTIME_FALLBACK_INSTRUCTIONS,
-            workspaceContext,
-            this.faceToolEnabled ? FACE_INSTRUCTIONS : "",
-            ANDROID_TOOL_INSTRUCTIONS,
-          ].filter(Boolean).join("\n\n");
-          this.send({
-            type: "session.update",
-            session: {
-              type: "realtime",
-              output_modalities: [this.usesExternalTts() ? "text" : "audio"],
-              instructions,
-              tools: sessionTools,
-              tool_choice: "auto",
-              // Let the provider retain a useful recent window if an unusually
-              // long live turn reaches its limit. Durable history is saved by
-              // WebScreen itself, then compacted before a fresh session.
-              truncation: { type: "retention_ratio", retention_ratio: 0.8 },
-              audio: {
-                input: {
-                  noise_reduction: { type: "far_field" },
-                  transcription: {
-                    model: "gpt-4o-mini-transcribe",
-                    language: "es",
-                  },
-                  turn_detection: {
-                    type: "server_vad",
-                    threshold: Number(session.vadThreshold || VAD_THRESHOLD),
-                    silence_duration_ms: Number(session.silenceDurationMs || SILENCE_DURATION_MS),
-                    prefix_padding_ms: Number(session.prefixPaddingMs || PREFIX_PADDING_MS),
-                    create_response: false,
-                    // Laptops and remote browsers keep normal barge-in. The
-                    // physical A1 is deliberately half-duplex until its
-                    // acoustic path can be calibrated reliably.
-                    interrupt_response: !this.physicalAtlasA1,
-                  },
-                },
-              },
-            },
-          });
-          // Keep stats for diagnostics, but do not retain a second browser-side
-          // copy of the private Markdown after the session has accepted it.
-          delete this.session.atlasInstructions;
-          delete this.session.atlasContext;
           this.configurationTimer = window.setTimeout(() => {
             if (current()) this.fail(new Error("OpenAI Realtime no confirmó el control manual de turnos"));
           }, 12000);
@@ -628,13 +618,19 @@ Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques
         assertCurrent();
         await peer.setLocalDescription(offer);
         assertCurrent();
+        const offerBody = new FormData();
+        offerBody.append("sdp", new Blob([offer.sdp], { type: "application/sdp" }), "offer.sdp");
+        offerBody.append("session", new Blob([JSON.stringify(initialSession)], { type: "application/json" }), "session.json");
+        const offerHeaders = { ...(session.offerHeaders || {}) };
+        for (const key of Object.keys(offerHeaders)) {
+          if (key.toLowerCase() === "content-type") delete offerHeaders[key];
+        }
         const answerResponse = await abortable(fetch(session.offerUrl || "https://api.openai.com/v1/realtime/calls", {
-          method: "POST", body: offer.sdp,
+          method: "POST", body: offerBody,
           signal: controller.signal,
           headers: {
-            ...(session.offerHeaders || {}),
+            ...offerHeaders,
             Authorization: `Bearer ${session.clientSecret}`,
-            "Content-Type": "application/sdp",
           },
         }), controller.signal);
         const answerSdp = await abortable(answerResponse.text(), controller.signal);
@@ -645,6 +641,10 @@ Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques
         }
         await peer.setRemoteDescription({ type: "answer", sdp: answerSdp });
         assertCurrent();
+        // Keep the statistics, but retire the large private strings as soon as
+        // OpenAI has accepted the multipart request.
+        delete this.session.atlasInstructions;
+        delete this.session.atlasContext;
         // The reservation is one-use. Do not retain it any longer than negotiation needs.
         this.session.clientSecret = "";
         return true;
@@ -1369,6 +1369,7 @@ Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques
           || event.type?.startsWith("conversation.item.input_audio_transcription."))
           && this.discardLocalWakeAudio(event)) return;
       switch (event.type) {
+        case "session.created":
         case "session.updated":
           if (this.session) {
             this.session.atlasEffectiveReasoningEffort = event.session?.reasoning?.effort || "unreported";

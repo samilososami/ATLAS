@@ -382,8 +382,16 @@ public final class MainActivity extends Activity {
                     case "offer": work(id,()->{
                         String url=p.getString("url");Uri u=Uri.parse(url);
                         if(!"https".equals(u.getScheme())||!Arrays.asList("api.openai.com","chatgpt.com").contains(u.getHost()))throw new SecurityException("Servidor de voz no autorizado");
-                        Request.Builder b=new Request.Builder().url(url).post(RequestBody.create(p.getString("sdp"),MediaType.get("application/sdp")));
-                        JSONObject headers=p.optJSONObject("headers");if(headers!=null)for(Iterator<String> it=headers.keys();it.hasNext();){String key=it.next();b.header(key,headers.getString(key));}
+                        JSONObject initialSession=p.optJSONObject("session");
+                        RequestBody offerBody;
+                        if(initialSession!=null){
+                            offerBody=new MultipartBody.Builder().setType(MultipartBody.FORM)
+                                .addFormDataPart("sdp","offer.sdp",RequestBody.create(p.getString("sdp"),MediaType.get("application/sdp")))
+                                .addFormDataPart("session","session.json",RequestBody.create(initialSession.toString(),MediaType.get("application/json")))
+                                .build();
+                        }else offerBody=RequestBody.create(p.getString("sdp"),MediaType.get("application/sdp"));
+                        Request.Builder b=new Request.Builder().url(url).post(offerBody);
+                        JSONObject headers=p.optJSONObject("headers");if(headers!=null)for(Iterator<String> it=headers.keys();it.hasNext();){String key=it.next();if(!"content-type".equalsIgnoreCase(key))b.header(key,headers.getString(key));}
                         try(Response r=normal.newBuilder().followRedirects(false).build().newCall(b.build()).execute()){
                             if(!r.isSuccessful())throw new IOException("OpenAI no pudo iniciar audio (HTTP "+r.code()+")");return object("sdp",r.body().string());}
                     });break;

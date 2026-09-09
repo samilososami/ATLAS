@@ -1,16 +1,15 @@
-# ATLAS Android · 0.2.4 preview
+# ATLAS Android · 0.2.5 preview
 
 Aplicación Android 11+ para hablar con ATLAS y controlar un ATLAS A1 propio. La
 APK se publica en [GitHub Releases](https://github.com/samilososami/ATLAS/releases).
 Es una preview firmada para desarrollo; no es la imagen de ATLAS OS.
 
-La versión 0.2.4 hace más fiable y rápido el control del teléfono: abre
-aplicaciones por su nombre con una única operación nativa, distingue Amazon
-Shopping de Alexa, devuelve direcciones formateadas, pulsa controles por su
-etiqueta accesible y envía capturas JPEG más pequeñas. Reserva Android Use para
-acciones dentro de las interfaces y permite mantener una sesión visual explícita
-entre varios mensajes. Mantiene voz, chat, acciones, terminal, estado, widgets y
-actualizaciones dentro de una sola aplicación.
+La versión 0.2.5 elimina el bucle de conexión causado por enviar todo el contexto
+privado como un único frame WebRTC: la configuración inicial viaja ahora junto a
+la oferta SDP por HTTP multipart. También desacopla Android Use de Realtime, de
+modo que una renovación, un microcorte o el final de un turno ya no apagan una
+sesión visual explícita. Conserva las aperturas nativas, clicks semánticos,
+capturas reducidas, voz, chat, acciones, terminal, estado y widgets.
 
 ## Primera conexión
 
@@ -58,6 +57,9 @@ mandar la Activity a segundo plano se libera WebRTC para evitar consumo continuo
 de CPU, batería y audio; al volver se prepara de inmediato otra sesión. Esto no
 cierra el enlace con A1: el WebSocket Tailscale permanece a cargo del foreground
 service y conserva widgets, estado, terminales y herramientas del teléfono.
+Una renovación o reconexión de Realtime tampoco envía `androiduse.stop`: el
+control visual termina solo por una parada explícita o por perder realmente el
+móvil, Companion o el servicio de Accesibilidad.
 
 ## Cinco tabs
 
