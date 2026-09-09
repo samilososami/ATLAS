@@ -47,6 +47,12 @@ public final class MainActivity extends Activity {
     private AtlasAudioCapture audioCapture;
     private android.content.SharedPreferences prefs;
     private boolean initialRevealPending=true;
+    private final Runnable pauseWebRuntime=()->{
+        if(!background||web==null)return;
+        web.onPause();
+        web.pauseTimers();
+        web.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_WAIVED,true);
+    };
     private final AtlasConnection.RelayObserver relayObserver=(state,a1Online,detail)->{if(!background)event("linkState",linkConfig(state,a1Online,detail));};
     private boolean keyboardVisible;
 
@@ -416,12 +422,15 @@ public final class MainActivity extends Activity {
             boolean ok=granted(kind);answer(id,object("granted",ok),null);
         }
     }
-    @Override protected void onResume(){super.onResume();background=false;web.resumeTimers();web.onResume();immersive();if(connection.pairing!=null)AtlasLinkService.start(this);
+    @Override protected void onResume(){super.onResume();background=false;ui.removeCallbacks(pauseWebRuntime);web.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_BOUND,false);web.resumeTimers();web.onResume();immersive();if(connection.pairing!=null)AtlasLinkService.start(this);
         event("permissionsChanged",object("ok",true));event("linkState",config());event("resume",object("ok",true));
         event("realtimePrewarm",object("requested",true));
         if(locked&&!authPending){web.animate().cancel();web.setVisibility(View.INVISIBLE);authenticate("Desbloquear ATLAS",()->{locked=false;revealAfterUnlock();deliverWidget();ui.postDelayed(this::maybeRequestPersistentLink,700);},this::finish);}else {deliverWidget();ui.postDelayed(this::maybeRequestPersistentLink,700);}
     }
-    @Override protected void onStop(){locked=prefs.getBoolean("lock",false);speech(false);event("suspend",object("reason","background"));background=true;
+    @Override protected void onStop(){locked=prefs.getBoolean("lock",false);background=true;speech(false);audioCapture.close();event("suspend",object("reason","background"));
+        // Give JavaScript a brief window to close WebRTC/getUserMedia, then park
+        // Chromium completely. AtlasLinkService keeps only the cheap A1 socket.
+        ui.removeCallbacks(pauseWebRuntime);ui.postDelayed(pauseWebRuntime,350);
         blePairing.stop();web.animate().cancel();web.setAlpha(1f);web.setScaleX(1f);web.setScaleY(1f);super.onStop();}
-    @Override protected void onDestroy(){pageReady=false;speech(false);audioCapture.close();blePairing.stop();connection.removeRelayObserver(relayObserver);web.destroy();io.shutdown();super.onDestroy();}
+    @Override protected void onDestroy(){pageReady=false;ui.removeCallbacks(pauseWebRuntime);speech(false);audioCapture.close();blePairing.stop();connection.removeRelayObserver(relayObserver);web.destroy();io.shutdown();super.onDestroy();}
 }

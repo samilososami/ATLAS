@@ -7,11 +7,11 @@ const path=require('node:path');
 const android=__dirname;
 const repo=path.dirname(android);
 
-test('0.2.5 Android release metadata is aligned',()=>{
+test('0.2.6 Android release metadata is aligned',()=>{
   const gradle=fs.readFileSync(path.join(android,'app/build.gradle'),'utf8');
   const readme=fs.readFileSync(path.join(android,'README.md'),'utf8');
-  const notes=fs.readFileSync(path.join(repo,'docs/ANDROID-0.2.5.md'),'utf8');
-  assert.match(gradle,/versionCode 19; versionName '0\.2\.5-preview'/);
-  assert.match(readme,/^# ATLAS Android · 0\.2\.5 preview$/m);
-  assert.match(notes,/^# ATLAS Android 0\.2\.5-preview$/m);
+  const notes=fs.readFileSync(path.join(repo,'docs/ANDROID-0.2.6.md'),'utf8');
+  assert.match(gradle,/versionCode 20; versionName '0\.2\.6-preview'/);
+  assert.match(readme,/^# ATLAS Android · 0\.2\.6 preview$/m);
+  assert.match(notes,/^# ATLAS Android 0\.2\.6-preview$/m);
 });

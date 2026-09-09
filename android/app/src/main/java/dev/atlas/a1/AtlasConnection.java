@@ -201,7 +201,7 @@ final class AtlasConnection implements AutoCloseable {
                     String box=seal(directPing("heartbeat-"+UUID.randomUUID()));
                     if(!socket.send(object("box",box).toString()))failTransport(socket,"ATLAS A1 sin conexión",true);
                 }catch(Exception error){failTransport(socket,"No se pudo mantener la conexión con ATLAS A1",true);}
-            },20,20,TimeUnit.SECONDS);
+            },60,60,TimeUnit.SECONDS);
         }
     }
     synchronized void openRelay()throws Exception{
@@ -209,7 +209,7 @@ final class AtlasConnection implements AutoCloseable {
         String url=endpoint();boolean direct=usesDirectEndpoint();
         relayReady=new CompletableFuture<>();
         setRelayState(RelayState.CONNECTING,false,direct?"Conectando directamente con ATLAS A1":"Conectando con el relay");
-        OkHttpClient transport=(direct?pinned():normal).newBuilder().pingInterval(20,TimeUnit.SECONDS).readTimeout(0,TimeUnit.MILLISECONDS).build();
+        OkHttpClient transport=(direct?pinned():normal).newBuilder().pingInterval(30,TimeUnit.SECONDS).readTimeout(0,TimeUnit.MILLISECONDS).build();
         final String directProbeId=direct?"connect-"+UUID.randomUUID():"";
         relay=transport.newWebSocket(new Request.Builder().url(url).build(),new WebSocketListener(){
             @Override public void onOpen(WebSocket w,Response r){

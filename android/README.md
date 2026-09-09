@@ -1,15 +1,15 @@
-# ATLAS Android · 0.2.5 preview
+# ATLAS Android · 0.2.6 preview
 
 Aplicación Android 11+ para hablar con ATLAS y controlar un ATLAS A1 propio. La
 APK se publica en [GitHub Releases](https://github.com/samilososami/ATLAS/releases).
 Es una preview firmada para desarrollo; no es la imagen de ATLAS OS.
 
-La versión 0.2.5 elimina el bucle de conexión causado por enviar todo el contexto
-privado como un único frame WebRTC: la configuración inicial viaja ahora junto a
-la oferta SDP por HTTP multipart. También desacopla Android Use de Realtime, de
-modo que una renovación, un microcorte o el final de un turno ya no apagan una
-sesión visual explícita. Conserva las aperturas nativas, clicks semánticos,
-capturas reducidas, voz, chat, acciones, terminal, estado y widgets.
+La versión 0.2.6 pausa el renderer, temporizadores, captura de audio y WebRTC al
+ocultar la app, manteniendo únicamente el enlace cifrado ligero con A1. Reduce
+también los latidos redundantes del transporte. Las peticiones compuestas ya no
+terminan al abrir una aplicación: por ejemplo, «abre Amazon y busca ESP32» abre
+Amazon por API nativa, inicia Android Use, inspecciona la pantalla y continúa la
+acción. El indicador de preparación usa ahora dos flechas circulares legibles.
 
 ## Primera conexión
 
@@ -53,10 +53,12 @@ espera una operación nativa del teléfono, sin bloquear el lector ni duplicar l
 acción tras una reconexión.
 
 La sesión Realtime se precarga al abrir la app, antes de pulsar el micrófono. Al
-mandar la Activity a segundo plano se libera WebRTC para evitar consumo continuo
-de CPU, batería y audio; al volver se prepara de inmediato otra sesión. Esto no
-cierra el enlace con A1: el WebSocket Tailscale permanece a cargo del foreground
-service y conserva widgets, estado, terminales y herramientas del teléfono.
+mandar la Activity a segundo plano se libera WebRTC, se detiene cualquier captura
+nativa y se aparca el renderer completo del WebView: no quedan animaciones ni
+temporizadores de UI consumiendo CPU. Al volver se reactiva el renderer y se
+prepara de inmediato otra sesión. Esto no cierra el enlace con A1: el WebSocket
+Tailscale permanece a cargo del foreground service y conserva widgets, estado,
+terminales y herramientas del teléfono.
 Una renovación o reconexión de Realtime tampoco envía `androiduse.stop`: el
 control visual termina solo por una parada explícita o por perder realmente el
 móvil, Companion o el servicio de Accesibilidad.
@@ -91,7 +93,9 @@ WebScreen y `atlas-chat` comparten `atlas_phone` para esas APIs y
 `atlas_android` para el fallback visual. Los nombres `location`/`get_location`,
 `capabilities`, `call` y `calls.place` son aliases de `location.get`,
 `phone.capabilities` y `phone.call`. SMS usa `text`; las llamadas usan `number`;
-y `apps.launch {app}` abre por nombre sin capturas ni coordenadas. `Amazon`
+y `apps.launch {app}` abre por nombre sin capturas ni coordenadas. Si el turno
+incluye pasos dentro de la aplicación, ATLAS encadena automáticamente Android
+Use, recibe árbol y captura y sigue hasta completar la petición. `Amazon`
 resuelve Amazon Shopping (`com.amazon.mShop.android.shopping`) y `Alexa` la app
 Amazon Alexa (`com.amazon.dee.app`), sin intercambiarlas. `location.get` entrega
 coordenadas y, cuando Android puede resolverla, la dirección completa exacta en

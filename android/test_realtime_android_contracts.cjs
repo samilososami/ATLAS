@@ -50,6 +50,12 @@ assert.doesNotMatch(activitySource, /case "realtimeWarmup":\s*event\("realtimeSt
   "native warmup must not overwrite the WebRTC-owned connection indicator");
 assert.match(source, /async background\(\)\{this\.holding=false;await this\.close\(true\);\}/,
   "backgrounding must release costly WebRTC while preserving Android Use and the A1 link");
+assert.match(source, /launchNeedsVisualContinuation/,
+  "compound app launches must be recognized for visual continuation");
+assert.match(activitySource, /web\.pauseTimers\(\)/,
+  "the hidden Activity must suspend WebView timers");
+assert.match(activitySource, /RENDERER_PRIORITY_WAIVED/,
+  "the hidden Activity must make the WebView renderer reclaimable");
 
 function node() {
   return {
@@ -259,6 +265,32 @@ const voice = context.window.voice;
   "start must run once after the pending stop settles");
   voice.androidStopPromise = null;
   assert.equal(voice.androidControlActive, true);
+
+  nativeCalls.length = 0;
+  sent.length = 0;
+  voice.turn = "Abre Amazon y busca ESP32";
+  nativeHandler = (_method, params) => {
+    if (params.method === "apps.launch") return Promise.resolve({ launched: true });
+    if (params.method === "androiduse.start") return Promise.resolve({ ok: true });
+    if (params.method === "androiduse.tree") return Promise.resolve({ nodes: ["Buscar"] });
+    if (params.method === "androiduse.screenshot") {
+      return Promise.resolve({ mime: "image/png", pngBase64: "YWJj", width: 10, height: 20 });
+    }
+    return Promise.resolve({});
+  };
+  await voice.tool({
+    name: "atlas_phone",
+    arguments: JSON.stringify({ method: "apps.launch", params: { app: "Amazon" } }),
+    call_id: "call-compound-launch",
+  });
+  assert.deepEqual(nativeCalls.map(({ params }) => params.method),
+    ["apps.launch", "androiduse.start", "androiduse.tree", "androiduse.screenshot"],
+    "a compound launch must enter Android Use and inspect the opened app automatically");
+  assert.equal(voice.androidControlActive, true);
+  assert.match(sent[0].item.output, /"taskComplete":false/,
+    "the model must be told that merely opening the app did not complete the request");
+  assert.equal(sent[1].item.content[1].type, "input_image",
+    "the continuation must receive the current phone screenshot");
 
   console.log("Realtime Android bridge contracts passed");
 })().catch((error) => {
