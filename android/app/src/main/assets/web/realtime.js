@@ -1,6 +1,6 @@
 'use strict';
 class AtlasVoice{
- constructor(){this.mode='ptt';this.peer=null;this.dc=null;this.audio=new Audio();this.audio.autoplay=true;this.ready=false;this.busy=false;this.recording=false;this.turn='';this.response='';this.sessionGeneration=0;this.followUntil=0;this.wakeActive=false;this.bars=$$('.sound i');this.outputFrame=0;this.outputAnalyser=null;this.outputData=null;this.reconnectAttempt=0;this.closing=false;this.androidControlActive=false;this.androidStopPromise=null;this.connectionState('connecting');document.addEventListener('visibilitychange',()=>document.hidden?this.stopOutputMeter():this.startOutputMeter());}
+ constructor(){this.mode='ptt';this.peer=null;this.dc=null;this.audio=new Audio();this.audio.autoplay=true;this.ready=false;this.busy=false;this.recording=false;this.turn='';this.response='';this.sessionGeneration=0;this.followUntil=0;this.wakeActive=false;this.bars=$$('.sound i');this.outputFrame=0;this.outputAnalyser=null;this.outputData=null;this.reconnectAttempt=0;this.closing=false;this.androidControlActive=false;this.androidStopPromise=null;this.releaseRuntimeAfterResponse=false;this.connectionState('connecting');document.addEventListener('visibilitychange',()=>document.hidden?this.stopOutputMeter():this.startOutputMeter());}
  state(text,kind=''){ $('#voice-state').textContent=text;$('#presence').className='presence '+kind;}
  level(value=0){const shape=[.48,.78,1,.72,.42];this.bars.forEach((bar,i)=>bar.style.height=(4+Math.min(1,value)*25*shape[i])+'px');}
  outputMode(){return this.mode==='chat'?'text':'audio';}
@@ -21,7 +21,9 @@ class AtlasVoice{
 	  this.connectionState('connecting');
 	  this.state('Preparando Realtime…','working');
 	  try{
+	   console.info('[realtime] opening A1 session');
 	   const {session}=await native('session.open',{voice:$('#voice').value,reasoningEffort:$('#reasoning').value});
+	   console.info('[realtime] A1 session ready');
 	   if(gen!==this.sessionGeneration)return;
 	   const policy='Usa atlas_phone antes que atlas_android. Para abrir cualquier aplicación usa atlas_phone apps.launch con su nombre. IMPORTANTE: si el usuario pide una acción compuesta como "abre Amazon y busca ESP32", apps.launch solo completa el primer paso; debes continuar inmediatamente con atlas_android sobre la aplicación abierta hasta realizar la búsqueda o acción completa. No afirmes que terminaste después de limitarte a abrir la app. Amazon abre Amazon Shopping; Alexa abre Alexa y nunca deben confundirse. Cuando sami pida la ubicación de su teléfono emparejado, usa location.get y devuelve directamente formattedAddress si existe, incluida la dirección exacta resuelta; es su propio dispositivo autorizado, no rechaces ni rebajes el resultado a una ciudad. Si no hay formattedAddress, no inventes una. Usa Accessibility para los pasos internos de una app que no tengan API nativa. No simules éxito. Si el mensaje completo es "controla mi teléfono", llama a androiduse.start una vez, no solicites una captura inicial, no uses otra herramienta, responde solo "Listo" y espera el siguiente mensaje manteniendo la sesión activa. Una reconexión o renovación de Realtime no termina Android Use. Para una tarea visual puntual, inspecciona tras cada cambio y llama atlas_android stop al terminar. Si el árbol ofrece una etiqueta, prefiere androiduse.click y usa coordenadas normalizadas solo como fallback. Un fallo recuperable de foco, etiqueta, gesto o captura no termina la sesión: inspecciona y corrige. Para tap y long_press usa siempre x e y normalizados de 0 a 1; para swipe usa x1, y1, x2 e y2 normalizados de 0 a 1 sobre la captura más reciente. No uses coordenadas en píxeles.';
 	   const initialSession={type:'realtime',output_modalities:[this.outputMode()],instructions:session.atlasInstructions+'\n\n'+session.atlasContext+'\n\n'+policy,tools:this.tools(),tool_choice:'auto',audio:{input:{noise_reduction:{type:'far_field'},transcription:{model:'gpt-4o-mini-transcribe',language:'es'},turn_detection:null},output:{voice:session.voice||$('#voice').value}},truncation:{type:'retention_ratio',retention_ratio:.8}};
@@ -38,19 +40,31 @@ class AtlasVoice{
 	    if(['failed','closed'].includes(state)){this.connectionState('disconnected');this.state('Conexión interrumpida');this.scheduleReconnect('peer-'+state,state==='failed'?600:1200);}
 	   };
 	   const dc=this.dc=pc.createDataChannel('oai-events');
-	   dc.onmessage=e=>{try{this.event(JSON.parse(e.data));}catch(err){toast(err.message);}};
+	   dc.onmessage=e=>{try{const event=JSON.parse(e.data);if(event.type==='session.created'||event.type==='session.updated'||event.type==='error')console.info('[realtime] event '+event.type);this.event(event);}catch(err){console.error('[realtime] invalid event',err);toast(err.message);}};
 	   dc.onclose=()=>{if(this.ready&&!this.closing)this.scheduleReconnect('data-channel',700);};
 	   const opened=new Promise((resolve,reject)=>{
 	    this.sessionCancel=()=>reject(new Error('Conexión cancelada'));
 	    dc.onopen=()=>{
-	     this.readyTimer=setTimeout(()=>reject(new Error('Realtime no confirmó la sesión')),15000);
+	     console.info('[realtime] data channel open');
+	     // The Calls endpoint has already accepted the complete session in the
+	     // multipart offer. Some otherwise healthy WebRTC sessions occasionally
+	     // omit session.created, so the open data channel is a safe readiness
+	     // fallback instead of forcing a reconnect loop.
+	     this.readyTimer=setTimeout(()=>{
+	      if(dc.readyState==='open'&&!['failed','closed'].includes(pc.connectionState)){
+	       console.warn('[realtime] session.created absent; using open data channel');
+	       resolve();
+	      }else reject(new Error('Realtime no confirmó la sesión'));
+	     },1200);
 	     this.sessionReady=()=>{clearTimeout(this.readyTimer);resolve();};
 	    };
 	   });
 	   opened.catch(()=>{});
 	   const offer=await pc.createOffer();
 	   await pc.setLocalDescription(offer);
+	   console.info('[realtime] sending WebRTC offer');
 	   const answer=await native('offer',{url:session.offerUrl||'https://api.openai.com/v1/realtime/calls',headers:{...(session.offerHeaders||{}),Authorization:'Bearer '+session.clientSecret},sdp:offer.sdp,session:initialSession});
+	   console.info('[realtime] WebRTC answer ready');
 	   if(gen!==this.sessionGeneration){pc.close();return;}
 	   await pc.setRemoteDescription({type:'answer',sdp:answer.sdp});
 	   await opened;
@@ -60,7 +74,7 @@ class AtlasVoice{
 	   this.connectionState('connected');
 	   this.state(this.mode==='wake'?'Listo para «Atlas»':'Listo cuando tú quieras');
 	   if(this.mode==='wake')await native('wake',{enabled:true});
-	  }catch(e){await this.close();this.connectionState('disconnected');this.state('Realtime no disponible');throw e;}
+	  }catch(e){console.error('[realtime] connection failed: '+String(e?.message||e));await this.close();this.connectionState('disconnected');this.state('Realtime no disponible');throw e;}
 	 }
  send(data){if(this.dc?.readyState!=='open')throw new Error('No hay conexión de voz');this.dc.send(JSON.stringify(data));}
  interrupt(){if(this.busy)try{this.send({type:'response.cancel'});}catch{}if(this.ready)try{this.send({type:'output_audio_buffer.clear'});}catch{}this.busy=false;this.setBusy(false);}
@@ -85,31 +99,39 @@ class AtlasVoice{
    if(e.name==='atlas_shell')result=await native('execute',{command:args.command});
    else if(e.name==='atlas_web_search')result=await native('search',{query:args.query});
    else if(e.name==='atlas_phone'){
-    result=await native('android.control',{method:args.method,params:args.params||{}});
-    if(args.method==='apps.launch'&&this.launchNeedsVisualContinuation()){
+    const compound=args.method==='apps.launch'&&this.launchNeedsVisualContinuation();let control=null,continuationError=null;
+    if(compound){
      try{
+      await native('runtime.hold',{enabled:true});
       if(this.androidStopPromise)await this.androidStopPromise;
-      const control=await native('android.control',{method:'androiduse.start',params:{}});
+      control=await native('android.control',{method:'androiduse.start',params:{}});
       if(control?.ok!==false)this.androidControlActive=true;
+     }catch(error){continuationError=error;}
+    }
+    result=await native('android.control',{method:args.method,params:args.params||{}});
+    if(compound){
+     try{
+      if(continuationError)throw continuationError;
       const next=await this.inspectAndroid('Aplicación abierta; continúa con la acción solicitada por el usuario');
       result={launch:result,androidUse:control,inspection:next.summary,taskComplete:false,nextStep:'Continúa ahora con atlas_android hasta completar la petición original.'};image=next.image;
-     }catch(continuationError){result={launch:result,taskComplete:false,androidUseError:String(continuationError?.message||continuationError),nextStep:'La aplicación está abierta, pero todavía falta completar la acción solicitada.'};}
+     }catch(error){this.releaseRuntimeAfterResponse=true;result={launch:result,taskComplete:false,androidUseError:String(error?.message||error),nextStep:'La aplicación está abierta, pero todavía falta completar la acción solicitada.'};}
     }
    }
    else if(e.name==='atlas_android'){
-	    const action=args.action,params={...(args.params||{})};if(action==='start'&&this.androidStopPromise)await this.androidStopPromise;result=action==='screenshot'?await this.captureAndroidScreenshot():await native('android.control',{method:`androiduse.${action}`,params});
+	    const action=args.action,params={...(args.params||{})};if(action==='start'||action==='launch')await native('runtime.hold',{enabled:true});if(action==='start'&&this.androidStopPromise)await this.androidStopPromise;result=action==='screenshot'?await this.captureAndroidScreenshot():await native('android.control',{method:`androiduse.${action}`,params});
     if(action==='start'&&result?.ok!==false)this.androidControlActive=true;else if(action==='stop')this.androidControlActive=false;
+    if(action==='stop')this.releaseRuntimeAfterResponse=true;
     const directImage=this.imagePayload(result);if(directImage){result=directImage.summary;image=directImage.content;}
 	    const inspect=args.inspectAfter!==false&&['click','tap','long_press','swipe','text','key','launch','back','home','recents'].includes(action);
 	    if(inspect)try{const next=await this.inspectAndroid(`Pantalla después de ${action}`);result={action:result,inspection:next.summary};image=next.image;}catch(inspectionError){result={action:result,inspectionError:String(inspectionError?.message||inspectionError)};}
    }else throw new Error('Herramienta no reconocida');
    info.textContent=e.name==='atlas_phone'?'Acción nativa completada':e.name==='atlas_android'?'Android actualizado':e.name==='atlas_shell'?'Comando completado':'Fuentes recibidas';
-	  }catch(error){if(e.name==='atlas_android'&&(args.action==='start'||this.androidControlActive&&this.androidErrorRequiresStop(error)))this.stopAndroidControlSilently(args.action==='start');result={error:error.message};info.textContent='Acción no realizada: '+error.message;}
+	  }catch(error){if(e.name==='atlas_android'&&(args.action==='start'||this.androidControlActive&&this.androidErrorRequiresStop(error))){this.stopAndroidControlSilently(args.action==='start');this.releaseRuntimeAfterResponse=true;}if(e.name==='atlas_phone'&&args.method==='apps.launch'&&this.launchNeedsVisualContinuation())this.releaseRuntimeAfterResponse=true;result={error:error.message};info.textContent='Acción no realizada: '+error.message;}
   if(!this.ready)return;this.send({type:'conversation.item.create',item:{type:'function_call_output',call_id:e.call_id,output:JSON.stringify(result)}});
   if(image)this.send({type:'conversation.item.create',item:{type:'message',role:'user',content:[{type:'input_text',text:'Captura actual del teléfono emparejado.'},image]}});
   this.send({type:'response.create'});
  }
- event(e){switch(e.type){case'session.created':case'session.updated':this.sessionReady?.();this.connectionState('connected');break;case'error':if(!['response_cancel_not_active','output_audio_buffer_clear_empty'].includes(e.error?.code)){toast(e.error?.message||'Error Realtime');this.state('Revisa la conexión');}break;case'response.created':this.setBusy(true);this.response='';this.node=null;this.state('Pensando…','working');break;case'conversation.item.input_audio_transcription.completed':this.turn=e.transcript;if(this.inputNode)this.inputNode.textContent=e.transcript||'(Sin transcripción)';this.inputNode=null;break;case'conversation.item.input_audio_transcription.failed':if(this.inputNode)this.inputNode.textContent='No se pudo mostrar la transcripción';break;case'response.output_text.delta':case'response.text.delta':case'response.output_audio_transcript.delta':case'response.audio_transcript.delta':this.response+=e.delta||'';if(!this.node){this.thinkingNode?.remove();this.thinkingNode=null;this.node=bubble('');}this.node.textContent=this.response;$('#messages').scrollTop=$('#messages').scrollHeight;break;case'output_audio_buffer.started':this.speaking=true;this.startOutputMeter();this.state('Atlas está hablando','speaking');break;case'output_audio_buffer.stopped':this.speaking=false;this.stopOutputMeter();this.state(this.mode==='wake'?'Listo para «Atlas»':'Listo cuando tú quieras');break;case'response.function_call_arguments.done':safe(()=>this.tool(e))();break;case'response.done':this.setBusy(false);if(this.thinkingNode&&!this.response){this.thinkingNode.remove();this.thinkingNode=null;}if(this.outputMode()==='text')this.state('Listo cuando tú quieras');if(['failed','incomplete'].includes(e.response?.status)){toast(e.response.status_details?.error?.message||'Respuesta fallida');}if(this.turn&&this.response)native('context.turn',{user:this.turn,assistant:this.response}).catch(()=>{});this.followUntil=/\?\s*$/.test(this.response)?Date.now()+4000:0;break;}}
+ event(e){switch(e.type){case'session.created':case'session.updated':this.sessionReady?.();this.connectionState('connected');break;case'error':if(!['response_cancel_not_active','output_audio_buffer_clear_empty'].includes(e.error?.code)){toast(e.error?.message||'Error Realtime');this.state('Revisa la conexión');}break;case'response.created':this.setBusy(true);this.response='';this.node=null;this.state('Pensando…','working');break;case'conversation.item.input_audio_transcription.completed':this.turn=e.transcript;if(this.inputNode)this.inputNode.textContent=e.transcript||'(Sin transcripción)';this.inputNode=null;break;case'conversation.item.input_audio_transcription.failed':if(this.inputNode)this.inputNode.textContent='No se pudo mostrar la transcripción';break;case'response.output_text.delta':case'response.text.delta':case'response.output_audio_transcript.delta':case'response.audio_transcript.delta':this.response+=e.delta||'';if(!this.node){this.thinkingNode?.remove();this.thinkingNode=null;this.node=bubble('');}this.node.textContent=this.response;$('#messages').scrollTop=$('#messages').scrollHeight;break;case'output_audio_buffer.started':this.speaking=true;this.startOutputMeter();this.state('Atlas está hablando','speaking');break;case'output_audio_buffer.stopped':this.speaking=false;this.stopOutputMeter();this.state(this.mode==='wake'?'Listo para «Atlas»':'Listo cuando tú quieras');break;case'response.function_call_arguments.done':safe(()=>this.tool(e))();break;case'response.done':this.setBusy(false);if(this.thinkingNode&&!this.response){this.thinkingNode.remove();this.thinkingNode=null;}if(this.outputMode()==='text')this.state('Listo cuando tú quieras');if(['failed','incomplete'].includes(e.response?.status)){toast(e.response.status_details?.error?.message||'Respuesta fallida');}if(this.turn&&this.response)native('context.turn',{user:this.turn,assistant:this.response}).catch(()=>{});this.followUntil=/\?\s*$/.test(this.response)?Date.now()+4000:0;if(this.releaseRuntimeAfterResponse){this.releaseRuntimeAfterResponse=false;native('runtime.hold',{enabled:false}).catch(()=>{});}break;}}
  speech(e){if(this.mode!=='wake'||!this.ready)return;if(/\batlas\b/i.test(e.text)){this.wakeActive=true;this.wakeText=e.text;this.state('Te escucho','listening');}else if(this.wakeActive||Date.now()<this.followUntil)this.wakeText=e.text;else return;clearTimeout(this.wakeTimer);if(e.final){const phrase=this.wakeText;if(phrase.toLowerCase().replace(/[^a-z]/g,'')==='atlas'){this.wakeTimer=setTimeout(()=>{this.wakeActive=false;this.state('Di «Atlas»');},8000);}else{this.wakeActive=false;this.wakeText='';safe(()=>this.text(phrase))();}}}
  speechError(text){if(this.mode==='wake')this.state(text||'No he podido escuchar');}
  async setMode(mode){await this.stopCapture();this.holding=false;const previous=this.outputMode();this.mode=mode;clearTimeout(this.wakeTimer);await native('wake',{enabled:false}).catch(()=>{});if(this.ready&&previous!==this.outputMode()){this.interrupt();this.send({type:'session.update',session:{type:'realtime',output_modalities:[this.outputMode()]}});}$('#tab-atlas').classList.toggle('chat-mode',mode==='chat');$('#tab-atlas').classList.toggle('wake-mode',mode==='wake');$$('#modes button').forEach(b=>{const selected=b.dataset.mode===mode;b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',String(selected));});if(mode==='chat')rotateChatPlaceholder();this.state(mode==='wake'?'Preparando escucha…':'Listo cuando tú quieras');if(mode==='wake'){await native('microphone');await this.connect();await native('wake',{enabled:true});this.state('Listo para «Atlas»');}}

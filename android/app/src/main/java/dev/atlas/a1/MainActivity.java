@@ -11,6 +11,7 @@ import android.provider.Settings;
 import android.security.keystore.*;
 import android.speech.*;
 import android.util.Base64;
+import android.util.Log;
 import android.view.*;
 import android.webkit.*;
 import android.widget.*;
@@ -39,6 +40,7 @@ public final class MainActivity extends Activity {
     private JSONObject widgetLaunch;
     private SpeechRecognizer recognizer;
     private boolean listening, background, pageReady, authPending, locked;
+    private boolean agentRuntimeHeld, webRuntimeParked;
     private long speechGeneration=0;
     private PermissionRequest micRequest;
     private String permissionId;
@@ -47,14 +49,37 @@ public final class MainActivity extends Activity {
     private AtlasAudioCapture audioCapture;
     private android.content.SharedPreferences prefs;
     private boolean initialRevealPending=true;
-    private final Runnable pauseWebRuntime=()->{
-        if(!background||web==null)return;
-        web.onPause();
-        web.pauseTimers();
-        web.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_WAIVED,true);
-    };
+    private final Runnable runtimeHoldTimeout=()->setAgentRuntimeHeld(false);
+    private final Runnable pauseWebRuntime=this::parkWebRuntimeIfIdle;
     private final AtlasConnection.RelayObserver relayObserver=(state,a1Online,detail)->{if(!background)event("linkState",linkConfig(state,a1Online,detail));};
     private boolean keyboardVisible;
+
+    private void setAgentRuntimeHeld(boolean held){
+        agentRuntimeHeld=held;
+        ui.removeCallbacks(runtimeHoldTimeout);
+        if(held){
+            webRuntimeParked=false;
+            // A lost model/tool turn must never leave Chromium hot forever.
+            ui.postDelayed(runtimeHoldTimeout,10*60*1000L);
+        }else if(background){
+            ui.removeCallbacks(pauseWebRuntime);
+            ui.post(pauseWebRuntime);
+        }
+    }
+    private void parkWebRuntimeIfIdle(){
+        if(!background||web==null)return;
+        if(agentRuntimeHeld){ui.postDelayed(pauseWebRuntime,1000);return;}
+        if(webRuntimeParked)return;
+        webRuntimeParked=true;
+        // Let JavaScript close WebRTC/getUserMedia before parking Chromium.
+        event("suspend",object("reason","background"));
+        ui.postDelayed(()->{
+            if(!background||agentRuntimeHeld||web==null)return;
+            web.onPause();
+            web.pauseTimers();
+            web.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_WAIVED,true);
+        },350);
+    }
 
     @Override public void onCreate(Bundle state) {
         prefs=getSharedPreferences("atlas",MODE_PRIVATE);
@@ -108,6 +133,10 @@ public final class MainActivity extends Activity {
             @Override public void onPageFinished(WebView v,String url){pageReady=true;event("ready",config());event("realtimePrewarm",object("requested",true));deliverWidget();revealInitialPage();}
         });
         web.setWebChromeClient(new WebChromeClient(){
+            @Override public boolean onConsoleMessage(ConsoleMessage message){
+                Log.d("ATLASWeb",message.messageLevel()+" "+message.sourceId()+":"+message.lineNumber()+" "+message.message());
+                return true;
+            }
             @Override public void onPermissionRequest(PermissionRequest r){runOnUiThread(()->{
                 if(!"https://atlas.local".equals(r.getOrigin().toString().replaceAll("/$",""))){r.deny();return;}
                 if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED)r.grant(new String[]{PermissionRequest.RESOURCE_AUDIO_CAPTURE});
@@ -296,7 +325,7 @@ public final class MainActivity extends Activity {
             .setPositiveButton("Continuar",(d,w)->{if(prefs.getBoolean("danger",true))authenticate("Autorizar acción en A1",action,()->answer(id,null,"No autorizado"));else action.run();})
             .setOnCancelListener(d->answer(id,null,"Cancelado")).show();
     }
-    private void work(String id,Callable<JSONObject> action){io.execute(()->{try{answer(id,action.call(),null);}catch(Exception e){String m=e.getMessage();answer(id,null,m==null?"No se pudo completar la operación":m.substring(0,Math.min(m.length(),240)));}});}
+    private void work(String id,Callable<JSONObject> action){io.execute(()->{try{answer(id,action.call(),null);}catch(Exception e){String m=e.getMessage();Log.w("ATLASNative","Bridge request failed: "+(m==null?e.getClass().getSimpleName():m),e);answer(id,null,m==null?"No se pudo completar la operación":m.substring(0,Math.min(m.length(),240)));}});}
     private void speech(boolean enable){
         listening=enable;speechGeneration++;
         if(recognizer!=null){recognizer.cancel();recognizer.destroy();recognizer=null;}
@@ -359,6 +388,7 @@ public final class MainActivity extends Activity {
                         if(checkSelfPermission(Manifest.permission.RECORD_AUDIO)==PackageManager.PERMISSION_GRANTED)prepareWebMicrophone(id);
                         else {permissionId=id;requestPermissions(new String[]{Manifest.permission.RECORD_AUDIO},7);}break;
                     case "realtimeWarmup": answer(id,object("ready",true),null);break;
+                    case "runtime.hold": setAgentRuntimeHeld(p.optBoolean("enabled"));answer(id,object("held",agentRuntimeHeld),null);break;
                     case "audio.capture.start": work(id,()->audioCapture.start(p.optInt("sampleRate",24000),p.optInt("channelCount",1)));break;
                     case "audio.capture.stop": work(id,()->audioCapture.stop());break;
                     case "accessibilityStatus": answer(id,object("enabled",AtlasAccessibilityService.enabled(MainActivity.this),"controlling",AtlasAccessibilityService.controlling()),null);break;
@@ -422,15 +452,15 @@ public final class MainActivity extends Activity {
             boolean ok=granted(kind);answer(id,object("granted",ok),null);
         }
     }
-    @Override protected void onResume(){super.onResume();background=false;ui.removeCallbacks(pauseWebRuntime);web.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_BOUND,false);web.resumeTimers();web.onResume();immersive();if(connection.pairing!=null)AtlasLinkService.start(this);
+    @Override protected void onResume(){super.onResume();background=false;webRuntimeParked=false;ui.removeCallbacks(pauseWebRuntime);web.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_BOUND,false);web.resumeTimers();web.onResume();immersive();if(connection.pairing!=null)AtlasLinkService.start(this);
         event("permissionsChanged",object("ok",true));event("linkState",config());event("resume",object("ok",true));
         event("realtimePrewarm",object("requested",true));
         if(locked&&!authPending){web.animate().cancel();web.setVisibility(View.INVISIBLE);authenticate("Desbloquear ATLAS",()->{locked=false;revealAfterUnlock();deliverWidget();ui.postDelayed(this::maybeRequestPersistentLink,700);},this::finish);}else {deliverWidget();ui.postDelayed(this::maybeRequestPersistentLink,700);}
     }
-    @Override protected void onStop(){locked=prefs.getBoolean("lock",false);background=true;speech(false);audioCapture.close();event("suspend",object("reason","background"));
-        // Give JavaScript a brief window to close WebRTC/getUserMedia, then park
-        // Chromium completely. AtlasLinkService keeps only the cheap A1 socket.
-        ui.removeCallbacks(pauseWebRuntime);ui.postDelayed(pauseWebRuntime,350);
+    @Override protected void onStop(){locked=prefs.getBoolean("lock",false);background=true;speech(false);audioCapture.close();
+        // Compound phone tasks hold the Realtime/WebView runtime just long enough
+        // to finish Android Use. Ordinary backgrounding still parks immediately.
+        ui.removeCallbacks(pauseWebRuntime);ui.post(pauseWebRuntime);
         blePairing.stop();web.animate().cancel();web.setAlpha(1f);web.setScaleX(1f);web.setScaleY(1f);super.onStop();}
-    @Override protected void onDestroy(){pageReady=false;ui.removeCallbacks(pauseWebRuntime);speech(false);audioCapture.close();blePairing.stop();connection.removeRelayObserver(relayObserver);web.destroy();io.shutdown();super.onDestroy();}
+    @Override protected void onDestroy(){pageReady=false;ui.removeCallbacks(pauseWebRuntime);ui.removeCallbacks(runtimeHoldTimeout);speech(false);audioCapture.close();blePairing.stop();connection.removeRelayObserver(relayObserver);web.destroy();io.shutdown();super.onDestroy();}
 }

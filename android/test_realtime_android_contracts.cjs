@@ -33,6 +33,10 @@ assert.match(source, /sdp:offer\.sdp,session:initialSession/,
   "the large initial configuration must travel with the HTTP offer");
 assert.match(source, /case'session\.created':case'session\.updated'/,
   "the app must accept the initial configured session event");
+assert.match(source, /session\.created absent; using open data channel/,
+  "an accepted open data channel must prevent reconnect loops when session.created is omitted");
+assert.match(source, /dc\.readyState==='open'&&!\['failed','closed'\]\.includes\(pc\.connectionState\)/,
+  "the Realtime readiness fallback must only accept a healthy open channel");
 assert.doesNotMatch(source, /this\.send\(\{type:'session\.update',session:s\}\)/,
   "the private context must never be sent as one data-channel frame");
 assert.match(activitySource, /new MultipartBody\.Builder\(\)\.setType\(MultipartBody\.FORM\)/,
@@ -56,6 +60,10 @@ assert.match(activitySource, /web\.pauseTimers\(\)/,
   "the hidden Activity must suspend WebView timers");
 assert.match(activitySource, /RENDERER_PRIORITY_WAIVED/,
   "the hidden Activity must make the WebView renderer reclaimable");
+assert.match(activitySource, /agentRuntimeHeld/,
+  "compound Android Use must be able to keep the model runtime alive in background");
+assert.match(activitySource, /case "runtime\.hold"/,
+  "JavaScript must expose a bounded native runtime lease");
 
 function node() {
   return {
@@ -283,9 +291,10 @@ const voice = context.window.voice;
     arguments: JSON.stringify({ method: "apps.launch", params: { app: "Amazon" } }),
     call_id: "call-compound-launch",
   });
-  assert.deepEqual(nativeCalls.map(({ params }) => params.method),
-    ["apps.launch", "androiduse.start", "androiduse.tree", "androiduse.screenshot"],
-    "a compound launch must enter Android Use and inspect the opened app automatically");
+  assert.deepEqual(nativeCalls.map(({ method, params }) =>
+    method === "runtime.hold" ? "runtime.hold" : params.method),
+    ["runtime.hold", "androiduse.start", "apps.launch", "androiduse.tree", "androiduse.screenshot"],
+    "a compound launch must hold Realtime and enter Android Use before opening the app");
   assert.equal(voice.androidControlActive, true);
   assert.match(sent[0].item.output, /"taskComplete":false/,
     "the model must be told that merely opening the app did not complete the request");

@@ -46,6 +46,16 @@ test('sustained effects stop when idle and avoid costly fixed composition',()=>{
   assert.match(app,/touchcancel/);
 });
 
+test('Realtime connecting uses the selected heavy double-arrow glyph',()=>{
+  const app=read('assets/web/app.js');
+  const voice=read('assets/web/realtime.js');
+  const css=read('assets/web/style.css');
+  assert.match(app,/refresh-double/);
+  assert.match(app,/name==='refresh-double'\)svg\.classList\.add\('reference-refresh'\)/);
+  assert.match(voice,/state==='connecting'\?'refresh-double'/);
+  assert.match(css,/\.realtime-connection svg\.reference-refresh\s*\{[^}]*stroke:\s*currentColor;[^}]*stroke-width:\s*3\.15;/s);
+});
+
 test('navigation pairing and generated controls expose accessible state',()=>{
   const app=read('assets/web/app.js');
   const html=read('assets/web/index.html');

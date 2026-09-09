@@ -1,15 +1,18 @@
-# ATLAS Android · 0.2.6 preview
+# ATLAS Android · 0.2.7 preview
 
 Aplicación Android 11+ para hablar con ATLAS y controlar un ATLAS A1 propio. La
 APK se publica en [GitHub Releases](https://github.com/samilososami/ATLAS/releases).
 Es una preview firmada para desarrollo; no es la imagen de ATLAS OS.
 
-La versión 0.2.6 pausa el renderer, temporizadores, captura de audio y WebRTC al
+La versión 0.2.7 pausa el renderer, temporizadores, captura de audio y WebRTC al
 ocultar la app, manteniendo únicamente el enlace cifrado ligero con A1. Reduce
 también los latidos redundantes del transporte. Las peticiones compuestas ya no
 terminan al abrir una aplicación: por ejemplo, «abre Amazon y busca ESP32» abre
 Amazon por API nativa, inicia Android Use, inspecciona la pantalla y continúa la
-acción. El indicador de preparación usa ahora dos flechas circulares legibles.
+acción. El indicador de preparación usa ahora el glifo sólido de dos flechas
+circulares elegido para ATLAS. Si el proveedor abre correctamente el canal
+WebRTC pero omite puntualmente `session.created`, la app conserva esa sesión
+sana en lugar de entrar en un bucle de reconexión.
 
 ## Primera conexión
 
