@@ -131,6 +131,7 @@ AGENT_FAST_MODE = os.environ.get("ATLAS_WEBSCREEN_FAST_MODE", "1").lower() not i
     "0", "false", "no", "off"
 }
 REALTIME_MODEL = os.environ.get("ATLAS_REALTIME_MODEL", "gpt-realtime-2.1").strip()
+REALTIME_OFFER_URL = "https://api.openai.com/v1/realtime/calls"
 REALTIME_VOICE = os.environ.get("ATLAS_REALTIME_VOICE", "marin").strip()
 # Curated ATLAS voices. Keep this server-side allowlist in sync with the UI:
 # requests may arrive directly at the endpoint, without the browser selector.
@@ -207,6 +208,12 @@ REALTIME_CONTEXT_MAX_CHARS = int(os.environ.get(
 ))
 REALTIME_CONTEXT_AUTO_COMPACT_RATIO = float(os.environ.get(
     "ATLAS_REALTIME_CONTEXT_AUTO_COMPACT_RATIO", "0.90",
+))
+# The WebRTC offer is processed synchronously at the provider edge.  Keep its
+# durable-map primer compact enough to avoid edge timeouts; the full workspace
+# remains available immediately through atlas_shell and the canonical map.
+REALTIME_OFFER_CONTEXT_MAX_CHARS = int(os.environ.get(
+    "ATLAS_REALTIME_OFFER_CONTEXT_MAX_CHARS", str(48 * 1024),
 ))
 MIN_AUDIO_RMS = float(os.environ.get("ATLAS_MIN_AUDIO_RMS", "80"))
 MAX_AUDIO_BYTES = 16 * 1024 * 1024
@@ -480,7 +487,10 @@ class PersistentGatewayBridge:
                 threading.Thread(
                     target=self._reader, args=(process,), name="gateway-bridge-reader", daemon=True,
                 ).start()
-        if not self.ready.wait(timeout):
+        # A live Node process can be temporarily disconnected from the local
+        # Gateway.  Do not turn that short reconnect window into an immediate
+        # 503 for every browser reservation: wait for its next hello first.
+        if not self.ready.is_set() and not self.ready.wait(timeout):
             detail = self.last_error or "el Gateway no confirmó la conexión"
             self.stop(expected_process=process)
             raise RuntimeError(f"No se pudo iniciar el bridge persistente: {detail}")
@@ -1350,6 +1360,19 @@ def build_realtime_context(
         "sources": included,
         "truncated": truncated or filler_truncated,
     }
+
+
+def compact_realtime_offer_context(context: str) -> tuple[str, bool]:
+    """Bound only the initial WebRTC offer, never the source workspace."""
+    if len(context) <= REALTIME_OFFER_CONTEXT_MAX_CHARS:
+        return context, False
+    selected = context[:REALTIME_OFFER_CONTEXT_MAX_CHARS].rsplit("\n", 1)[0].rstrip()
+    selected += (
+        "\n\n[The initial WebRTC context is intentionally compact for connection reliability. "
+        "The complete trusted Markdown workspace remains available via atlas_shell; consult AGENTS.md "
+        "and the relevant source when needed.]"
+    )
+    return selected, True
 
 
 def read_realtime_instructions(path: Path = REALTIME_INSTRUCTIONS_FILE) -> str:
@@ -2417,6 +2440,62 @@ def open_elevenlabs_speech(text: str):
         raise RuntimeError("No se pudo conectar con ElevenLabs") from error
 
 
+def encode_realtime_offer(sdp: str, session: dict[str, Any]) -> tuple[bytes, str]:
+    """Create the exact multipart form required by OpenAI's WebRTC endpoint.
+
+    Chrome may not call the endpoint directly: newer OpenAI responses do not
+    grant CORS to a kiosk page served from localhost.  Keeping this hop on A1
+    also leaves the browser's ephemeral credential short-lived and scoped to
+    the already authorised local WebScreen owner.
+    """
+    boundary = f"----atlas-realtime-{uuid4().hex}"
+    chunks: list[bytes] = []
+    for name, value, content_type in (
+        ("sdp", sdp, "application/sdp"),
+        ("session", json.dumps(session, ensure_ascii=False), "application/json"),
+    ):
+        chunks.extend((
+            f"--{boundary}\r\n".encode(),
+            (f'Content-Disposition: form-data; name="{name}"\r\n'
+             f"Content-Type: {content_type}\r\n\r\n").encode(),
+            value.encode("utf-8"),
+            b"\r\n",
+        ))
+    chunks.append(f"--{boundary}--\r\n".encode())
+    return b"".join(chunks), boundary
+
+
+def proxy_realtime_offer(client_secret: str, sdp: str, session: dict[str, Any],
+                         offer_headers: dict[str, Any], provider_url: str = REALTIME_OFFER_URL) -> str:
+    body, boundary = encode_realtime_offer(sdp, session)
+    headers = {
+        "Authorization": f"Bearer {client_secret}",
+        "Content-Type": f"multipart/form-data; boundary={boundary}",
+        "Accept": "application/sdp",
+    }
+    # Preserve only OpenAI protocol headers from the bridge.  Do not turn this
+    # local relay into a general arbitrary-header proxy.
+    for key, value in offer_headers.items():
+        if str(key).lower().startswith("openai-") and isinstance(value, str):
+            headers[str(key)] = value
+    request = urllib.request.Request(provider_url, data=body, method="POST", headers=headers)
+    try:
+        with urllib.request.urlopen(request, timeout=25) as response:
+            answer = response.read().decode("utf-8", errors="replace").strip()
+    except urllib.error.HTTPError as error:
+        detail = error.read().decode("utf-8", errors="replace").replace("\n", " ").strip()[:300]
+        raise RuntimeError(f"OpenAI rechazó WebRTC con HTTP {error.code}{': ' + detail if detail else ''}") from error
+    except urllib.error.URLError as error:
+        raise RuntimeError("No se pudo conectar con OpenAI Realtime") from error
+    if not answer.startswith("v="):
+        raise RuntimeError("OpenAI devolvió una respuesta SDP inválida")
+    # SDP is defined as CRLF-delimited.  Chromium accepts many direct endpoint
+    # variants, but rejects a proxied answer whose upstream uses bare LF (or
+    # mixed endings) around ICE attributes.  Normalise once at the relay edge.
+    lines = answer.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    return "\r\n".join(line.rstrip() for line in lines if line.strip()) + "\r\n"
+
+
 def text_to_speech(text: str) -> bytes:
     try:
         with open_elevenlabs_speech(text) as response:
@@ -3069,6 +3148,8 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
             self.handle_settings()
         elif self.path == "/api/realtime/session":
             self.handle_realtime_session()
+        elif self.path == "/api/realtime/offer":
+            self.handle_realtime_offer()
         elif self.path == "/api/realtime/context-turn":
             self.handle_realtime_context_turn()
         elif self.path == "/api/realtime/context-empty":
@@ -3359,12 +3440,30 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
                                  "legacyFallback": False})
             return
         realtime_context, context_stats = build_realtime_context()
+        realtime_context, offer_context_compact = compact_realtime_offer_context(realtime_context)
+        if offer_context_compact:
+            context_stats = {
+                **context_stats,
+                "offerCompact": True,
+                "offerChars": len(realtime_context),
+                "offerEstimatedTokens": estimate_context_tokens(realtime_context),
+            }
         try:
             realtime_instructions = read_realtime_instructions()
         except RuntimeError as error:
             self.send_json(503, {"error": str(error)[:500], "legacyFallback": False})
             return
+        provider_offer_url = str(session.get("offerUrl") or REALTIME_OFFER_URL)
+        if not provider_offer_url.startswith("https://api.openai.com/"):
+            self.send_json(502, {"error": "OpenClaw devolvió una URL WebRTC no admitida",
+                                 "legacyFallback": False})
+            return
         session["atlasOutput"] = output_mode
+        # Preserve the provider target as data for the fixed relay. It is
+        # validated again on use; the browser is never allowed to choose an
+        # arbitrary outbound destination.
+        session["atlasProviderOfferUrl"] = provider_offer_url
+        session["offerUrl"] = "/api/realtime/offer"
         session["atlasSelection"] = requested_choice
         session["atlasReasoningEffort"] = reasoning
         session["atlasInstructions"] = realtime_instructions
@@ -3381,6 +3480,47 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
             session["atlasRoutineTriggers"] = []
         self.send_json(200, {"session": session, "sessionKey": session_key,
                              "legacyFallback": False})
+
+    def handle_realtime_offer(self) -> None:
+        """Relay the WebRTC SDP offer from the local owner to OpenAI.
+
+        Newer OpenAI responses do not grant CORS to the kiosk's localhost
+        origin.  This fixed same-origin relay avoids the browser-side CORS
+        failure without creating an arbitrary outbound proxy.
+        """
+        try:
+            payload = self.read_json_payload(768 * 1024)
+            sdp = str(payload.get("sdp") or "")
+            session = payload.get("session")
+            if not sdp.startswith("v=") or len(sdp) > 128 * 1024:
+                raise ValueError("Oferta SDP inválida")
+            if not isinstance(session, dict):
+                raise ValueError("Configuración Realtime inválida")
+            client_secret = self.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+            if len(client_secret) < 20:
+                raise ValueError("Reserva Realtime no válida")
+            raw_headers = payload.get("offerHeaders") or {}
+            offer_headers = raw_headers if isinstance(raw_headers, dict) else {}
+            provider_url = str(payload.get("providerOfferUrl") or "")
+            if not provider_url.startswith("https://api.openai.com/"):
+                raise ValueError("Destino Realtime no válido")
+            answer = proxy_realtime_offer(client_secret, sdp, session, offer_headers, provider_url)
+        except (ValueError, RuntimeError) as error:
+            # This is intentionally server-side diagnostics only: the browser
+            # gets a concise 502 while journalctl retains the provider reason.
+            print(f"[atlas-webscreen] Realtime offer relay failed: {str(error)[:500]}")
+            self.close_connection = True
+            self.send_json(502, {"error": str(error)[:500]})
+            return
+        response = answer.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/sdp; charset=utf-8")
+        self.send_header("Content-Length", str(len(response)))
+        self.end_headers()
+        try:
+            self.wfile.write(response)
+        except (BrokenPipeError, ConnectionResetError):
+            self.close_connection = True
 
     def handle_realtime_context_turn(self) -> None:
         try:

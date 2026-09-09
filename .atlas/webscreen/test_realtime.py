@@ -117,10 +117,47 @@ class RealtimeBackendTests(unittest.TestCase):
             "session": session, "sessionKey": "agent:main:test", "legacyFallback": False,
         })
         self.assertEqual(session["atlasOutput"], "native")
+        self.assertEqual(session["offerUrl"], "/api/realtime/offer")
         self.assertEqual(session["atlasSelection"], "marin")
         self.assertIn("# ATLAS Realtime", session["atlasInstructions"])
         self.assertEqual(session["atlasContext"], "private atlas context")
         self.assertEqual(session["atlasContextStats"]["estimatedTokens"], 5)
+
+    def test_realtime_offer_proxy_builds_multipart_without_exposing_a_cors_hop(self):
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self):
+                return b"v=0\r\no=answer 1 1 IN IP4 127.0.0.1\r\n"
+
+        with patch.object(app.urllib.request, "urlopen", return_value=Response()) as request:
+            answer = app.proxy_realtime_offer(
+                "ephemeral-client-secret-long-enough", "v=0\r\no=offer 1 1 IN IP4 127.0.0.1\r\n",
+                {"type": "realtime", "instructions": "private context"},
+                {"OpenAI-Beta": "realtime=v1", "X-Untrusted": "discard"},
+            )
+        sent = request.call_args.args[0]
+        self.assertEqual(answer[:3], "v=0")
+        self.assertTrue(answer.endswith("\r\n"))
+        self.assertNotIn("\n", answer.replace("\r\n", ""))
+        self.assertEqual(sent.full_url, app.REALTIME_OFFER_URL)
+        self.assertEqual(sent.get_header("Authorization"), "Bearer ephemeral-client-secret-long-enough")
+        self.assertEqual(sent.get_header("Openai-beta"), "realtime=v1")
+        self.assertIsNone(sent.get_header("X-untrusted"))
+        self.assertIn(b'name="sdp"', sent.data)
+        self.assertIn(b'name="session"', sent.data)
+
+    def test_initial_offer_context_is_bounded_but_retains_workspace_route(self):
+        with patch.object(app, "REALTIME_OFFER_CONTEXT_MAX_CHARS", 60):
+            context, compact = app.compact_realtime_offer_context("# ATLAS\n\n" + ("trusted context\n" * 20))
+        self.assertTrue(compact)
+        self.assertIn("atlas_shell", context)
+        self.assertIn("AGENTS.md", context)
+        self.assertLess(len(context), 400)
 
     def test_legacy_openclaw_conversation_endpoints_are_disabled(self):
         for path in app.LEGACY_AGENT_API_PATHS:

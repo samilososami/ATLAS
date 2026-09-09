@@ -23,8 +23,40 @@ async function loadGatewayClient() {
   throw new Error("OpenClaw Gateway runtime not found");
 }
 
+// The Python WebScreen process owns the other side of stdout.  During a
+// controlled WebScreen restart that pipe may disappear just as GatewayClient
+// reports its own reconnect.  An unhandled EPIPE here used to kill Node
+// noisily, turning one normal parent restart into a second bridge failure.
+let stdoutClosed = false;
+let stdoutExitScheduled = false;
+
+function handleStdoutError(error) {
+  if (error?.code === "EPIPE") {
+    stdoutClosed = true;
+    if (!stdoutExitScheduled) {
+      stdoutExitScheduled = true;
+      // There is no parent left to receive a final event.  Exit cleanly rather
+      // than throwing from an asynchronous Socket error handler.
+      setImmediate(() => process.exit(0));
+    }
+    return;
+  }
+  // Keep unexpected stdout errors observable without allowing an EventEmitter
+  // "error" event to terminate the bridge process.
+  console.error("ATLAS bridge stdout error:", error?.message || error);
+}
+
+process.stdout.on("error", handleStdoutError);
+
 function emit(payload) {
-  process.stdout.write(`${JSON.stringify(payload)}\n`);
+  if (stdoutClosed || process.stdout.destroyed || !process.stdout.writable) return false;
+  try {
+    process.stdout.write(`${JSON.stringify(payload)}\n`);
+    return true;
+  } catch (error) {
+    handleStdoutError(error);
+    return false;
+  }
 }
 
 function compact(value, limit = 20000) {

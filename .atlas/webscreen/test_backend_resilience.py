@@ -53,6 +53,37 @@ class BackendResilienceTests(unittest.TestCase):
         self.assertEqual(start.call_count, 2)
         self.assertEqual(stop.wait.call_count, 2)
 
+    def test_live_bridge_waits_for_gateway_recovery_before_reserving(self):
+        """A reconnecting Node bridge is not equivalent to a dead bridge."""
+        bridge = app.PersistentGatewayBridge()
+        process = Mock()
+        process.poll.return_value = None
+        bridge.process = process
+        bridge.ready = Mock(spec=threading.Event)
+        bridge.ready.is_set.return_value = False
+        bridge.ready.wait.return_value = True
+
+        bridge.start(timeout=7.5)
+
+        bridge.ready.wait.assert_called_once_with(7.5)
+        self.assertIs(bridge.process, process)
+
+    def test_live_bridge_recovery_timeout_retires_stale_process(self):
+        bridge = app.PersistentGatewayBridge()
+        process = Mock()
+        process.poll.return_value = None
+        bridge.process = process
+        bridge.ready = Mock(spec=threading.Event)
+        bridge.ready.is_set.return_value = False
+        bridge.ready.wait.return_value = False
+        bridge.last_error = 'gateway offline'
+        bridge.stop = Mock()
+
+        with self.assertRaisesRegex(RuntimeError, 'gateway offline'):
+            bridge.start(timeout=1.0)
+
+        bridge.stop.assert_called_once_with(expected_process=process)
+
     def test_stop_fails_waiting_requests_without_touching_a_new_process(self):
         bridge = app.PersistentGatewayBridge()
         process = Mock()

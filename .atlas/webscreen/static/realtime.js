@@ -646,21 +646,22 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
         assertCurrent();
         await peer.setLocalDescription(offer);
         assertCurrent();
-        const offerBody = new FormData();
-        // OpenAI's multipart parser expects ordinary named fields (the curl
-        // reference uses '<', not '@'). A browser Blob adds a filename and is
-        // classified as a file upload, making the required `sdp` field vanish.
-        offerBody.append("sdp", offer.sdp);
-        offerBody.append("session", JSON.stringify(initialSession));
+        // The A1 backend relays this fixed WebRTC offer.  OpenAI no longer
+        // grants CORS to the kiosk's localhost origin, so direct browser
+        // negotiation would otherwise time out every 25 seconds despite a
+        // valid reservation and microphone.
         const offerHeaders = { ...(session.offerHeaders || {}) };
         for (const key of Object.keys(offerHeaders)) {
           if (key.toLowerCase() === "content-type") delete offerHeaders[key];
         }
-        const answerResponse = await abortable(fetch(session.offerUrl || "https://api.openai.com/v1/realtime/calls", {
-          method: "POST", body: offerBody,
+        const answerResponse = await abortable(this.fetch(session.offerUrl || "/api/realtime/offer", {
+          method: "POST", body: JSON.stringify({
+            sdp: offer.sdp, session: initialSession, offerHeaders,
+            providerOfferUrl: session.atlasProviderOfferUrl || "",
+          }),
           signal: controller.signal,
           headers: {
-            ...offerHeaders,
+            "Content-Type": "application/json",
             Authorization: `Bearer ${session.clientSecret}`,
           },
         }), controller.signal);
@@ -2789,7 +2790,7 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
 
     postEvent(stage, message, extra = {}) {
       if (!this.currentInteractionId
-          && !["session.ready", "wake.detector_ready", "audio.capture_config"].includes(stage)) return;
+          && !["session.ready", "session.error", "wake.detector_ready", "audio.capture_config"].includes(stage)) return;
       const interactionId = this.currentInteractionId || requestId();
       void sendAcknowledgement(this.fetch, "/api/realtime/event", {
         method: "POST", cache: "no-store",
