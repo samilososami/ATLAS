@@ -619,8 +619,11 @@ Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques
         await peer.setLocalDescription(offer);
         assertCurrent();
         const offerBody = new FormData();
-        offerBody.append("sdp", new Blob([offer.sdp], { type: "application/sdp" }), "offer.sdp");
-        offerBody.append("session", new Blob([JSON.stringify(initialSession)], { type: "application/json" }), "session.json");
+        // OpenAI's multipart parser expects ordinary named fields (the curl
+        // reference uses '<', not '@'). A browser Blob adds a filename and is
+        // classified as a file upload, making the required `sdp` field vanish.
+        offerBody.append("sdp", offer.sdp);
+        offerBody.append("session", JSON.stringify(initialSession));
         const offerHeaders = { ...(session.offerHeaders || {}) };
         for (const key of Object.keys(offerHeaders)) {
           if (key.toLowerCase() === "content-type") delete offerHeaders[key];

@@ -13,6 +13,6 @@ Conexión Realtime y persistencia de Android Use:
   microcorte no ejecuta `androiduse.stop`.
 - Android Use sigue deteniéndose ante una orden explícita, el botón rojo del
   usuario o una pérdida terminal del teléfono, Companion o Accesibilidad.
-- El puente nativo valida el destino HTTPS y construye el cuerpo multipart con
-  tipos `application/sdp` y `application/json`, dejando que OkHttp genere el
-  boundary correcto.
+- El puente nativo valida el destino HTTPS y construye `sdp` y `session` como
+  campos de formulario, dejando que OkHttp genere el boundary correcto. No les
+  añade nombre de archivo: el endpoint los interpreta como campos, no uploads.

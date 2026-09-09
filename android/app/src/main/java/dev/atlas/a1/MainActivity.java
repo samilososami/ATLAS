@@ -386,8 +386,8 @@ public final class MainActivity extends Activity {
                         RequestBody offerBody;
                         if(initialSession!=null){
                             offerBody=new MultipartBody.Builder().setType(MultipartBody.FORM)
-                                .addFormDataPart("sdp","offer.sdp",RequestBody.create(p.getString("sdp"),MediaType.get("application/sdp")))
-                                .addFormDataPart("session","session.json",RequestBody.create(initialSession.toString(),MediaType.get("application/json")))
+                                .addFormDataPart("sdp",p.getString("sdp"))
+                                .addFormDataPart("session",initialSession.toString())
                                 .build();
                         }else offerBody=RequestBody.create(p.getString("sdp"),MediaType.get("application/sdp"));
                         Request.Builder b=new Request.Builder().url(url).post(offerBody);
