@@ -47,6 +47,19 @@ def parameters(action,values):
     if action=='wait':
         if len(values)>1: raise SystemExit('Uso: atlas-androiduse wait [MILISEGUNDOS]')
         return {'ms':number(values[0],'MILISEGUNDOS',integer=True)} if values else {}
+    if action=='wait_for':
+        if not values: raise SystemExit('Uso: atlas-androiduse wait_for ETIQUETA')
+        return {'text':' '.join(values),'exact':True,'timeoutMs':3500}
+    if action=='batch':
+        if len(values)!=1: raise SystemExit('Uso: atlas-androiduse batch ARCHIVO_JSON|-')
+        try:
+            raw=sys.stdin.read() if values[0]=='-' else pathlib.Path(values[0]).read_text(encoding='utf-8')
+            payload=json.loads(raw)
+        except (OSError,ValueError) as error: raise SystemExit(f'Lote JSON inválido: {error}')
+        if isinstance(payload,list): payload={'actions':payload}
+        if not isinstance(payload,dict) or not isinstance(payload.get('actions'),list):
+            raise SystemExit('El lote debe ser un objeto con actions o un array JSON')
+        return payload
     raise SystemExit('Acción desconocida')
 
 def call(action,params,timeout):
@@ -85,7 +98,7 @@ def main():
     parser.add_argument('--json',action='store_true')
     parser.add_argument('--timeout',type=float,default=35)
     parser.add_argument('action',choices=('start','stop','status','screenshot','tree','click','tap','long_press','swipe',
-                                         'text','key','launch','back','home','recents','wait'))
+                                         'text','key','launch','back','home','recents','wait','wait_for','batch'))
     parser.add_argument('values',nargs='*')
     args=parser.parse_args(); target=''
     values=args.values
@@ -94,6 +107,10 @@ def main():
         target=values[0]; values=[]
     result=call(args.action,parameters(args.action,values),args.timeout)
     if args.action=='screenshot': result=save_screenshot(result,target)
+    elif args.action=='batch' and any(result.get(key) for key in ('imageBase64','pngBase64','data')):
+        screenshot=save_screenshot(result,'')
+        result={key:value for key,value in result.items() if key not in ('imageBase64','pngBase64','data')}
+        result['screenshot']=screenshot
     if args.json or isinstance(result,(dict,list)): print(json.dumps(result,ensure_ascii=False))
     else: print(result)
 

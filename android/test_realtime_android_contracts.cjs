@@ -11,14 +11,18 @@ const source = fs.readFileSync(path.join(__dirname,
 const activitySource = fs.readFileSync(path.join(__dirname,
   "app/src/main/java/dev/atlas/a1/MainActivity.java"), "utf8");
 
-assert.match(source, /x e y normalizados entre 0 y 1/,
-  "the Android tool description must require normalized tap coordinates");
-assert.match(source, /x1, y1, x2 e y2 normalizados entre 0 y 1/,
-  "the Android tool description must require normalized swipe coordinates");
+assert.match(source, /coordenadas son normalizadas entre 0 y 1/,
+  "the Android tool description must require normalized coordinates");
 assert.match(source, /No uses coordenadas en píxeles/,
   "the session policy must explicitly reject pixel coordinates");
-assert.match(source, /\['click','tap','long_press'/,
+assert.match(source, /\['click','tap','long_press'[\s\S]*'wait_for'\]/,
   "semantic clicks must receive the same post-action inspection as gestures");
+assert.match(source, /name:'atlas_actions'/,
+  "Realtime must expose the cross-surface action-plan tool");
+assert.match(source, /'wait_for','batch'/,
+  "Realtime must expose local wait and batch Android operations");
+assert.match(source, /delete params\.autoStart;delete params\.autoStop/,
+  "the model must not be able to override batch lifecycle ownership");
 assert.match(source, /androidControlActive=false/,
   "Realtime must track whether Android Use is active");
 assert.doesNotMatch(source, /const androidStop=this\.stopAndroidControlSilently\(true\)/,
@@ -277,15 +281,9 @@ const voice = context.window.voice;
   nativeCalls.length = 0;
   sent.length = 0;
   voice.turn = "Abre Amazon y busca ESP32";
-  nativeHandler = (_method, params) => {
-    if (params.method === "apps.launch") return Promise.resolve({ launched: true });
-    if (params.method === "androiduse.start") return Promise.resolve({ ok: true });
-    if (params.method === "androiduse.tree") return Promise.resolve({ nodes: ["Buscar"] });
-    if (params.method === "androiduse.screenshot") {
-      return Promise.resolve({ mime: "image/png", pngBase64: "YWJj", width: 10, height: 20 });
-    }
-    return Promise.resolve({});
-  };
+  nativeHandler = (_method, params) => Promise.resolve(
+    params.method === "apps.launch" ? { ok: true, launched: true } : {},
+  );
   await voice.tool({
     name: "atlas_phone",
     arguments: JSON.stringify({ method: "apps.launch", params: { app: "Amazon" } }),
@@ -293,13 +291,50 @@ const voice = context.window.voice;
   });
   assert.deepEqual(nativeCalls.map(({ method, params }) =>
     method === "runtime.hold" ? "runtime.hold" : params.method),
-    ["runtime.hold", "androiduse.start", "apps.launch", "androiduse.tree", "androiduse.screenshot"],
-    "a compound launch must hold Realtime and enter Android Use before opening the app");
-  assert.equal(voice.androidControlActive, true);
+    ["apps.launch"],
+    "a legacy compound launch must not start the old inspect-after-every-step loop");
   assert.match(sent[0].item.output, /"taskComplete":false/,
-    "the model must be told that merely opening the app did not complete the request");
+    "the fallback must still say that merely opening the app did not complete the request");
+  assert.equal(sent.filter((item) => item.item?.type === "message").length, 0,
+    "the fallback must not waste a screenshot before the model provides a batch");
+
+  nativeCalls.length = 0;
+  sent.length = 0;
+  nativeHandler = (_method, params) => {
+    if (params.method === "apps.launch") return Promise.resolve({ ok: true, launched: true });
+    if (params.method === "androiduse.batch") {
+      assert.equal(params.params.autoStart, undefined);
+      assert.equal(params.params.autoStop, undefined);
+      return Promise.resolve({
+        ok: true, controlling: false, mime: "image/jpeg", imageBase64: "YWJj",
+        width: 640, height: 1200,
+      });
+    }
+    return Promise.resolve({ ok: true });
+  };
+  await voice.tool({
+    name: "atlas_actions",
+    arguments: JSON.stringify({ actions: [
+      { tool: "phone", operation: "apps.launch", params: { app: "Amazon" } },
+      { tool: "android", operation: "androiduse.batch", params: {
+        autoStart: false, autoStop: false,
+        actions: [
+          { action: "click", params: { candidates: ["Buscar", "Search"] } },
+          { action: "text", params: { text: "ESP32" } },
+          { action: "key", params: { key: "enter" } },
+        ],
+      } },
+    ] }),
+    call_id: "call-action-plan",
+  });
+  assert.deepEqual(nativeCalls.map(({ method, params }) =>
+    method === "runtime.hold" ? "runtime.hold" : params.method),
+    ["apps.launch", "runtime.hold", "androiduse.batch"],
+    "the complete app task must execute as one ordered plan without intermediate inspection");
+  assert.equal(sent[0].item.type, "function_call_output");
+  assert.match(sent[0].item.output, /"completed":2/);
   assert.equal(sent[1].item.content[1].type, "input_image",
-    "the continuation must receive the current phone screenshot");
+    "the action plan must attach exactly one final verification image");
 
   console.log("Realtime Android bridge contracts passed");
 })().catch((error) => {

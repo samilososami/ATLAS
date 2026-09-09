@@ -12,6 +12,7 @@ REASONFILE="$ROOT/runtime/cast.reason"
 LOGFILE="$ROOT/logs/cast.log"
 CONFIG_FILE="$ROOT/cast/config.env"
 DEVICES_CACHE="$ROOT/cast/devices.tsv"
+WEBSCREEN_URL="${ATLAS_CAST_WEBSCREEN_URL:-http://localhost:5000/new/}"
 
 if [ -t 1 ]; then
   BOLD="$(tput bold 2>/dev/null || true)"
@@ -71,6 +72,7 @@ Commands:
   start <device name>        cast the ATLAS desktop to a Chromecast
   stop                       stop current cast process
   restart [device name]      restart cast, reusing the last device when omitted
+  webscreen                  open the new ATLAS WebScreen fullscreen in the cast desktop
   status                     show cast status
   config                     show cast config file
   profile <auto|1080p|720p|540p|480p|360p>
@@ -569,6 +571,16 @@ PYCAST
     fi
     rm -f "$PIDFILE" "$DEVICEFILE" "$PROFILEFILE" "$QUALITYFILE" "$REASONFILE"
     atlas-cast status
+    ;;
+  webscreen)
+    [ "$#" -eq 0 ] || { echo 'usage: atlas-cast webscreen' >&2; exit 2; }
+    if ! is_running; then
+      echo 'atlas-cast is not running; start a cast before opening the WebScreen' >&2
+      exit 1
+    fi
+    start_desktop_if_needed
+    as_atlas "$ROOT/bin/open-chrome" "$WEBSCREEN_URL" >/dev/null
+    printf 'ATLAS WebScreen opened fullscreen on %s\n' "$(cat "$DEVICEFILE" 2>/dev/null || echo 'the active cast')"
     ;;
   status)
     printf '%s\n' 'atlas-cast status'

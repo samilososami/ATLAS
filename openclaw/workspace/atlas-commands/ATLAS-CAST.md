@@ -62,6 +62,22 @@ Check state:
 atlas-cast status
 ```
 
+Open the minimal new WebScreen fullscreen on the already-cast virtual desktop:
+
+```bash
+atlas-cast webscreen
+```
+
+This requires an active cast, opens `http://localhost:5000/new/` with the
+virtual desktop's dedicated Chrome profile and leaves the physical kiosk alone.
+It fails clearly instead of starting a cast to an unknown receiver.
+
+For a request such as “share the screen with my Sony and show ATLAS”, execute
+the related commands as one ordered action flow: `atlas-cast start ...`, then
+`atlas-cast webscreen`. Realtime exposes this as `atlas_actions`, so it does not
+need a model round-trip between those deterministic steps. Stop at the first
+error; do not open the page when casting did not start.
+
 ## Fast discovery
 
 `atlas-cast list` is optimized for speed. It uses mDNS/Avahi first and stores a short cache.

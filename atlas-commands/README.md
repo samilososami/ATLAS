@@ -22,6 +22,7 @@ Descubre dispositivos Chromecast y transmite el ATLAS Desktop con distintos perf
 ```bash
 atlas-cast list
 atlas-cast start "Nombre del dispositivo"
+atlas-cast webscreen
 atlas-cast profile 720p
 atlas-cast status
 ```
@@ -112,6 +113,8 @@ atlas-androiduse back
 atlas-androiduse home
 atlas-androiduse recents
 atlas-androiduse wait 350
+atlas-androiduse wait_for 'Buscar en Amazon'
+atlas-androiduse batch actions.json
 atlas-androiduse launch com.android.chrome
 atlas-androiduse launch https://example.com
 atlas-androiduse stop

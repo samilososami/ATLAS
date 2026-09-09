@@ -57,6 +57,15 @@ class AndroidControlTests(unittest.TestCase):
         self.assertIn("androiduse.click", SERVER.ATLAS_ANDROID_OPERATIONS)
         self.assertIn("androiduse.click", SERVER.ATLAS_ANDROID_AUTO_INSPECT)
 
+    def test_batch_is_allowed_but_never_triggers_a_second_capture(self) -> None:
+        self.assertIn("androiduse.batch", SERVER.ATLAS_ANDROID_OPERATIONS)
+        self.assertIn("androiduse.wait_for", SERVER.ATLAS_ANDROID_OPERATIONS)
+        self.assertNotIn("androiduse.batch", SERVER.ATLAS_ANDROID_AUTO_INSPECT)
+        self.assertGreater(
+            SERVER.ATLAS_APP_BATCH_TIMEOUT_SECONDS,
+            SERVER.ATLAS_APP_CONTROL_TIMEOUT_SECONDS,
+        )
+
     @mock.patch.object(SERVER.subprocess, "run")
     def test_unknown_operation_never_starts_process(self, run: mock.Mock) -> None:
         with self.assertRaisesRegex(ValueError, "no permitida"):
@@ -188,6 +197,33 @@ class AndroidControlTests(unittest.TestCase):
         self.assertEqual(execute.call_args.args[0], "androiduse.start")
         self.assertEqual(responses[0][0], 200)
         self.assertNotIn("screenshot", responses[0][1])
+
+    @mock.patch.object(SERVER, "append_realtime_event")
+    @mock.patch.object(SERVER, "execute_atlas_app_control")
+    def test_batch_returns_its_embedded_capture_without_an_extra_rpc(
+        self, execute: mock.Mock, _event: mock.Mock,
+    ) -> None:
+        encoded = base64.b64encode(b"\xff\xd8\xffbatch").decode("ascii")
+        execute.return_value = {
+            "ok": True, "completed": 3, "controlling": False,
+            "mime": "image/jpeg", "width": 1440, "height": 3088,
+            "captureWidth": 640, "captureHeight": 1372, "data": encoded,
+        }
+        responses: list[tuple[int, dict[str, object]]] = []
+        params = {"actions": [{"action": "click", "params": {"text": "Buscar"}}]}
+        handler = SimpleNamespace(
+            _read_realtime_device_tool=lambda: (
+                "androiduse.batch", params, True, "interaction",
+            ),
+            log_client=lambda: {},
+            send_json=lambda status, payload: responses.append((status, payload)),
+        )
+        SERVER.AtlasScreenHandler.handle_realtime_android(handler)
+        self.assertEqual(execute.call_count, 1)
+        self.assertTrue(execute.call_args.args[1]["inspectAfter"])
+        self.assertEqual(responses[0][0], 200)
+        self.assertEqual(responses[0][1]["screenshot"]["imageBase64"], encoded)
+        self.assertNotIn("data", responses[0][1]["result"])
 
 
 if __name__ == "__main__":

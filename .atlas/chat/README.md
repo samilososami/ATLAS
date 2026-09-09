@@ -6,7 +6,9 @@ WebScreen, then loads the same `REALTIME_INSTRUCTIONS.md`, complete Markdown
 context, persistent Realtime conversation and direct tools. Besides
 `atlas_shell`, `atlas_web_search` and `atlas_routine`, it exposes the same
 closed phone contracts as WebScreen: `atlas_phone` for permission-backed
-native APIs and `atlas_android` for explicit Accessibility control. A final
+native APIs, `atlas_android` for explicit Accessibility control and
+`atlas_actions` for an ordered native/visual/shell sequence without a model
+round-trip between deterministic steps. A final
 `TERMINAL_INSTRUCTIONS.md` layer changes only presentation: terminal responses
 can use concise Markdown, paths, digits and technical units instead of the
 speech-oriented formatting used by WebScreen.
@@ -50,14 +52,17 @@ address fields; if reverse geocoding fails, return coordinates and the error
 instead of inventing or shortening an address.
 
 `atlas_android` accepts only the documented `androiduse.*` allowlist. A
-successful screenshot or inspected visual action is returned to Realtime as a
+predictable flow uses `androiduse.batch`: up to sixteen local actions, bounded
+semantic `click`/`wait_for` retries and one final inspection. A successful
+screenshot or final batch inspection is returned to Realtime as a
 separate reduced JPEG `input_image`; its bytes never appear in the function
 result, terminal transcript or durable history. Prefer `androiduse.click` with
 an exact label from the Accessibility tree; coordinates normalized from `0` to
 `1` are the fallback and still refer to the physical screen when the image has
 been resized. Its typed `androiduse.key` operation accepts `ENTER`; package names
 and allowed links are passed separately as `package` or `uri`. A recoverable
-action or inspection error preserves the session for correction. A visual flow
+action or inspection error preserves the session for correction with a shorter
+batch. A visual flow
 calls `androiduse.stop` after completion or abandonment and on cancellation,
 overall timeout, client exit or terminal device/socket/Accessibility loss.
 Accessibility-tree password fields and their descendants are returned as

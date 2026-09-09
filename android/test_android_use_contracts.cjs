@@ -49,5 +49,21 @@ assert.match(source, /onCompleted[^}]*setGuardPassThrough\(false\)/s,
   "completed gestures must restore the blocking overlay");
 assert.match(source, /onCancelled[^}]*setGuardPassThrough\(false\)/s,
   "cancelled gestures must restore the blocking overlay");
+assert.match(source, /BATCH_MAX_ACTIONS=16/,
+  "a model batch must have a strict action-count bound");
+assert.match(source, /BATCH_MAX_DURATION_MS=18_000/,
+  "a model batch must have a strict wall-clock bound");
+assert.match(source, /if\(!controlling\).*Android Use fue detenido por el usuario/s,
+  "the red stop control must prevent subsequent batch actions");
+assert.match(source, /if\(inspect&&controlling\)/,
+  "owner stop must also suppress the final private screenshot");
+assert.match(source, /if\("click"\.equals\(action\)\)return clickLabelWithRetry/,
+  "semantic controls must be awaited locally instead of forcing model round trips");
+assert.match(source, /if\("wait_for"\.equals\(action\)\)return waitForLabel/,
+  "batch plans must support local decision-boundary waits");
+assert.match(source, /response\.put\("tree",onMain\(this::tree\)\)[\s\S]*JSONObject shot=screenshot\(\)/,
+  "a batch must return one final tree and screenshot for verification");
+assert.match(source, /finally\{\s*if\(autoStop\)/,
+  "an ephemeral batch must always release Android Use after success or failure");
 
 console.log("Android Use security contracts passed");

@@ -45,7 +45,7 @@ class AtlasChatTests(unittest.TestCase):
         tools = {entry["name"]: entry for entry in module.REALTIME_TOOLS}
         self.assertEqual(set(tools), {
             "atlas_shell", "atlas_web_search", "atlas_routine",
-            "atlas_phone", "atlas_android",
+            "atlas_phone", "atlas_android", "atlas_actions",
         })
         self.assertEqual(tools["atlas_shell"]["parameters"]["required"], ["command"])
         self.assertEqual(tools["atlas_web_search"]["parameters"]["required"], ["query"])
@@ -65,6 +65,17 @@ class AtlasChatTests(unittest.TestCase):
             "androiduse.click",
             tools["atlas_android"]["parameters"]["properties"]["operation"]["enum"],
         )
+        self.assertIn(
+            "androiduse.batch",
+            tools["atlas_android"]["parameters"]["properties"]["operation"]["enum"],
+        )
+        self.assertIn(
+            "androiduse.wait_for",
+            tools["atlas_android"]["parameters"]["properties"]["operation"]["enum"],
+        )
+        actions = tools["atlas_actions"]["parameters"]["properties"]["actions"]
+        self.assertEqual(actions["minItems"], 2)
+        self.assertEqual(actions["maxItems"], 8)
         browser = (ROOT / ".atlas/webscreen/static/realtime.js").read_text()
         for name in tools:
             self.assertIn(f'name: "{name}"', browser)
@@ -151,6 +162,34 @@ class AtlasChatTests(unittest.TestCase):
         self.assertEqual(screenshot["width"], 10)
         self.assertEqual(execute.call_count, 2)
         sleep.assert_called_once_with(module.SCREENSHOT_RETRY_SECONDS)
+
+    def test_action_batch_stops_on_first_failure_and_keeps_final_capture(self):
+        module = self.load_client()
+        chat = object.__new__(module.AtlasChat)
+        chat._last_tool_image = None
+        chat._run_phone_tool = Mock(return_value={"ok": True, "operation": "apps.launch"})
+        final_image = {"imageBase64": "YWJj", "mime": "image/jpeg", "width": 640, "height": 1200}
+
+        def android(args):
+            chat._last_tool_image = final_image
+            return {"ok": False, "operation": args["operation"], "error": "no apareció Buscar"}
+
+        chat._run_android_tool = Mock(side_effect=android)
+        chat.webscreen = SimpleNamespace(execute_realtime_shell=Mock())
+
+        result = chat._run_action_batch({"actions": [
+            {"tool": "phone", "operation": "apps.launch", "params": {"app": "Amazon"}},
+            {"tool": "android", "operation": "androiduse.batch", "params": {
+                "actions": [{"action": "click", "params": {"text": "Buscar"}}],
+            }},
+            {"tool": "shell", "command": "printf should-not-run"},
+        ]}, "batch-test")
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["completed"], 2)
+        self.assertEqual(result["failedAt"], 1)
+        chat.webscreen.execute_realtime_shell.assert_not_called()
+        self.assertIs(chat._last_tool_image, final_image)
 
     def test_image_is_a_separate_realtime_input(self):
         module = self.load_client()

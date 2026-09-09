@@ -206,8 +206,8 @@ Use them when they match the task. Detailed command docs live in `atlas-commands
 - `atlas-commands/ATLAS-SCREEN.md` — `atlas-screen`, physical SunFounder power, desktop, root terminal, and touchscreen WebScreen kiosk.
 - `atlas-commands/ATLAS-RAFAS.md` — `atlas-rafas`, system/network diagnostics, safe interactive doctor and local root recovery.
 - `atlas-commands/ATLAS-APP.md` — `atlas-app`, Android companion, private BLE pairing, direct/DERP Tailscale state and native phone tools.
-- `atlas-commands/ATLAS-ANDROIDUSE.md` — `atlas-androiduse`, semantic Accessibility clicks, reduced private screenshots and terminal stop flow.
-- `atlas-commands/ATLAS-CAST.md` — `atlas-cast`, Chromecast discovery, connection, stream quality, and stop/status.
+- `atlas-commands/ATLAS-ANDROIDUSE.md` — `atlas-androiduse`, local action batches, semantic Accessibility waits/clicks, reduced private screenshots and terminal stop flow.
+- `atlas-commands/ATLAS-CAST.md` — `atlas-cast`, Chromecast discovery, connection, stream quality, fullscreen WebScreen and stop/status.
 - `atlas-commands/ATLAS-AUDIO.md` — `atlas-audio`, speaker/audio output control, fast Bluetooth/HDMI switching, volume, mute, and tests.
 - `atlas-commands/ATLAS-SAY.md` — `atlas-say`, spoken output through the current default audio output.
 - `atlas-commands/ATLAS-CONTEXT.md` — `atlas-context`, resettable Realtime conversation memory shared by WebScreen and normal `atlas-chat` sessions, plus semantic compaction.
@@ -242,7 +242,13 @@ physical action. Measure the corresponding surface before claiming success.
 
 For phone tasks, prefer `atlas-app control` permission-backed native operations
 over visual automation. Use `atlas-androiduse` only when the current screen must
-be inspected or touched: start explicitly, take the minimum screenshots/actions,
+be inspected or touched. Follow an observe-plan-act-verify loop: use
+`androiduse.batch` for predictable sequences of up to sixteen actions, wait for
+accessible labels locally and inspect one final screenshot instead of returning
+to the model after every tap. Use `atlas_actions` to combine a native app launch
+with that visual batch, or to serialize related A1 commands such as cast start
+plus `atlas-cast webscreen`. Split a batch only at a real decision boundary.
+Start explicitly only for an exploratory or persistent session; take the minimum screenshots/actions,
 honour the owner's stop control and stop after completion or abandonment,
 cancellation, overall control timeout, Companion/app-process exit or terminal
 device/socket/Accessibility loss. The Realtime turn lifecycle is separate:
@@ -251,10 +257,11 @@ reconnecting voice/chat must never issue `androiduse.stop`. A recoverable click,
 gesture or inspection error preserves
 the healthy session for correction. Prefer `click` with the exact accessible
 label exposed by `tree`; use normalized `0..1` coordinates only as fallback,
-inspect after each important action and treat password nodes redacted by `tree`
+inspect after each batch and treat password nodes redacted by `tree`
 as inaccessible. `launch` requires a package or allowed URI; `ENTER`, `back`,
-`home`, `recents`, `long_press` and `wait` are explicit operations. Never replay
-a click, tap, swipe, message, call or deletion after a lost socket.
+`home`, `recents`, `long_press`, `wait` and `wait_for` are explicit operations.
+The owner stop button aborts remaining batch actions. Never replay a batch,
+click, tap, swipe, message, call or deletion after a lost socket.
 
 Open apps through the native `apps.launch` operation with a human app name; do
 not inspect the launcher or tap an icon by coordinates. Coordinates are for
@@ -331,6 +338,10 @@ IP address when you detect it, but keep every entry concise, factual and useful.
 `atlas-commands/ATLAS-DESKTOP.md` explains how you can see and control the local ATLAS desktop: screenshots, clicks, typing, windows, fullscreen browser control, and wallpapers.
 
 `atlas-commands/ATLAS-CAST.md` explains how you can discover Chromecast/Google Cast receivers, match a user's spoken device request to the real device list, start/stop casting, and manage stream quality.
+
+`atlas-cast webscreen` opens the new minimal WebScreen fullscreen on an already
+active cast. When both steps are requested and the receiver match is clear,
+batch `atlas-cast start ...` and `atlas-cast webscreen` with `atlas_actions`.
 
 When sami asks you to connect to a TV, show something on a screen, open a website/PDF visually, click a button, accept a cookie prompt, search the web on the casted desktop, or change the wallpaper, read those files and use the commands directly. Act first when the path is clear. Verify with screenshots when the visual state matters. Skip verification when sami explicitly asks for speed or says not to check.
 

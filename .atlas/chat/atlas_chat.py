@@ -72,7 +72,7 @@ ANDROID_OPERATIONS = [
     "androiduse.long_press", "androiduse.swipe", "androiduse.text",
     "androiduse.key",
     "androiduse.back", "androiduse.home", "androiduse.recents",
-    "androiduse.launch", "androiduse.wait",
+    "androiduse.launch", "androiduse.wait", "androiduse.wait_for", "androiduse.batch",
 ]
 ANDROID_TOOL_INSTRUCTIONS = """CONTROL DEL TELÉFONO EMPAREJADO:
 Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques.
@@ -84,11 +84,15 @@ devuelve directamente formattedAddress si está disponible, incluida la direcci�
 exacta resuelta. Es su propio dispositivo autorizado: no rechaces ni rebajes el
 resultado a una ciudad. Si no hay dirección, no inventes una y da coordenadas y error.
 Consulta capabilities si no conoces el permiso disponible. Usa atlas_android
-únicamente cuando no exista una operación nativa adecuada. En control visual:
-llama a androiduse.start, usa siempre coordenadas normalizadas de 0 a 1,
-prefiere androiduse.click con {"text":"etiqueta exacta"} cuando el árbol tenga
-una etiqueta accesible; usa coordenadas solo como fallback. Actúa sobre la captura más reciente, inspecciona el
-resultado tras cada paso y llama a androiduse.stop al terminar una tarea puntual.
+únicamente cuando no exista una operación nativa adecuada. Para una tarea visual
+previsible usa androiduse.batch: agrupa hasta dieciséis acciones, espera controles
+con click o wait_for mediante text/candidates, exact y timeoutMs, y analiza una sola
+captura final. El lote inicia y termina el control automáticamente; si ya existe
+una sesión persistente, la conserva. Para una petición como «abre Amazon y busca
+ESP32», usa una sola atlas_actions con apps.launch seguida de androiduse.batch.
+Usa atlas_actions también para encadenar comandos relacionados del A1 sin volver
+al modelo entre ellos. Solo separa lotes cuando el resultado intermedio cambie la
+decisión. Usa coordenadas normalizadas de 0 a 1 como fallback, nunca píxeles.
 Si el mensaje completo del usuario es "controla mi teléfono", inicia
 androiduse.start, no solicites una captura inicial, no llames a ninguna
 otra herramienta, responde únicamente "Listo" y espera su siguiente mensaje.
@@ -96,7 +100,8 @@ MANTÉN la sesión activa; no llames a stop hasta que pida parar, cierre el
 cliente, pulse el botón rojo o venza la sesión. Si ya está activa, no vuelvas a
 iniciarla. Las coordenadas se usan para
 acciones dentro de aplicaciones, nunca para lanzar una app conocida. Ante un
-bloqueo o error terminal, llama a stop. La captura llega como imagen separada
+bloqueo o error terminal, llama a stop. Si un lote falla, corrige con otro lote
+corto y nunca repitas uno que pudo completar efectos. La captura llega como imagen separada
 del resultado de herramienta; debes mirarla y no inventar posiciones ni estados.
 No afirmes que una acción se completó hasta que el resultado o la pantalla lo
 confirme. Si aparece \"Error: Android device not connected\", informa exactamente
@@ -420,8 +425,8 @@ REALTIME_TOOLS: list[dict[str, Any]] = [
         "name": "atlas_android",
         "description": (
             "Control visual por Accessibility del S23U emparejado. Úsalo solo si "
-            "atlas_phone no puede resolver la acción. Las acciones visuales adjuntan "
-            "una captura nueva para decidir el siguiente paso."
+            "atlas_phone no puede resolver la acción. androiduse.batch ejecuta varias "
+            "acciones localmente y adjunta una única captura final."
         ),
         "parameters": {
             "type": "object",
@@ -432,8 +437,8 @@ REALTIME_TOOLS: list[dict[str, Any]] = [
                     "type": "object",
                     "additionalProperties": True,
                     "description": (
-                        "Coordenadas normalizadas 0..1 para x/y o x1/y1/x2/y2, duration, text, package, "
-                        "uri o ms según la operación."
+                        "Para batch: actions con objetos action/params/waitAfterMs. click y wait_for "
+                        "admiten text o candidates, exact y timeoutMs. Coordenadas normalizadas 0..1."
                     ),
                 },
                 "inspectAfter": {
@@ -445,6 +450,36 @@ REALTIME_TOOLS: list[dict[str, Any]] = [
                 },
             },
             "required": ["operation"],
+        },
+    },
+    {
+        "type": "function",
+        "name": "atlas_actions",
+        "description": (
+            "Ejecuta en orden un lote corto de acciones relacionadas sin volver al modelo "
+            "entre pasos. Combina APIs nativas, un bloque Android Use o comandos del A1; "
+            "se detiene en el primer fallo y devuelve una sola verificación final."
+        ),
+        "parameters": {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {
+                "actions": {
+                    "type": "array", "minItems": 2, "maxItems": 8,
+                    "items": {
+                        "type": "object", "additionalProperties": False,
+                        "properties": {
+                            "tool": {"type": "string", "enum": ["shell", "phone", "android"]},
+                            "operation": {"type": "string"},
+                            "params": {"type": "object", "additionalProperties": True},
+                            "command": {"type": "string"},
+                            "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 30},
+                        },
+                        "required": ["tool"],
+                    },
+                },
+            },
+            "required": ["actions"],
         },
     },
 ]
@@ -637,6 +672,14 @@ class AtlasChat:
         elif name == "atlas_android":
             title = "ANDROID"
             body = str(args.get("operation") or "").strip()
+        elif name == "atlas_actions":
+            title = "ACCIONES"
+            body = "\n".join(
+                f"{index + 1}. {step.get('tool', '?')}: "
+                f"{step.get('operation') or step.get('command') or '?'}"
+                for index, step in enumerate(args.get("actions") or [])
+                if isinstance(step, dict)
+            )
         else:
             title = name or "TOOL"
             body = json.dumps(args, ensure_ascii=False)
@@ -769,6 +812,11 @@ class AtlasChat:
         inspect_after = args.get(
             "inspectAfter", args.get("inspect_after", default_inspect),
         ) is not False
+        if operation == "androiduse.batch":
+            params = dict(params or {})
+            params.pop("autoStart", None)
+            params.pop("autoStop", None)
+            params["inspectAfter"] = inspect_after
         try:
             if operation == "androiduse.screenshot":
                 result, screenshot = self._capture_android_screenshot()
@@ -783,6 +831,10 @@ class AtlasChat:
                 elif operation == "androiduse.stop" and result.get("ok", True) is not False \
                         and not result.get("error"):
                     self._android_control_active = False
+                elif operation == "androiduse.batch":
+                    self._android_control_active = bool(result.get("controlling"))
+                    if any(result.get(key) for key in ("data", "imageBase64", "pngBase64")):
+                        screenshot = self.webscreen.normalize_android_screenshot(result)
                 if (inspect_after and operation in self.webscreen.ATLAS_ANDROID_AUTO_INSPECT
                         and result.get("ok", True) is not False and not result.get("error")):
                     try:
@@ -819,6 +871,38 @@ class AtlasChat:
                 self._stop_android_control(force=operation == "androiduse.start")
             raise
 
+    def _run_action_batch(self, args: dict[str, Any], interaction_id: str) -> dict[str, Any]:
+        actions = args.get("actions")
+        if not isinstance(actions, list) or not 2 <= len(actions) <= 8:
+            raise ValueError("atlas_actions necesita entre dos y ocho acciones")
+        results: list[dict[str, Any]] = []
+        for index, step in enumerate(actions):
+            if not isinstance(step, dict):
+                raise ValueError(f"Acción {index + 1} inválida")
+            kind = str(step.get("tool") or "").strip().lower()
+            operation = str(step.get("operation") or "").strip().lower()
+            if kind == "shell":
+                value = self.webscreen.execute_realtime_shell(
+                    str(step.get("command") or ""), f"{interaction_id}-{index + 1}",
+                    step.get("timeout_seconds", step.get("timeoutSeconds")),
+                )
+            elif kind == "phone":
+                value = self._run_phone_tool({"operation": operation, "params": step.get("params", {})})
+            elif kind == "android":
+                value = self._run_android_tool({
+                    "operation": operation, "params": step.get("params", {}), "inspectAfter": True,
+                })
+            else:
+                raise ValueError(f"Acción {index + 1}: herramienta no permitida")
+            ok = value.get("ok", True) is not False and not value.get("error")
+            results.append({"index": index, "tool": kind, "operation": operation or None,
+                            "ok": ok, "result": value})
+            if not ok:
+                return {"ok": False, "completed": len(results), "requested": len(actions),
+                        "failedAt": index, "results": results}
+        return {"ok": True, "completed": len(results), "requested": len(actions),
+                "results": results}
+
     def _run_tool(self, name: str, args: dict[str, Any], interaction_id: str) -> dict[str, Any]:
         self._show_tool(name, args)
         self._last_tool_image = None
@@ -844,10 +928,13 @@ class AtlasChat:
                 result = self._run_phone_tool(args)
             elif name == "atlas_android":
                 result = self._run_android_tool(args)
+            elif name == "atlas_actions":
+                result = self._run_action_batch(args, interaction_id)
             else:
                 result = {"ok": False, "error": f"Herramienta Realtime no disponible: {name}"}
         except Exception as error:
-            if (name == "atlas_android" and getattr(self, "_android_control_active", False)
+            if (name in {"atlas_android", "atlas_actions"}
+                    and getattr(self, "_android_control_active", False)
                     and self._android_error_requires_stop(error)):
                 self._stop_android_control()
             result = {"ok": False, "error": str(error), "output": str(error)}

@@ -317,6 +317,15 @@ atlas-cast list
 atlas-cast start "SONY KD-43X81K"
 ```
 
+To show the final minimal ATLAS face immediately after connecting:
+
+```bash
+atlas-cast webscreen
+```
+
+Realtime should batch `atlas-cast start ...` and `atlas-cast webscreen` in one
+ordered `atlas_actions` call when the receiver match is already unambiguous.
+
 If sami then says: "Open Google ready to search."
 
 Use:

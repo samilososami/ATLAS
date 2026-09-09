@@ -159,6 +159,7 @@ REALTIME_SHELL_MAX_OUTPUT_CHARS = 12000
 ATLAS_APP_CONTROL_BIN = os.environ.get("ATLAS_APP_CONTROL_BIN", "atlas-app").strip() or "atlas-app"
 ATLAS_APP_CONTROL_TIMEOUT_SECONDS = int(os.environ.get("ATLAS_APP_CONTROL_TIMEOUT", "15"))
 ATLAS_APP_SCREENSHOT_TIMEOUT_SECONDS = int(os.environ.get("ATLAS_APP_SCREENSHOT_TIMEOUT", "8"))
+ATLAS_APP_BATCH_TIMEOUT_SECONDS = int(os.environ.get("ATLAS_APP_BATCH_TIMEOUT", "30"))
 ATLAS_APP_CONTROL_MAX_PARAMS_CHARS = 8 * 1024
 ATLAS_APP_CONTROL_MAX_OUTPUT_CHARS = 12 * 1024 * 1024
 ATLAS_APP_CONTROL_MAX_PHONE_RESULT_CHARS = 128 * 1024
@@ -184,13 +185,13 @@ ATLAS_ANDROID_OPERATIONS = frozenset({
     "androiduse.long_press", "androiduse.swipe", "androiduse.text",
     "androiduse.key",
     "androiduse.back", "androiduse.home", "androiduse.recents",
-    "androiduse.launch", "androiduse.wait",
+    "androiduse.launch", "androiduse.wait", "androiduse.wait_for", "androiduse.batch",
 })
 ATLAS_ANDROID_AUTO_INSPECT = frozenset({
     "androiduse.click", "androiduse.tap", "androiduse.long_press",
     "androiduse.swipe", "androiduse.text", "androiduse.key", "androiduse.back",
     "androiduse.home", "androiduse.recents", "androiduse.launch",
-    "androiduse.wait",
+    "androiduse.wait", "androiduse.wait_for",
 })
 TAVILY_DEFAULT_BASE_URL = "https://api.tavily.com"
 TAVILY_SEARCH_TIMEOUT_SECONDS = 30
@@ -292,6 +293,8 @@ def execute_atlas_app_control(operation: Any, params: Any,
         raise ValueError("Los parámetros de teléfono son demasiado grandes")
     timeout_seconds = (ATLAS_APP_SCREENSHOT_TIMEOUT_SECONDS
                        if canonical == "androiduse.screenshot"
+                       else ATLAS_APP_BATCH_TIMEOUT_SECONDS
+                       if canonical == "androiduse.batch"
                        else ATLAS_APP_CONTROL_TIMEOUT_SECONDS)
     # Give Companion a slightly shorter deadline than this supervising process.
     # That prevents a killed CLI from leaving an orphaned phone request running
@@ -3556,9 +3559,19 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
     def handle_realtime_android(self) -> None:
         try:
             operation, params, inspect_after, interaction_id = self._read_realtime_device_tool()
+            if operation == "androiduse.batch":
+                params = dict(params)
+                # Realtime may use a batch inside an already-persistent session,
+                # but it must not override native start/stop ownership itself.
+                params.pop("autoStart", None)
+                params.pop("autoStop", None)
+                params["inspectAfter"] = inspect_after
             result = execute_atlas_app_control(operation, params, ATLAS_ANDROID_OPERATIONS)
             screenshot: dict[str, Any] | None = None
-            if operation == "androiduse.screenshot":
+            if operation == "androiduse.screenshot" or (
+                operation == "androiduse.batch"
+                and any(result.get(key) for key in ("data", "imageBase64", "pngBase64"))
+            ):
                 screenshot = normalize_android_screenshot(result)
             elif (inspect_after and operation in ATLAS_ANDROID_AUTO_INSPECT
                   and result.get("ok", True) is not False and not result.get("error")):

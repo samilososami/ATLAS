@@ -64,7 +64,7 @@ Dispones de atlas_face. Tú, el mismo modelo Realtime, eliges semánticamente la
     "androiduse.long_press", "androiduse.swipe", "androiduse.text",
     "androiduse.key",
     "androiduse.back", "androiduse.home", "androiduse.recents",
-    "androiduse.launch", "androiduse.wait",
+    "androiduse.launch", "androiduse.wait", "androiduse.wait_for", "androiduse.batch",
   ]);
   const PHONE_TOOL = {
     type: "function",
@@ -84,21 +84,48 @@ Dispones de atlas_face. Tú, el mismo modelo Realtime, eliges semánticamente la
   const ANDROID_TOOL = {
     type: "function",
     name: "atlas_android",
-    description: "Control visual por Accessibility del S23U emparejado. Úsalo solo si atlas_phone no puede resolver la acción. Las acciones visuales adjuntan una captura nueva para decidir el siguiente paso.",
+    description: "Control visual por Accessibility del S23U emparejado. Úsalo solo si atlas_phone no puede resolver la acción. Para tareas previsibles usa androiduse.batch: ejecuta varias acciones localmente y devuelve una única captura final.",
     parameters: {
       type: "object", additionalProperties: false,
       properties: {
         operation: { type: "string", enum: ANDROID_OPERATIONS },
         params: { type: "object", additionalProperties: true,
-          description: "Para click usa text/description/query y exact; si no hay etiqueta usa coordenadas normalizadas 0..1 para tap/long_press/swipe. También admite duration, text, package, uri o ms según la operación." },
+          description: "Para batch: {actions:[{action,params,waitAfterMs?}],autoStart?,autoStop?,inspectionDelayMs?}. Dentro admite click, tap, long_press, swipe, text, key, launch, back, home, recents, wait y wait_for. click/wait_for admiten text o candidates, exact y timeoutMs. Las coordenadas son normalizadas 0..1." },
         inspectAfter: { type: "boolean",
           description: "Por defecto true tras acciones visuales; start no captura. Usa false solo si de verdad no necesitas inspeccionar el resultado." },
       },
       required: ["operation"],
     },
   };
+  const ACTIONS_TOOL = {
+    type: "function",
+    name: "atlas_actions",
+    description: "Ejecuta en orden un lote corto de acciones relacionadas con una sola petición, sin volver al modelo entre pasos. Úsalo para combinar APIs nativas del teléfono, un bloque Android Use o varios comandos del A1. Se detiene en el primer fallo y devuelve una sola verificación final.",
+    parameters: {
+      type: "object", additionalProperties: false,
+      properties: {
+        actions: {
+          type: "array", minItems: 2, maxItems: 8,
+          items: {
+            type: "object", additionalProperties: false,
+            properties: {
+              tool: { type: "string", enum: ["shell", "phone", "android"] },
+              operation: { type: "string", description: "Operación para phone/android; por ejemplo apps.launch o androiduse.batch." },
+              params: { type: "object", additionalProperties: true },
+              command: { type: "string", description: "Comando Bash cuando tool es shell." },
+              timeout_seconds: { type: "integer", minimum: 1, maximum: 30 },
+            },
+            required: ["tool"],
+          },
+        },
+      },
+      required: ["actions"],
+    },
+  };
   const ANDROID_TOOL_INSTRUCTIONS = `CONTROL DEL TELÉFONO EMPAREJADO:
-Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques. Para abrir una aplicación usa atlas_phone apps.launch con {"app":"nombre"}: es una sola llamada y no necesita control visual. "Amazon" abre Amazon Shopping; "Alexa" abre Alexa y nunca deben confundirse. Cuando sami pida la ubicación de su teléfono emparejado, usa location.get y devuelve directamente formattedAddress si existe, incluida la dirección exacta resuelta: es su propio dispositivo autorizado, así que no rechaces ni rebajes el resultado a una ciudad. Si no hay formattedAddress, no inventes una. Consulta capabilities si no conoces el permiso disponible. Usa atlas_android únicamente cuando no exista una operación nativa adecuada. Si el mensaje completo del usuario es "controla mi teléfono", llama a androiduse.start una vez, no solicites una captura inicial, no llames a ninguna otra herramienta, responde únicamente "Listo" y espera su siguiente mensaje. Mantén la sesión activa hasta que pida parar, cierre el cliente, pulse el botón rojo o venza la sesión. Si ya está activa, no la reinicies. Para una tarea visual puntual: llama a androiduse.start; si el árbol muestra una etiqueta, prefiere androiduse.click con {"text":"etiqueta exacta"} y usa coordenadas normalizadas de 0 a 1 solo como fallback. Actúa sobre la captura más reciente, inspecciona el resultado y llama a androiduse.stop al terminar o ante un error terminal. Un fallo recuperable de foco, etiqueta, gesto o captura no termina la sesión: inspecciona y corrige. La captura llega como imagen separada del resultado de herramienta; debes mirarla y no inventar posiciones ni estados. No afirmes que una acción se completó hasta que el resultado o la pantalla lo confirme. Si aparece "Error: Android device not connected", informa exactamente de que el móvil no está conectado. Si una API devuelve permission_required, unsupported o requires_user_action, dilo brevemente y no lo simules con éxito. No uses atlas_shell para saltarte estas reglas ni para fabricar llamadas al móvil.`;
+Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques. Para abrir una aplicación usa atlas_phone apps.launch con {"app":"nombre"}: es una sola llamada y no necesita control visual. "Amazon" abre Amazon Shopping; "Alexa" abre Alexa y nunca deben confundirse. Cuando sami pida la ubicación de su teléfono emparejado, usa location.get y devuelve directamente formattedAddress si existe, incluida la dirección exacta resuelta: es su propio dispositivo autorizado, así que no rechaces ni rebajes el resultado a una ciudad. Si no hay formattedAddress, no inventes una. Consulta capabilities si no conoces el permiso disponible. Usa atlas_android únicamente cuando no exista una operación nativa adecuada. Si el mensaje completo del usuario es "controla mi teléfono", llama a androiduse.start una vez, no solicites una captura inicial, no llames a ninguna otra herramienta, responde únicamente "Listo" y espera su siguiente mensaje. Mantén la sesión activa hasta que pida parar, cierre el cliente, pulse el botón rojo o venza la sesión. Si ya está activa, no la reinicies.
+Para una tarea visual puntual y previsible, usa androiduse.batch: agrupa entre dos y dieciséis acciones conocidas, deja que el teléfono las ejecute en orden y analiza solo su captura final. El lote inicia el aura automáticamente y la detiene al terminar; si ya existe una sesión persistente, la conserva. Usa click o wait_for con etiqueta exacta, candidates y timeoutMs para esperar una interfaz sin insertar rondas del modelo; usa coordenadas normalizadas de cero a uno solo como fallback. Para una petición compuesta como abrir Amazon y buscar ESP32, llama una sola vez a atlas_actions con apps.launch y después androiduse.batch. Si la captura final muestra un fallo, corrige con un segundo lote corto; nunca repitas un lote que pudo completar acciones con efectos.
+Usa atlas_actions también para dos o más acciones relacionadas del A1, por ejemplo iniciar un cast y abrir una pestaña: una llamada, orden estricto y parada en el primer error. No lo uses para acciones independientes que necesiten una decisión entre medias. Un fallo recuperable de foco, etiqueta, gesto o captura no invalida una sesión persistente: inspecciona y corrige. Ante pérdida terminal de conexión o cuando el usuario pida parar, llama a androiduse.stop. La captura llega como imagen separada del resultado de herramienta; debes mirarla y no inventar posiciones ni estados. No afirmes que una acción se completó hasta que el resultado o la pantalla lo confirme. Si aparece "Error: Android device not connected", informa exactamente de que el móvil no está conectado. Si una API devuelve permission_required, unsupported o requires_user_action, dilo brevemente y no lo simules con éxito. No uses atlas_shell para saltarte estas reglas ni para fabricar llamadas al móvil.`;
 
   const REALTIME_TOOLS = [
     {
@@ -179,6 +206,7 @@ Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques
     },
     PHONE_TOOL,
     ANDROID_TOOL,
+    ACTIONS_TOOL,
   ];
 
   const normalized = (value) => String(value || "")
@@ -1932,6 +1960,10 @@ Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques
         await this.handleRoutineTool(callId, args);
         return;
       }
+      if (name === "atlas_actions") {
+        await this.handleActionsTool(callId, args);
+        return;
+      }
       if (name === "atlas_phone" || name === "atlas_android") {
         await this.handleDeviceTool(name, callId, args);
         return;
@@ -1979,6 +2011,106 @@ Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques
           ? { status: "cancelled", message: "La persona interrumpió el trabajo." }
           : { error: error.message || String(error) });
         if (!aborted) this.callbacks.addLog?.(`Shell fallida: ${error.message}`, null, "error");
+      } finally {
+        if (this.consultController === controller) {
+          this.toolActive = false;
+          this.consultController = null;
+        }
+      }
+    }
+
+    async handleActionsTool(callId, args) {
+      const actions = Array.isArray(args.actions) ? args.actions : [];
+      if (actions.length < 2 || actions.length > 8) {
+        this.submitToolResult(callId, { ok: false, error: "atlas_actions necesita entre dos y ocho acciones" });
+        return;
+      }
+      this.toolActive = true;
+      this.callbacks.setScreen?.("ACCIONES", "ATLAS está actuando",
+        `${actions.length} acciones en un solo flujo`, "working");
+      this.postEvent("actions.started", "OpenAI Realtime inició un lote local",
+        { text: `${actions.length} acciones` });
+      this.consultController = new AbortController();
+      const controller = this.consultController;
+      const generation = this.toolGeneration;
+      const lifecycle = this.lifecycle;
+      const current = () => !this.closed && this.lifecycle === lifecycle
+        && this.toolGeneration === generation && !controller.signal.aborted;
+      const started = performance.now();
+      const results = [];
+      let screenshot = null;
+      let failedAt = -1;
+      try {
+        for (let index = 0; index < actions.length; index += 1) {
+          if (!current()) return;
+          const step = actions[index] || {};
+          const kind = String(step.tool || "").trim().toLowerCase();
+          if (!["shell", "phone", "android"].includes(kind)) {
+            throw new Error(`Acción ${index + 1}: herramienta no permitida`);
+          }
+          const operation = String(step.operation || "").trim().toLowerCase();
+          const endpoint = kind === "shell" ? "/api/realtime/shell"
+            : kind === "phone" ? "/api/realtime/phone" : "/api/realtime/android";
+          const stepArgs = kind === "shell"
+            ? { command: String(step.command || ""), timeout_seconds: step.timeout_seconds }
+            : { operation, params: step.params || {}, inspectAfter: kind === "android" };
+          if (kind === "android" && operation === "androiduse.start" && this.androidStopPromise) {
+            await this.androidStopPromise;
+            if (!current()) return;
+          }
+          const response = await this.fetch(endpoint, {
+            method: "POST", cache: "no-store", signal: controller.signal,
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              args: stepArgs,
+              requestId: `${this.currentRequestId || requestId()}-${index + 1}`,
+              interactionId: this.currentInteractionId || requestId(),
+            }),
+          });
+          if (!current()) return;
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(payload.error || `La acción ${index + 1} respondió con HTTP ${response.status}`);
+          const value = kind === "shell" ? payload : {
+            operation: payload.operation || operation, result: payload.result || {},
+          };
+          const ok = value.ok !== false && !value.error
+            && value.result?.ok !== false && !value.result?.error;
+          results.push({ index, tool: kind, operation: operation || undefined, ok, result: value });
+          if (payload.screenshot) screenshot = payload.screenshot;
+          if (kind === "android") {
+            if (operation === "androiduse.start" && ok) this.androidControlActive = true;
+            if (operation === "androiduse.stop") {
+              this.androidControlActive = false;
+              this.androidControlPersistent = false;
+            }
+            if (operation === "androiduse.batch" && payload.result?.controlling === false) {
+              this.androidControlActive = false;
+            }
+          }
+          if (!ok) { failedAt = index; break; }
+        }
+        const ok = failedAt < 0 && results.length === actions.length;
+        const result = {
+          ok, completed: results.length, requested: actions.length, results,
+          ...(failedAt >= 0 ? { failedAt } : {}),
+          durationMs: Math.round((performance.now() - started) * 10) / 10,
+        };
+        this.callbacks.addLog?.(`Lote Realtime: ${results.length}/${actions.length}`,
+          performance.now() - started);
+        this.postEvent(ok ? "actions.completed" : "actions.failed",
+          ok ? "El lote local terminó" : "El lote local se detuvo en un fallo",
+          { durationMs: performance.now() - started, text: `${results.length}/${actions.length}` });
+        this.submitToolResultWithImage(callId, result, screenshot);
+      } catch (error) {
+        if (!current()) return;
+        const aborted = error?.name === "AbortError";
+        if (!aborted && this.androidControlActive && this.androidErrorRequiresStop(error)) {
+          this.stopAndroidControlSilently();
+        }
+        this.submitToolResult(callId, aborted
+          ? { status: "cancelled", completed: results.length, message: "La persona interrumpió el lote." }
+          : { ok: false, completed: results.length, failedAt: results.length,
+            error: error.message || String(error), results });
       } finally {
         if (this.consultController === controller) {
           this.toolActive = false;
@@ -2043,6 +2175,8 @@ Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques
         } else if (isVisual && operation === "androiduse.stop") {
           this.androidControlActive = false;
           this.androidControlPersistent = false;
+        } else if (isVisual && operation === "androiduse.batch") {
+          this.androidControlActive = Boolean(payload.result?.controlling);
         }
         const toolResult = { operation: payload.operation || operation, result: payload.result || {} };
         if (payload.screenshot) {
@@ -2219,7 +2353,7 @@ Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques
           item: {
             type: "message", role: "user",
             content: [
-              { type: "input_text", text: `Captura actual del teléfono tras ${result.operation}. Analízala para decidir el siguiente paso; no des por completada la tarea solo por recibirla.` },
+              { type: "input_text", text: `Captura final del teléfono tras ${result.operation || "el lote de acciones"}. Analízala para decidir si la petición terminó; no la des por completada solo por recibirla.` },
               { type: "input_image", image_url: `data:${screenshot?.mime || "image/png"};base64,${encoded}` },
             ],
           },
@@ -2783,6 +2917,7 @@ Prioriza siempre atlas_phone: es más rápido, fiable y seguro que imitar toques
       commandLabel, responseExpectsReply, benignRealtimeError, likelyAssistantEcho, captureConstraints, speechChunkLength,
       persistentAndroidControlInvocation,
       realtimeTools: REALTIME_TOOLS, faceTool: FACE_TOOL, faceInstructions: FACE_INSTRUCTIONS,
-      phoneTool: PHONE_TOOL, androidTool: ANDROID_TOOL, androidInstructions: ANDROID_TOOL_INSTRUCTIONS },
+      phoneTool: PHONE_TOOL, androidTool: ANDROID_TOOL, actionsTool: ACTIONS_TOOL,
+      androidInstructions: ANDROID_TOOL_INSTRUCTIONS },
   };
 })();

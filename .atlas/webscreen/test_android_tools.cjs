@@ -22,10 +22,14 @@ vm.runInThisContext(fs.readFileSync(path.join(__dirname, "static", "realtime.js"
 const tools = window.AtlasRealtime._test.realtimeTools;
 assert.equal(tools.filter((tool) => tool.name === "atlas_phone").length, 1);
 assert.equal(tools.filter((tool) => tool.name === "atlas_android").length, 1);
+assert.equal(tools.filter((tool) => tool.name === "atlas_actions").length, 1);
 assert.ok(window.AtlasRealtime._test.phoneTool.parameters.properties.operation.enum.includes("get_location"));
 assert.ok(window.AtlasRealtime._test.androidTool.parameters.properties.operation.enum.includes("androiduse.screenshot"));
 assert.ok(window.AtlasRealtime._test.androidTool.parameters.properties.operation.enum.includes("androiduse.key"));
 assert.ok(window.AtlasRealtime._test.androidTool.parameters.properties.operation.enum.includes("androiduse.click"));
+assert.ok(window.AtlasRealtime._test.androidTool.parameters.properties.operation.enum.includes("androiduse.batch"));
+assert.ok(window.AtlasRealtime._test.androidTool.parameters.properties.operation.enum.includes("androiduse.wait_for"));
+assert.equal(window.AtlasRealtime._test.actionsTool.parameters.properties.actions.maxItems, 8);
 assert.match(window.AtlasRealtime._test.androidInstructions, /Prioriza siempre atlas_phone/u);
 assert.match(window.AtlasRealtime._test.androidInstructions, /androiduse\.stop/u);
 assert.match(window.AtlasRealtime._test.androidInstructions, /coordenadas normalizadas/u);
@@ -151,6 +155,41 @@ assert.equal(controller.androidControlActive, false);
   assert.equal(stops, 0,
     "a timed-out capture must not tear down an otherwise healthy Android Use session");
   assert.equal(recoverable.androidControlActive, true);
+
+  const batched = window.AtlasRealtime.create({});
+  batched.closed = false;
+  batched.channel = { readyState: "open", send: (value) => batchSent.push(JSON.parse(value)) };
+  batched.postEvent = () => {};
+  batched.requestToolContinuation = () => { batchContinued += 1; };
+  const batchSent = [];
+  const batchRequests = [];
+  let batchContinued = 0;
+  batched.fetch = async (url, options) => {
+    const body = JSON.parse(options.body);
+    batchRequests.push({ url, body });
+    if (url.endsWith("/phone")) {
+      return { ok: true, json: async () => ({ operation: "apps.launch", result: { ok: true } }) };
+    }
+    return { ok: true, json: async () => ({
+      operation: "androiduse.batch", result: { ok: true, controlling: false },
+      screenshot: { imageBase64: jpeg, width: 640, height: 1372, mime: "image/jpeg" },
+    }) };
+  };
+  await batched.handleActionsTool("call-batch", { actions: [
+    { tool: "phone", operation: "apps.launch", params: { app: "Amazon" } },
+    { tool: "android", operation: "androiduse.batch", params: { actions: [
+      { action: "click", params: { text: "Buscar", timeoutMs: 3500 } },
+      { action: "text", params: { text: "ESP32" } },
+    ] } },
+  ] });
+  assert.deepEqual(batchRequests.map((item) => item.url), [
+    "/api/realtime/phone", "/api/realtime/android",
+  ]);
+  assert.equal(batchRequests[1].body.args.inspectAfter, true);
+  assert.equal(batchSent[0].item.type, "function_call_output");
+  assert.equal(JSON.parse(batchSent[0].item.output).completed, 2);
+  assert.equal(batchSent[1].item.content[1].type, "input_image");
+  assert.equal(batchContinued, 1);
   console.log("android Realtime tool tests passed");
 })().catch((error) => {
   console.error(error);

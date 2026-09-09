@@ -29,6 +29,9 @@ public final class AtlasAccessibilityService extends AccessibilityService {
     private static final int SCREENSHOT_MAX_WIDTH=640;
     private static final int SCREENSHOT_JPEG_QUALITY=82;
     private static final int SCREENSHOT_MAX_BYTES=600_000;
+    private static final int BATCH_MAX_ACTIONS=16;
+    private static final long BATCH_MAX_DURATION_MS=18_000;
+    private static final long BATCH_MAX_WAIT_MS=6_000;
     private final Handler main=new Handler(Looper.getMainLooper());
     private final ExecutorService captureWorker=Executors.newSingleThreadExecutor();
     private WindowManager windows;
@@ -69,6 +72,7 @@ public final class AtlasAccessibilityService extends AccessibilityService {
         if("start".equals(action)){startControl();return ok();}
         if("stop".equals(action)){stopControl();return ok();}
         if("status".equals(action))return new JSONObject().put("enabled",true).put("controlling",controlling);
+        if("batch".equals(action))return performBatch(p);
         if(!controlling)throw new IOException("Inicia primero una sesión con atlas-androiduse start");
         touchSession();
         switch(action){
@@ -90,8 +94,85 @@ public final class AtlasAccessibilityService extends AccessibilityService {
             }
             case "launch": return onMain(()->launch(p));
             case "wait": Thread.sleep(Math.max(0,Math.min(2500,p.optLong("ms",350))));return ok();
+            case "wait_for": return waitForLabel(p);
             default: throw new SecurityException("Acción Android Use no permitida: "+action);
         }
+    }
+    private JSONObject performBatch(JSONObject p)throws Exception{
+        JSONArray actions=p.optJSONArray("actions");
+        if(actions==null||actions.length()==0)throw new IllegalArgumentException("El lote no contiene acciones");
+        if(actions.length()>BATCH_MAX_ACTIONS)throw new IllegalArgumentException("El lote admite como máximo "+BATCH_MAX_ACTIONS+" acciones");
+        boolean startedHere=!controlling;
+        if(startedHere&&!p.optBoolean("autoStart",true))throw new IOException("Inicia primero una sesión con atlas-androiduse start");
+        boolean autoStop=p.has("autoStop")?p.optBoolean("autoStop"):startedHere;
+        boolean inspect=p.optBoolean("inspectAfter",true);
+        JSONArray results=new JSONArray();
+        JSONObject response=new JSONObject().put("mode","batch").put("startedHere",startedHere);
+        long deadline=SystemClock.elapsedRealtime()+BATCH_MAX_DURATION_MS;
+        if(startedHere)startControl();else touchSession();
+        try{
+            for(int index=0;index<actions.length();index++){
+                if(!controlling){response.put("ok",false).put("failedAt",index).put("error","Android Use fue detenido por el usuario");break;}
+                if(SystemClock.elapsedRealtime()>=deadline){
+                    response.put("ok",false).put("failedAt",index).put("error","El lote agotó su tiempo máximo");
+                    break;
+                }
+                JSONObject step=actions.optJSONObject(index);
+                if(step==null){response.put("ok",false).put("failedAt",index).put("error","Acción de lote inválida");break;}
+                String stepAction=step.optString("action").trim().toLowerCase(Locale.ROOT);
+                if(stepAction.startsWith("androiduse."))stepAction=stepAction.substring("androiduse.".length());
+                JSONObject params=step.optJSONObject("params");
+                if(params==null){params=new JSONObject(step.toString());params.remove("action");params.remove("waitAfterMs");}
+                long started=SystemClock.elapsedRealtime();
+                try{
+                    JSONObject value=performBatchStep(stepAction,params,deadline);
+                    results.put(new JSONObject().put("index",index).put("action",stepAction).put("ok",true)
+                        .put("durationMs",SystemClock.elapsedRealtime()-started).put("result",value));
+                }catch(Exception error){
+                    results.put(new JSONObject().put("index",index).put("action",stepAction).put("ok",false)
+                        .put("durationMs",SystemClock.elapsedRealtime()-started).put("error",safeError(error)));
+                    response.put("ok",false).put("failedAt",index).put("error",safeError(error));
+                    break;
+                }
+                if(index+1<actions.length()){
+                    long settle=step.has("waitAfterMs")?step.optLong("waitAfterMs"):defaultSettleMs(stepAction);
+                    if(settle>0)Thread.sleep(Math.min(settle,Math.max(0,deadline-SystemClock.elapsedRealtime())));
+                }
+            }
+            if(!response.has("ok"))response.put("ok",true);
+            response.put("steps",results).put("completed",results.length()).put("requested",actions.length());
+            if(inspect&&controlling){
+                long settle=Math.max(0,Math.min(1000,p.optLong("inspectionDelayMs",180)));
+                if(settle>0)Thread.sleep(settle);
+                try{
+                    response.put("tree",onMain(this::tree));
+                    JSONObject shot=screenshot();
+                    for(Iterator<String> keys=shot.keys();keys.hasNext();){String key=keys.next();response.put(key,shot.get(key));}
+                }catch(Exception error){response.put("inspectionError",safeError(error));}
+            }else if(inspect)response.put("inspectionSkipped","control_stopped");
+            return response.put("controlling",controlling&&!autoStop);
+        }finally{
+            if(autoStop)try{onMain(()->{stopControlNow();return null;});}catch(Exception ignored){stopControl();}
+        }
+    }
+    private JSONObject performBatchStep(String action,JSONObject p,long deadline)throws Exception{
+        if(action.isEmpty())throw new IllegalArgumentException("Falta action en una acción del lote");
+        if(Arrays.asList("start","stop","status","screenshot","tree","batch").contains(action))
+            throw new SecurityException("Acción no permitida dentro de un lote: "+action);
+        if("click".equals(action))return clickLabelWithRetry(p,deadline);
+        if("wait_for".equals(action))return waitForLabel(p,deadline);
+        return perform(action,p);
+    }
+    private long defaultSettleMs(String action){
+        if("launch".equals(action))return 320;
+        if("key".equals(action)||"swipe".equals(action)||"back".equals(action)||"home".equals(action)||"recents".equals(action))return 220;
+        if("click".equals(action))return 140;
+        if("text".equals(action))return 80;
+        return 0;
+    }
+    private String safeError(Exception error){
+        String message=String.valueOf(error.getMessage()==null?error.getClass().getSimpleName():error.getMessage()).replace('\n',' ').trim();
+        return message.substring(0,Math.min(300,message.length()));
     }
     private float point(JSONObject p,String key){
         double value=p.optDouble(key,0);DisplayMetrics metrics=getResources().getDisplayMetrics();
@@ -152,16 +233,56 @@ public final class AtlasAccessibilityService extends AccessibilityService {
         if((exact&&(query.equals(text)||query.equals(description)))||(!exact&&(!text.isEmpty()&&text.contains(query)||!description.isEmpty()&&description.contains(query))))return AccessibilityNodeInfo.obtain(node);
         for(int i=0;i<node.getChildCount();i++){AccessibilityNodeInfo child=node.getChild(i),found=findLabel(child,query,exact);if(child!=null)child.recycle();if(found!=null)return found;}return null;
     }
+    private ArrayList<String> requestedLabels(JSONObject p){
+        ArrayList<String> labels=new ArrayList<>();
+        String single=p.optString("text",p.optString("description",p.optString("query",""))).trim();
+        if(!single.isEmpty())labels.add(single);
+        JSONArray candidates=p.optJSONArray("candidates");
+        if(candidates!=null)for(int i=0;i<candidates.length();i++){
+            String value=candidates.optString(i).trim();if(!value.isEmpty()&&!labels.contains(value))labels.add(value);
+        }
+        return labels;
+    }
     private JSONObject clickLabel(JSONObject p)throws Exception{
-        String requested=p.optString("text",p.optString("description",p.optString("query",""))).trim();if(requested.isEmpty())throw new IllegalArgumentException("Falta text, description o query");
-        String query=normalizedLabel(requested);AccessibilityNodeInfo root=getRootInActiveWindow();if(root==null)throw new IOException("No hay una ventana activa");
-        AccessibilityNodeInfo target=findLabel(root,query,p.optBoolean("exact",true));root.recycle();if(target==null)throw new IOException("No se encontró el control: "+requested);
+        ArrayList<String> labels=requestedLabels(p);if(labels.isEmpty())throw new IllegalArgumentException("Falta text, description, query o candidates");
+        AccessibilityNodeInfo root=getRootInActiveWindow();if(root==null)throw new IOException("No hay una ventana activa");
+        AccessibilityNodeInfo target=null;String requested="";boolean exact=p.optBoolean("exact",true);
+        for(String label:labels){target=findLabel(root,normalizedLabel(label),exact);if(target!=null){requested=label;break;}}
+        root.recycle();if(target==null)throw new IOException("No se encontró ninguno de estos controles: "+String.join(", ",labels));
         Rect bounds=new Rect();target.getBoundsInScreen(bounds);AccessibilityNodeInfo clickable=target;
         while(clickable!=null&&!clickable.isClickable()){AccessibilityNodeInfo parent=clickable.getParent();clickable.recycle();clickable=parent;}
         if(clickable==null)throw new IOException("El control no admite pulsación: "+requested);
         boolean performed;try{performed=clickable.performAction(AccessibilityNodeInfo.ACTION_CLICK);}finally{clickable.recycle();}
         if(!performed)throw new IOException("Android rechazó la pulsación sobre: "+requested);
         return new JSONObject().put("clicked",true).put("matched",requested).put("bounds",new JSONArray(Arrays.asList(bounds.left,bounds.top,bounds.right,bounds.bottom)));
+    }
+    private JSONObject clickLabelWithRetry(JSONObject p,long batchDeadline)throws Exception{
+        long timeout=Math.max(0,Math.min(BATCH_MAX_WAIT_MS,p.optLong("timeoutMs",3500)));
+        long deadline=Math.min(batchDeadline,SystemClock.elapsedRealtime()+timeout);Exception last=null;
+        do{
+            if(!controlling)throw new IOException("Android Use fue detenido por el usuario");
+            try{return onMain(()->clickLabel(p));}
+            catch(Exception error){last=error;if(SystemClock.elapsedRealtime()>=deadline)break;Thread.sleep(Math.min(90,Math.max(1,deadline-SystemClock.elapsedRealtime())));}
+        }while(SystemClock.elapsedRealtime()<deadline);
+        throw last==null?new IOException("No se encontró el control solicitado"):last;
+    }
+    private JSONObject waitForLabel(JSONObject p)throws Exception{return waitForLabel(p,SystemClock.elapsedRealtime()+BATCH_MAX_WAIT_MS);}
+    private JSONObject waitForLabel(JSONObject p,long batchDeadline)throws Exception{
+        ArrayList<String> labels=requestedLabels(p);if(labels.isEmpty())throw new IllegalArgumentException("Falta text, description, query o candidates");
+        boolean exact=p.optBoolean("exact",true);long timeout=Math.max(0,Math.min(BATCH_MAX_WAIT_MS,p.optLong("timeoutMs",3500)));
+        long deadline=Math.min(batchDeadline,SystemClock.elapsedRealtime()+timeout);
+        do{
+            if(!controlling)throw new IOException("Android Use fue detenido por el usuario");
+            String match=onMain(()->{
+                AccessibilityNodeInfo root=getRootInActiveWindow();if(root==null)return "";
+                try{for(String label:labels){AccessibilityNodeInfo target=findLabel(root,normalizedLabel(label),exact);if(target!=null){target.recycle();return label;}}return "";}
+                finally{root.recycle();}
+            });
+            if(!match.isEmpty())return new JSONObject().put("found",true).put("matched",match);
+            if(SystemClock.elapsedRealtime()>=deadline)break;
+            Thread.sleep(Math.min(90,Math.max(1,deadline-SystemClock.elapsedRealtime())));
+        }while(SystemClock.elapsedRealtime()<deadline);
+        throw new IOException("No apareció ninguno de estos controles: "+String.join(", ",labels));
     }
     private JSONObject launch(JSONObject p)throws Exception{
         Intent intent;String packageName=p.optString("package").trim(),uri=p.optString("uri").trim();
@@ -223,7 +344,8 @@ public final class AtlasAccessibilityService extends AccessibilityService {
     }
     private void startControl()throws Exception{onMain(()->{if(!controlling){controlling=true;showGuard();showNotification();}touchSession();return null;});}
     private void touchSession(){main.removeCallbacks(idleStop);main.postDelayed(idleStop,600_000);}
-    private void stopControl(){main.post(()->{main.removeCallbacks(idleStop);controlling=false;if(guard!=null){try{windows.removeView(guard);}catch(Exception ignored){}guard=null;guardParams=null;}getSystemService(NotificationManager.class).cancel(CONTROL_NOTIFICATION);});}
+    private void stopControl(){main.post(this::stopControlNow);}
+    private void stopControlNow(){main.removeCallbacks(idleStop);controlling=false;if(guard!=null){try{windows.removeView(guard);}catch(Exception ignored){}guard=null;guardParams=null;}getSystemService(NotificationManager.class).cancel(CONTROL_NOTIFICATION);}
     private void setGuardPassThrough(boolean passThrough){
         if(guard==null||guardParams==null||windows==null)return;
         guard.setVisibility(passThrough?View.INVISIBLE:controlling?View.VISIBLE:View.GONE);

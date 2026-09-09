@@ -50,7 +50,7 @@ test('only the new surface with a functioning bridge advertises the optional loc
   for (const opts of [{ design: 'debug' }, { bridge: false }, { renderer: false }]) {
     const p = setup(opts);
     assert.deepEqual(Array.from(p.tools, tool => tool.name),
-      ['atlas_shell', 'atlas_web_search', 'atlas_routine', 'atlas_phone', 'atlas_android']);
+      ['atlas_shell', 'atlas_web_search', 'atlas_routine', 'atlas_phone', 'atlas_android', 'atlas_actions']);
     p.response(); p.call(); p.done();
     assert.equal(p.painted.length, 0);
     assert.equal(p.outputs().length, 0);
@@ -59,9 +59,9 @@ test('only the new surface with a functioning bridge advertises the optional loc
   }
   const p = setup();
   assert.deepEqual(Array.from(p.tools, tool => tool.name),
-    ['atlas_shell', 'atlas_web_search', 'atlas_routine', 'atlas_phone', 'atlas_android', 'atlas_face']);
+    ['atlas_shell', 'atlas_web_search', 'atlas_routine', 'atlas_phone', 'atlas_android', 'atlas_actions', 'atlas_face']);
   assert.equal(p.realtime.model, 'gpt-realtime-2.1');
-  assert.equal(p.realtime._test.realtimeTools.length, 5); // no global debug mutation
+  assert.equal(p.realtime._test.realtimeTools.length, 6); // no global debug mutation
   assert.equal(p.realtime._test.faceTool.parameters.properties.expression.enum.length, 13);
   assert.match(p.realtime._test.faceInstructions, /semánticamente/);
   p.c.stop(false);
@@ -82,7 +82,7 @@ test('a face-only response gets exactly one normal continuation with only visual
   const p = setup(); p.response(); p.call(); p.done();
   assert.equal(p.creates().length, 1);
   assert.deepEqual(p.creates()[0].response.tools.map(t => t.name),
-    ['atlas_shell', 'atlas_web_search', 'atlas_routine', 'atlas_phone', 'atlas_android']);
+    ['atlas_shell', 'atlas_web_search', 'atlas_routine', 'atlas_phone', 'atlas_android', 'atlas_actions']);
   p.done();
   assert.equal(p.creates().length, 1);
   p.response('r2');
@@ -156,7 +156,7 @@ test('face plus real tool uses only the existing tool continuation, with shell/s
   p.done([{ type: 'function_call', name: 'atlas_shell' }]);
   assert.equal(p.creates().length, 1);
   assert.deepEqual(p.creates()[0].response.tools.map(t => t.name),
-    ['atlas_shell', 'atlas_web_search', 'atlas_routine', 'atlas_phone', 'atlas_android']);
+    ['atlas_shell', 'atlas_web_search', 'atlas_routine', 'atlas_phone', 'atlas_android', 'atlas_actions']);
   p.c.stop(false);
 });
 
@@ -216,7 +216,7 @@ test('a capability probe exception disables the optional tool, without disabling
   const p = setup();
   p.window.AtlasFaceBridge.expressionsAvailable = () => { throw new Error('optional renderer'); };
   assert.deepEqual(Array.from(p.c.configureFaceTools(), tool => tool.name),
-    ['atlas_shell', 'atlas_web_search', 'atlas_routine', 'atlas_phone', 'atlas_android']);
+    ['atlas_shell', 'atlas_web_search', 'atlas_routine', 'atlas_phone', 'atlas_android', 'atlas_actions']);
   assert.equal(p.c.closed, false);
   p.c.stop(false);
 });

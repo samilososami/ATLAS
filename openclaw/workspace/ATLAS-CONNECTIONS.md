@@ -24,6 +24,7 @@ Source paths below are relative to the repository. Live voice files are under
 | Authorised Android transport | `system/bin/adb`, `system/libexec/atlas-adb-inventory`, `system/libexec/atlas-adb-monitor` | [ADB](ADB.md) |
 | Android app and Tailscale | `.atlas/companion/`, `atlas-commands/atlas-app` | [Companion](atlas-commands/ATLAS-APP.md) |
 | Android visual control | `atlas-commands/atlas-androiduse`, Companion server requests | [Android Use](atlas-commands/ATLAS-ANDROIDUSE.md) |
+| Ordered action batches | `androiduse.batch`, Realtime `atlas_actions` | [Android Use](atlas-commands/ATLAS-ANDROIDUSE.md), [Cast](atlas-commands/ATLAS-CAST.md) |
 | Physical display and broader Pi health | `atlas-commands/atlas-screen`, `atlas-commands/atlas-status`, `atlas-commands/atlas-rafas` | [Screen](atlas-commands/ATLAS-SCREEN.md), [Status](atlas-commands/ATLAS-STATUS.md), [RAFAS](atlas-commands/ATLAS-RAFAS.md) |
 
 The Gateway bridge supplies the configured authentication/reservation path;
@@ -119,14 +120,18 @@ to the Internet or put lease tokens in URLs, logs or public files.
    `apps.launch` targets. For the paired owner's location, return the complete
    `formattedAddress` when present; otherwise report coordinates and the
    reverse-geocoding error without inventing an address. If visual control is
-   necessary, prefer an exact accessible-label `androiduse.click`, then use
-   normalized coordinates as fallback and inspect each important result. A
+   necessary, plan the shortest deterministic sequence and use
+   `androiduse.batch`: semantic `click`/`wait_for`, normalized coordinates only
+   as fallback, and one final inspection. Combine a native app launch and that
+   visual batch with `atlas_actions`. Inspect between batches only when the next
+   operation genuinely depends on the screen. A
    recoverable action/inspection error keeps the session alive. A Realtime turn,
    renewal, background release or voice reconnect does not own that lifecycle
    and must never issue `androiduse.stop`. Guarantee the stop after explicit
    completion or abandonment and on user cancellation, Companion/app-process
-   exit, overall control timeout or terminal transport/Accessibility loss. A
-   password-redacted tree is not a signal to inspect the corresponding screen
+   exit, overall control timeout or terminal transport/Accessibility loss. The
+   owner stop button aborts the remaining batch. A password-redacted tree is
+   not a signal to inspect the corresponding screen
    by another route.
 
 Do not reset Wi-Fi, remove Bluetooth pairings, disconnect unrelated devices or

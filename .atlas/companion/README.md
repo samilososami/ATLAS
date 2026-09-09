@@ -146,6 +146,8 @@ atlas-androiduse back
 atlas-androiduse home
 atlas-androiduse recents
 atlas-androiduse wait 350
+atlas-androiduse wait_for 'Buscar en Amazon'
+atlas-androiduse batch actions.json
 atlas-androiduse launch com.android.chrome
 atlas-androiduse launch https://example.com
 atlas-androiduse stop
@@ -164,8 +166,16 @@ name or `uri` for an allowed URL. `tree` redacts password nodes and all their
 descendants. `key ENTER` uses the focused field's safe IME action; `back`, `home`
 and `recents` are direct aliases for the corresponding global actions.
 
-A recoverable click, gesture or screenshot failure leaves the active session in
-place so the caller can inspect or correct it. `stop` is mandatory after the
+`batch` accepts a JSON object or array with up to sixteen `actions`. It executes
+them on the phone without a network/model round-trip between steps, supports
+bounded semantic `click` and `wait_for` candidates, stops at the first failure
+and returns one final tree and screenshot. It starts and stops the visual guard
+automatically unless a persistent Android Use session was already active. The
+owner's red stop control prevents every remaining step. Realtime can
+combine native `apps.launch` plus one visual batch through `atlas_actions`.
+
+A recoverable label, gesture or screenshot failure leaves the active session in
+place so the caller can inspect or correct it with a shorter batch. `stop` is mandatory after the
 requested visual task or when abandoning it, and on cancellation, overall
 timeout, client exit, lost socket/device or lost Accessibility control. Read
 [`ATLAS-ANDROIDUSE.md`](../../openclaw/workspace/atlas-commands/ATLAS-ANDROIDUSE.md)

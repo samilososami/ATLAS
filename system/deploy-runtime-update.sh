@@ -52,7 +52,18 @@ install_context_doc "$repo/openclaw/workspace/ENVIRONMENT.md" "$workspace/ENVIRO
 install_context_doc "$repo/openclaw/workspace/README.md" "$workspace/README.md"
 install_context_doc "$repo/openclaw/workspace/TOOLS.md" "$workspace/TOOLS.md"
 install_context_doc "$repo/openclaw/workspace/atlas-commands/ATLAS-WEBSCREEN.md" "$workspace/atlas-commands/ATLAS-WEBSCREEN.md"
+install_context_doc "$repo/openclaw/workspace/atlas-commands/ATLAS-CAST.md" "$workspace/atlas-commands/ATLAS-CAST.md"
+install_context_doc "$repo/openclaw/workspace/atlas-commands/ATLAS-DESKTOP.md" "$workspace/atlas-commands/ATLAS-DESKTOP.md"
+install_context_doc "$repo/openclaw/workspace/TDR.md" "$workspace/TDR.md"
 install_context_doc "$repo/atlas-commands/README.md" "$workspace/atlas-commands/README.md"
+
+if [[ ! -f /usr/local/bin/atlas-cast ]] || ! cmp -s -- "$repo/atlas-commands/atlas-cast" /usr/local/bin/atlas-cast; then
+  if [[ -f /usr/local/bin/atlas-cast ]]; then
+    install -d -m 700 -o "$owner" -g "$group" "$backup/usr/local/bin"
+    cp -p -- /usr/local/bin/atlas-cast "$backup/usr/local/bin/atlas-cast"
+  fi
+  install -m 755 "$repo/atlas-commands/atlas-cast" /usr/local/bin/atlas-cast
+fi
 
 ATLAS_HOME="$atlas_home" bash "$repo/system/install-routines.sh"
 ATLAS_HOME="$atlas_home" bash "$repo/system/install-webscreen-resilience.sh" --restart

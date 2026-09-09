@@ -143,10 +143,13 @@ and `--atlas-hide` behavior. HTTP success alone does not prove renderer health.
 The current conversation uses direct `gpt-realtime-2.1`, the shared Markdown
 context and typed shell, web-search, routine, native-phone and Android Use
 tools. Android screenshots are attached as reduced private JPEG `input_image`
-items; visual control prefers exact accessible-label clicks, uses normalized
-coordinates as fallback and keeps password-redacted trees. Recoverable visual
-errors preserve the session; completion, abandonment and terminal loss require
-`androiduse.stop`. Chrome validates the local ATLAS
+items. Predictable visual work uses `androiduse.batch`: up to sixteen local
+actions, semantic label waits, one final tree/screenshot and no model round-trip
+between taps. `atlas_actions` can prepend a native phone operation or combine
+related A1 shell actions in the same ordered flow. Visual control prefers exact
+accessible labels, uses normalized coordinates as fallback and keeps
+password-redacted trees. Recoverable visual errors preserve the session;
+completion, abandonment and terminal loss require `androiduse.stop`. Chrome validates the local ATLAS
 wake word; do not describe the recognizer as a guaranteed offline speech engine.
 Partial/final recognition results must not create duplicate turns. Permission
 or audio-capture errors are shown as microphone errors, not repaired by sending

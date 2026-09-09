@@ -1,18 +1,16 @@
-# ATLAS Android · 0.2.7 preview
+# ATLAS Android · 0.2.8 preview
 
 Aplicación Android 11+ para hablar con ATLAS y controlar un ATLAS A1 propio. La
 APK se publica en [GitHub Releases](https://github.com/samilososami/ATLAS/releases).
 Es una preview firmada para desarrollo; no es la imagen de ATLAS OS.
 
-La versión 0.2.7 pausa el renderer, temporizadores, captura de audio y WebRTC al
-ocultar la app, manteniendo únicamente el enlace cifrado ligero con A1. Reduce
-también los latidos redundantes del transporte. Las peticiones compuestas ya no
-terminan al abrir una aplicación: por ejemplo, «abre Amazon y busca ESP32» abre
-Amazon por API nativa, inicia Android Use, inspecciona la pantalla y continúa la
-acción. El indicador de preparación usa ahora el glifo sólido de dos flechas
-circulares elegido para ATLAS. Si el proveedor abre correctamente el canal
-WebRTC pero omite puntualmente `session.created`, la app conserva esa sesión
-sana en lugar de entrar en un bucle de reconexión.
+La versión 0.2.8 sustituye el ciclo de una captura por cada toque por planes de
+acción locales. Una petición como «abre Amazon y busca ESP32» abre Amazon por API
+nativa y envía a Android Use un lote acotado de acciones; el teléfono espera los
+controles, actúa en orden, se detiene en el primer fallo y entrega una sola
+captura final al modelo. Esto reduce rondas de red, imágenes y latencia sin
+eliminar el aura ni el botón rojo de parada. Conserva además las optimizaciones
+de segundo plano y conexión Realtime de 0.2.7.
 
 ## Primera conexión
 
@@ -97,8 +95,11 @@ WebScreen y `atlas-chat` comparten `atlas_phone` para esas APIs y
 `capabilities`, `call` y `calls.place` son aliases de `location.get`,
 `phone.capabilities` y `phone.call`. SMS usa `text`; las llamadas usan `number`;
 y `apps.launch {app}` abre por nombre sin capturas ni coordenadas. Si el turno
-incluye pasos dentro de la aplicación, ATLAS encadena automáticamente Android
-Use, recibe árbol y captura y sigue hasta completar la petición. `Amazon`
+incluye pasos previsibles dentro de la aplicación, ATLAS combina el lanzamiento
+nativo y un lote Android Use en una sola llamada del modelo. El lote espera
+etiquetas accesibles en el propio teléfono y solo devuelve árbol y captura al
+final; se abre una nueva ronda visual únicamente cuando el resultado cambia la
+decisión. `Amazon`
 resuelve Amazon Shopping (`com.amazon.mShop.android.shopping`) y `Alexa` la app
 Amazon Alexa (`com.amazon.dee.app`), sin intercambiarlas. `location.get` entrega
 coordenadas y, cuando Android puede resolverla, la dirección completa exacta en
@@ -109,15 +110,17 @@ con `calendar.list` y enviar `begin`/`end` en milisegundos Unix.
 `atlas-androiduse` es el fallback visual. El AccessibilityService puede observar
 la jerarquía, pulsar una etiqueta accesible exacta, capturar la pantalla, tocar,
 mantener pulsado, deslizar, escribir,
-abrir paquetes o URI, esperar y usar Atrás/Inicio/Recientes/ENTER. Los gestos usan
+abrir paquetes o URI, esperar controles y usar Atrás/Inicio/Recientes/ENTER. Los gestos usan
 coordenadas normalizadas de `0` a `1`; la jerarquía redacta campos de contraseña
 y todos sus descendientes. Durante el control aparece una notificación, un aura
-azul, un bloqueo de entrada y un botón rojo para detenerlo. Cada acción importante
-se sigue con una nueva inspección. `androiduse.click` es la primera opción cuando
-`tree` expone texto o descripción; las coordenadas son el fallback. La captura se
+azul, un bloqueo de entrada y un botón rojo para detenerlo. En un lote, ese botón
+cancela los pasos restantes. `androiduse.click` es la primera opción cuando el
+árbol expone texto o descripción; las coordenadas son el fallback. La captura se
 reduce a un ancho máximo de 640 px y JPEG calidad 82 antes de entregarse a
 Realtime como un `input_image` separado, nunca como base64 dentro del resultado.
-Un fallo recuperable de acción o inspección conserva la sesión para corregirlo.
+`androiduse.batch` admite hasta 16 pasos y 18 segundos, espera localmente una o
+varias etiquetas y devuelve una sola verificación final. Un fallo recuperable de
+acción o inspección conserva una sesión persistente para corregirlo.
 Las tareas puntuales se cierran al terminar o abandonar, cancelar, perder el
 transporte/Accesibilidad o por watchdog; la orden explícita «controla mi
 teléfono» mantiene una sesión para instrucciones sucesivas hasta que se detenga.

@@ -4,7 +4,8 @@
 `gpt-realtime-2.1` con el mismo OAuth, instrucciones Realtime, contexto Markdown,
 memoria conversacional y contrato de herramientas que WebScreen. Incluye
 `atlas_shell`, `atlas_web_search`, `atlas_routine`, la API nativa tipada
-`atlas_phone` y el control visual tipado `atlas_android`. No usa el pipeline
+`atlas_phone`, el control visual tipado `atlas_android` y `atlas_actions` para
+secuencias locales sin rondas intermedias del modelo. No usa el pipeline
 legacy ni sintetiza o captura voz.
 
 ```bash
@@ -68,9 +69,16 @@ completa cuando Android la devuelve.
 `atlas_android` queda reservado para pantallas que haya que observar o tocar y
 solo admite su allowlist cerrada: `status`, `start`, `stop`, `screenshot`,
 `tree`, `click`, `tap`, `long_press`, `swipe`, `text`, `key`, `back`, `home`, `recents`,
-`launch` y `wait`, todos bajo el prefijo `androiduse.`; `key` acepta `ENTER`.
+`launch`, `wait`, `wait_for` y `batch`, todos bajo el prefijo `androiduse.`;
+`key` acepta `ENTER`.
 `click` usa una etiqueta accesible exacta y tiene prioridad; sus gestos de
 fallback usan coordenadas normalizadas de `0` a `1`.
+
+`androiduse.batch` ejecuta hasta dieciséis acciones en el móvil y devuelve una
+sola captura final. `atlas_actions` permite combinar en una sola llamada una
+apertura nativa con ese lote, o varios comandos relacionados del A1. El flujo se
+detiene en el primer error y solo se separa cuando la pantalla obliga a tomar
+una decisión nueva.
 
 Una captura no se devuelve como texto ni como base64: después del resultado de
 la función se añade un `input_image` JPEG privado y reducido para que Realtime

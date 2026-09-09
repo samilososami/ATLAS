@@ -107,6 +107,10 @@ class AndroidUseParameterTests(unittest.TestCase):
     def test_wait_and_key_are_validated(self):
         self.assertEqual(ANDROID_USE.parameters("wait", []), {})
         self.assertEqual(ANDROID_USE.parameters("wait", ["450"]), {"ms": 450})
+        self.assertEqual(
+            ANDROID_USE.parameters("wait_for", ["Buscar", "en", "Amazon"]),
+            {"text": "Buscar en Amazon", "exact": True, "timeoutMs": 3500},
+        )
         self.assertEqual(ANDROID_USE.parameters("key", ["enter"]), {"key": "ENTER"})
         with self.assertRaises(SystemExit):
             ANDROID_USE.parameters("key", ["volume_up"])
@@ -135,6 +139,22 @@ class AndroidUseParameterTests(unittest.TestCase):
             self.assertEqual(target.read_bytes(), b"\xff\xd8\xfffixture")
             self.assertEqual((result["width"], result["height"]), (640, 1372))
             self.assertEqual(result["mime"], "image/jpeg")
+
+    def test_batch_accepts_an_array_or_object_file(self):
+        actions = [
+            {"action": "click", "params": {"text": "Buscar", "timeoutMs": 3500}},
+            {"action": "text", "params": {"text": "ESP32"}},
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            array_path = pathlib.Path(directory) / "array.json"
+            object_path = pathlib.Path(directory) / "object.json"
+            array_path.write_text(json.dumps(actions), encoding="utf-8")
+            object_path.write_text(json.dumps({"actions": actions, "autoStop": False}), encoding="utf-8")
+            self.assertEqual(ANDROID_USE.parameters("batch", [str(array_path)]), {"actions": actions})
+            self.assertEqual(
+                ANDROID_USE.parameters("batch", [str(object_path)]),
+                {"actions": actions, "autoStop": False},
+            )
 
 
 if __name__ == "__main__":
