@@ -1,4 +1,9 @@
-"""Ephemeral, per-page control leases. This is not user authentication."""
+"""Ephemeral, per-page API leases. This is not user authentication.
+
+Every live page receives its own lease.  A WebScreen kiosk and the Android
+companion deliberately coexist: Realtime sessions are independent and one
+page must never revoke another merely because it opened a microphone.
+"""
 import secrets
 import threading
 import time
@@ -16,7 +21,6 @@ class AccessControl:
         self.lease = lease
         self.lock = threading.RLock()
         self.clients = {}
-        self.owner = None
         self.inflight = 0
 
     def _prune(self):
@@ -24,8 +28,6 @@ class AccessControl:
         for token, client in list(self.clients.items()):
             if now - client['seen'] >= self.lease:
                 del self.clients[token]
-                if self.owner == token:
-                    self.owner = None
 
     def _client(self, token):
         self._prune()
@@ -33,18 +35,12 @@ class AccessControl:
             raise AccessError(401, 'La conexión ha caducado. Reconectando…')
         return self.clients[token]
 
-    def _occupied(self):
-        return self.inflight > 0 or self.busy()
-
-    def _assign_if_free(self, token):
-        if self.owner is None and not self._occupied():
-            self.owner = token
-
     def _snapshot(self, token):
-        owner = self.owner == token
         return {
-            'owner': owner,
-            'waitingForTurn': self.owner is None and self._occupied(),
+            # Keep the established browser contract while making ownership
+            # per-page rather than global.  A valid lease is authorised.
+            'owner': token in self.clients,
+            'waitingForTurn': False,
             'atlasA1Available': any(
                 client.get('kind') == 'atlas-a1' for client in self.clients.values()
             ),
@@ -60,26 +56,24 @@ class AccessControl:
             self.clients[token] = {
                 'seen': self.clock(), 'idle': False, 'kind': normalized_kind,
             }
-            self._assign_if_free(token)
             return {'token': token, **self._snapshot(token)}
 
     def heartbeat(self, token, idle=False):
         with self.lock:
             client = self._client(token)
             client.update(seen=self.clock(), idle=idle is True)
-            self._assign_if_free(token)
             return self._snapshot(token)
 
     def takeover(self, token):
         with self.lock:
             client = self._client(token)
             client['seen'] = self.clock()
-            previous = self.owner
-            self.owner = token
             client['idle'] = False
             return {
-                'taken': previous != token,
-                'replacedOwner': previous is not None and previous != token,
+                # Compatibility endpoint for old pages.  It only refreshes
+                # their own lease and never interrupts another page.
+                'taken': False,
+                'replacedOwner': False,
                 **self._snapshot(token),
             }
 
@@ -95,26 +89,20 @@ class AccessControl:
             if not kiosks:
                 raise AccessError(409, 'ATLAS A1 no está conectado a WebScreen.')
             target, kiosk = max(kiosks, key=lambda item: item[1]['seen'])
-            previous = self.owner
-            self.owner = target
             kiosk['idle'] = False
             return {
                 'activated': True,
-                'replacedOwner': previous is not None and previous != target,
+                'replacedOwner': False,
                 **self._snapshot(token),
             }
 
     def release(self, token):
         with self.lock:
             self.clients.pop(token, None)
-            if self.owner == token:
-                self.owner = None
 
     def authorize(self, token, begin=False):
         with self.lock:
             client = self._client(token)
-            if self.owner != token:
-                raise AccessError(423, 'ATLAS está siendo utilizado por otro usuario.')
             # Useful traffic is also proof of a live page. Do not expire an
             # actively used lease just because its separate heartbeat was late.
             # _client still rejects genuinely expired/released credentials.

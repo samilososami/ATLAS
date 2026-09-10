@@ -196,9 +196,11 @@ and device approval on first connection.
 
 The HTTP service starts independently of Gateway readiness and exposes a
 nonblocking health snapshot while bridge recovery happens in the background.
-HTTP reachable does not mean Realtime is ready. Browser ownership is explicit;
-a transient lost heartbeat is not an immediate microphone takeover. Transport
-recovery uses bounded waits and never replays a possibly executed action.
+HTTP reachable does not mean Realtime is ready. Each browser and Companion
+session has its own ephemeral API lease, so the A1 kiosk and Android may use
+Realtime at the same time; opening one never disconnects the other. A transient
+lost heartbeat only expires its own lease. Transport recovery uses bounded waits
+and never replays a possibly executed action.
 
 See [`webscreen/README.md`](webscreen/README.md) for implementation details and
 [`ATLAS-CONNECTIONS.md`](../openclaw/workspace/ATLAS-CONNECTIONS.md) for the

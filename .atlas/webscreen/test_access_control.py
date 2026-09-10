@@ -44,33 +44,33 @@ class AccessTests(unittest.TestCase):
             fn(*args)
         self.assertEqual(result.exception.status, status)
 
-    def test_owner_only_and_no_tokens_in_status(self):
+    def test_each_live_page_is_authorized_and_no_tokens_in_status(self):
         self.assertEqual(self.control.authorize(self.a), {'kind': 'browser'})
-        self.error(423, self.control.authorize, self.b)
+        self.assertEqual(self.control.authorize(self.b), {'kind': 'browser'})
         self.error(401, self.control.authorize, '')
         snapshot = json.dumps(self.control.heartbeat(self.b))
         self.assertNotIn(self.a, snapshot)
         self.assertNotIn(self.b, snapshot)
 
-    def test_direct_takeover_and_reverse(self):
+    def test_legacy_takeover_never_revokes_another_page(self):
         result = self.control.takeover(self.b)
         self.assertTrue(result['owner'])
-        self.assertTrue(result['replacedOwner'])
-        self.error(423, self.control.authorize, self.a)
+        self.assertFalse(result['replacedOwner'])
+        self.control.authorize(self.a)
         self.control.authorize(self.b)
         result = self.control.takeover(self.a)
         self.assertTrue(result['owner'])
-        self.assertTrue(result['replacedOwner'])
+        self.assertFalse(result['replacedOwner'])
         self.control.authorize(self.a)
 
     def test_remote_page_can_activate_live_atlas_a1(self):
         kiosk = self.control.connect('atlas-a1')['token']
         result = self.control.activate_atlas_a1(self.b)
         self.assertTrue(result['activated'])
-        self.assertFalse(result['owner'])
+        self.assertTrue(result['owner'])
         self.assertTrue(result['atlasA1Available'])
         self.assertEqual(self.control.authorize(kiosk), {'kind': 'atlas-a1'})
-        self.error(423, self.control.authorize, self.b)
+        self.assertEqual(self.control.authorize(self.b), {'kind': 'browser'})
 
     def test_remote_activation_requires_a_live_atlas_a1(self):
         self.error(409, self.control.activate_atlas_a1, self.b)
@@ -80,8 +80,8 @@ class AccessTests(unittest.TestCase):
         self.control.heartbeat(self.a, True)
         result = self.control.takeover(self.b)
         self.assertTrue(result['owner'])
-        self.assertTrue(result['replacedOwner'])
-        self.error(423, self.control.authorize, self.a)
+        self.assertFalse(result['replacedOwner'])
+        self.control.authorize(self.a)
         self.control.finish()
         self.busy = True
         result = self.control.takeover(self.a)
@@ -96,8 +96,8 @@ class AccessTests(unittest.TestCase):
         self.control.authorize(self.a, begin=True)
         self.control.release(self.a)
         status = self.control.heartbeat(self.b)
-        self.assertFalse(status['owner'])
-        self.assertTrue(status['waitingForTurn'])
+        self.assertTrue(status['owner'])
+        self.assertFalse(status['waitingForTurn'])
         self.control.finish()
         self.assertTrue(self.control.heartbeat(self.b)['owner'])
 
@@ -121,11 +121,11 @@ class AccessTests(unittest.TestCase):
         self.control.finish()
         self.assertEqual(self.control.inflight, 0)
 
-    def test_concurrent_first_connections_have_one_owner(self):
+    def test_concurrent_connections_each_keep_their_own_lease(self):
         control = AccessControl()
         with concurrent.futures.ThreadPoolExecutor(max_workers=12) as pool:
             results = list(pool.map(lambda _: control.connect(), range(40)))
-        self.assertEqual(sum(item['owner'] for item in results), 1)
+        self.assertEqual(sum(item['owner'] for item in results), 40)
 
 
 class HTTPAccessTests(unittest.TestCase):
@@ -156,22 +156,24 @@ class HTTPAccessTests(unittest.TestCase):
         connection.close()
         return status, json.loads(data)
 
-    def test_all_control_routes_reject_other_client_before_work(self):
+    def test_all_control_routes_accept_each_live_client_before_work(self):
         for path in ('text', 'voice', 'starter', 'cancel', 'settings', 'tts', 'client-event', 'wake/sample', 'clap/profile',
-                     'tts/stream-ticket', 'realtime/session', 'realtime/consult',
+                     'tts/stream-ticket', 'realtime/consult',
                      'realtime/shell', 'realtime/web-search', 'realtime/event'):
-            for token, status in ((self.b, 423), ('', 401)):
+            for token, status in ((self.b, None), ('', 401)):
                 with self.subTest(path=path, token=bool(token)):
-                    self.assertEqual(self.request('/api/' + path, token)[0], status)
+                    actual = self.request('/api/' + path, token)[0]
+                    if status is None: self.assertNotEqual(actual, 423)
+                    else: self.assertEqual(actual, status)
         for path in ('settings', 'codex-usage', 'wake/profiles', 'clap/profile'):
-            self.assertEqual(self.request('/api/' + path, self.b, method='GET')[0], 423)
+            self.assertEqual(self.request('/api/' + path, self.b, method='GET')[0], 200)
 
     def test_real_http_direct_takeover(self):
         result = self.request('/api/access/takeover', self.b)
         self.assertEqual(result[0], 200)
         self.assertTrue(result[1]['owner'])
-        self.assertTrue(result[1]['replacedOwner'])
-        self.assertEqual(self.request('/api/settings', self.a, method='GET')[0], 423)
+        self.assertFalse(result[1]['replacedOwner'])
+        self.assertEqual(self.request('/api/settings', self.a, method='GET')[0], 200)
         self.assertEqual(self.request('/api/settings', self.b, method='GET')[0], 200)
 
     def test_real_http_remote_activation_targets_kiosk(self):
@@ -181,7 +183,7 @@ class HTTPAccessTests(unittest.TestCase):
         self.assertEqual(result[0], 200)
         self.assertTrue(result[1]['activated'])
         self.assertEqual(self.request('/api/settings', kiosk, method='GET')[0], 200)
-        self.assertEqual(self.request('/api/settings', self.b, method='GET')[0], 423)
+        self.assertEqual(self.request('/api/settings', self.b, method='GET')[0], 200)
 
     def test_lan_client_cannot_impersonate_physical_kiosk_by_payload(self):
         self.assertFalse(app.is_physical_a1_client(

@@ -216,6 +216,8 @@ relay automatically. Tailscale may itself choose a secure DERP path without
 changing the configured transport. The relay source can be removed in a later
 breaking release after old APKs are retired.
 
-This is a single-owner development system, not an independently audited remote
-administration product. Keep Tailscale device approval and Android's explicit
-permissions enabled, and stop the control session whenever the task is done.
+This is a personal development system, not an independently audited remote
+administration product. WebScreen and the paired Android app may keep independent
+Realtime sessions at once; one never takes over or closes the other. Keep
+Tailscale device approval and Android's explicit permissions enabled, and stop
+each control session whenever its task is done.

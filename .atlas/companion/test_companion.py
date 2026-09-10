@@ -138,16 +138,18 @@ class CompanionTests(unittest.IsolatedAsyncioTestCase):
                 by_id={reply['id']:reply for reply in replies}
                 self.assertTrue(by_id['reply-reentrant']['result']['ok'])
                 self.assertIn('12.0',by_id['execute-reentrant']['result']['output'])
-    async def test_owner_conflict(self):
-        self.c.owner='first-client'
-        with self.assertRaises(ValueError):await self.c.acquire('another-client')
+    async def test_multiple_voice_clients_can_coexist(self):
+        self.c.access='test-lease'
+        await self.c.acquire('first-client')
+        await self.c.acquire('another-client')
+        self.assertEqual(self.c.voice_clients,{'first-client','another-client'})
     async def test_failed_session_releases_voice_immediately(self):
         with patch.object(self.c,'acquire',new=AsyncMock()),patch.object(self.c,'request',new=AsyncMock(side_effect=ValueError('Provider unavailable'))),patch.object(self.c,'release',new=AsyncMock()) as release:
             with self.assertRaises(ValueError):
                 await self.c.rpc({'client':'test-client','method':'session.open','params':{}},'test')
-            release.assert_awaited_once()
+            release.assert_awaited_once_with('test-client')
     async def test_context_uses_existing_webscreen_endpoint(self):
-        self.c.owner='test-client'
+        self.c.voice_clients.add('test-client')
         with patch.object(self.c,'request',new=AsyncMock(return_value={'ok':True})) as call:
             await self.c.rpc({'client':'test-client','method':'context.turn','params':{'user':'hola','assistant':'hola'}},'test')
             call.assert_awaited_once_with('/api/realtime/context-turn',{'user':'hola','assistant':'hola'})

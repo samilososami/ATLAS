@@ -14,7 +14,7 @@ VERSION='0.2.1'
 class Companion:
     def __init__(self, config):
         self.config=config; self.cipher=Cipher(config['key'],'pi')
-        self.http=None; self.access=None; self.owner=None; self.touched=0
+        self.http=None; self.access=None; self.voice_clients=set(); self.touched=0
         self.terminals={}; self.pending={}; self.clients={}; self.relay='disabled'
         self.sockets={}; self.mobile_pending={}
         self.lock=asyncio.Lock(); self.health_cache=(0,{})
@@ -46,19 +46,21 @@ class Companion:
             value=await r.json()
             if r.status>=400: raise ValueError(value.get('error',f'WebScreen HTTP {r.status}'))
             return value
-    async def release(self):
+    async def release(self, client=None):
+        if client is not None:
+            self.voice_clients.discard(client)
+            # Another app surface may still own a live WebRTC session through
+            # this Companion. Do not tear down its WebScreen lease.
+            if self.voice_clients: return
         if self.access:
             with contextlib.suppress(Exception):
-                state=await self.request('/api/access/heartbeat',{'idle':True})
-                if state.get('owner'): await self.request('/api/access/activate-atlas-a1',{})
+                await self.request('/api/access/heartbeat',{'idle':True})
             with contextlib.suppress(Exception): await self.request('/api/access/release',{})
-        self.access=None; self.owner=None
+        self.access=None; self.voice_clients.clear()
     async def acquire(self,client):
-        if self.owner and self.owner!=client: raise ValueError('Otro móvil tiene la conversación activa')
         if not self.access:
             self.access=(await self.request('/api/access/connect',{'idle':True,'clientKind':'browser'}))['token']
-            await self.request('/api/access/takeover',{})
-        self.owner=client; self.touched=time.monotonic()
+        self.voice_clients.add(client); self.touched=time.monotonic()
     async def command(self,cmd,timeout=30):
         p=await asyncio.create_subprocess_exec('/bin/bash','-lc',cmd,cwd=ROOT,
             stdout=asyncio.subprocess.PIPE,stderr=asyncio.subprocess.STDOUT,start_new_session=True,
@@ -120,7 +122,7 @@ class Companion:
         h['companion']={'version':VERSION,'transport':self.config.get('transport','tailscale'),
                         'tailscale':tailscale,'legacyRelay':self.relay,'clients':len(self.sockets),
                         'pairedDevice':self.paired_device,
-                        'voiceActive':bool(self.owner),'terminalCount':len(self.terminals)}
+                        'voiceActive':bool(self.voice_clients),'terminalCount':len(self.terminals)}
         h['usage']=await self.quota()
         self.health_cache=(time.monotonic(),h); return h
     def open_terminal(self,client,cols,rows,resume=None):
@@ -183,6 +185,7 @@ class Companion:
         if not isinstance(client,str) or not 8<=len(client)<=80: raise ValueError('Cliente inválido')
         self.remember_device(msg.get('device'))
         self.clients[client]={'lastSeen':time.time(),'transport':peer,'device':self.paired_device}
+        if client in self.voice_clients: self.touched=time.monotonic()
         if ws is not None: self.sockets[client]=ws
         method=msg.get('method'); p=msg.get('params') or {}
         if not isinstance(method,str) or not isinstance(p,dict): raise ValueError('Petición inválida')
@@ -194,21 +197,20 @@ class Companion:
             asyncio.get_running_loop().call_later(.6,lambda: asyncio.create_task(self.revoke_pairing()))
             return {'ok':True,'paired':False}
         if method=='ping':
-            if self.owner==client: self.touched=time.monotonic()
-            return {'ok':True,'voiceOwner':self.owner==client}
+            return {'ok':True,'voiceOwner':client in self.voice_clients}
         if method=='status': return await self.status()
         if method=='session.open':
             async with self.lock:
                 await self.acquire(client)
                 try: return await self.request('/api/realtime/session',p)
                 except Exception:
-                    await self.release()
+                    await self.release(client)
                     raise
         if method=='session.close':
-            if self.owner==client: await self.release()
+            await self.release(client)
             return {'ok':True}
         if method in ('search','context.turn','event'):
-            if self.owner!=client: raise ValueError('Abre primero una sesión de ATLAS')
+            if client not in self.voice_clients: raise ValueError('Abre primero una sesión de ATLAS')
             routes={'search':'/api/realtime/web-search','context.turn':'/api/realtime/context-turn','event':'/api/realtime/event'}
             return await self.request(routes[method],p)
         if method=='command.prepare':
@@ -262,21 +264,27 @@ class Companion:
             await asyncio.sleep(4)
             now=time.monotonic()
             if self.access:
-                if now-self.touched>40: await self.release()
+                if not self.voice_clients and now-self.touched>40: await self.release()
                 else:
                     try:
-                        state=await self.request('/api/access/heartbeat',{'idle':True})
-                        if not state.get('owner',True): self.access=None; self.owner=None
+                        await self.request('/api/access/heartbeat',{'idle':True})
                     except Exception: await self.release()
             for key,t in list(self.terminals.items()):
                 if now-t['touched']>300: self.close_terminal(key)
+            # A live application WebSocket is the heartbeat for its Realtime
+            # session. Keep it alive even when no RPC is being sent while the
+            # user is merely listening.
+            for client, ws in list(self.sockets.items()):
+                if not ws.closed and client in self.clients:
+                    self.clients[client]['lastSeen']=time.time()
             self.clients={k:v for k,v in self.clients.items() if time.time()-v['lastSeen']<60}
             self.sockets={k:v for k,v in self.sockets.items() if k in self.clients and not v.closed}
+            self.voice_clients.intersection_update(self.clients)
             self.pending={k:v for k,v in self.pending.items() if now-v['time']<60}
             tmp=STATE/'status.tmp'
             tmp.write_text(json.dumps({'updatedAt':time.time(),'transport':self.config.get('transport','tailscale'),
                 'legacyRelay':self.relay,'clients':self.clients,'connections':len(self.sockets),
-                'voiceActive':bool(self.owner),'terminals':len(self.terminals)}))
+                'voiceActive':bool(self.voice_clients),'terminals':len(self.terminals)}))
             os.replace(tmp,STATE/'status.json')
     async def relay_loop(self):
         delay=1

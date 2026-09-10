@@ -65,13 +65,13 @@
     content.hidden = !control;
     content.inert = !control;
     blocked.hidden = control;
-    title.textContent = failures ? 'Reconectando con ATLAS…'
-      : !token ? 'Conectando con ATLAS…' : 'ATLAS está siendo utilizado por otro usuario.';
-    detail.textContent = message || (state.waitingForTurn
-      ? 'ATLAS está terminando una operación anterior. Puedes tomar el control igualmente.'
-      : 'Toma el control para utilizar ATLAS en este dispositivo.');
+    title.textContent = failures ? 'Reconectando con ATLAS…' : 'Conectando con ATLAS…';
+    detail.textContent = message || 'Recuperando una sesión segura con ATLAS.';
+    // Sessions are per-page. Opening the Android app never takes the kiosk
+    // offline, so there is no longer a global "take control" action.
+    takeover.hidden = true;
     takeover.disabled = !token || updating;
-    activateA1.hidden = isAtlasA1;
+    activateA1.hidden = true;
     activateA1.disabled = !token || updating || !state.atlasA1Available;
   }
 
