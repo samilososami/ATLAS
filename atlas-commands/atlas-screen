@@ -305,7 +305,7 @@ start_atlas_hidden() {
 
 start_rafas() {
   # Bound shutdown of broken graphical surfaces. Only their own cgroups are
-  # killed if they ignore TERM; never stop the network, Gateway or backend.
+  # killed if they ignore TERM; never stop the network or ATLAS backend.
   local service
   for service in "$LIGHTDM_SERVICE" "$TERMINAL_SERVICE" "$KIOSK_SERVICE"; do
     if ! timeout 5s systemctl stop "$service"; then

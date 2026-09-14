@@ -22,7 +22,7 @@ function loadRealtime() {
   return window.AtlasRealtime;
 }
 
-test('Realtime exposes direct system and phone tools, but no OpenClaw agent tool', () => {
+test('Realtime exposes direct system and phone tools without an agent proxy tool', () => {
   const realtime = loadRealtime();
   const names = Array.from(realtime._test.realtimeTools, tool => tool.name);
   assert.deepEqual(names,

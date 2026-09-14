@@ -84,6 +84,31 @@ def network():
     return dict(devices=devices, wifi=wifi, addresses=addresses, defaultRoutes=routes,
                 dns=dns, https=https, tailscale=tailscale)
 
+def runtime_layout():
+    paths = {
+        'knowledge': ATLAS_HOME / '.atlas/context/knowledge',
+        'conversation': ATLAS_HOME / '.atlas/context/conversation',
+        'temporary': ATLAS_HOME / '.atlas/runtime/tmp',
+        'secrets': ATLAS_HOME / '.atlas/config/secrets.json',
+    }
+    result = {}
+    for name, path in paths.items():
+        expected_file = name == 'secrets'
+        exists = path.is_file() if expected_file else path.is_dir()
+        result[name] = {'exists': exists, 'path': str(path)}
+    secrets = paths['secrets']
+    result['secrets']['private'] = False
+    result['secrets']['validJson'] = False
+    if secrets.is_file():
+        try:
+            result['secrets']['private'] = (secrets.stat().st_mode & 0o777) == 0o600
+            result['secrets']['validJson'] = isinstance(json.loads(secrets.read_text()), dict)
+        except (OSError, ValueError):
+            pass
+    result['ready'] = all(value['exists'] for key, value in result.items()
+                          if key != 'ready') and result['secrets']['private'] and result['secrets']['validJson']
+    return result
+
 def other_failed_units(output, services):
     known = {s['name'] for s in services}
     # Include one-shot boot units and failures outside the core allowlist.
@@ -96,8 +121,8 @@ def health():
     with ThreadPoolExecutor(max_workers=8) as pool:
         net_future = pool.submit(network)
         services = list(pool.map(service, SERVICES))
-        services.append(service('openclaw-gateway.service', True))
         net = net_future.result()
+    layout = runtime_layout()
     disks = []
     for path in ('/', '/tmp', str(ATLAS_HOME)):
         try:
@@ -129,6 +154,13 @@ def health():
     if not net['https']: issues.append('HTTPS no disponible: revisar conexión, portal cautivo, DNS o reloj.')
     if net['tailscale']['installed'] and net['tailscale']['state']!='Running':
         issues.append('Tailscale no está autenticado: ejecutar sudo tailscale up.')
+    for name in ('knowledge', 'conversation', 'temporary', 'secrets'):
+        if not layout[name]['exists']:
+            issues.append(f"Runtime ATLAS incompleto: falta {name}.")
+    if layout['secrets']['exists'] and not layout['secrets']['private']:
+        issues.append('Configuración privada insegura: secrets.json debe tener modo 600.')
+    if layout['secrets']['exists'] and not layout['secrets']['validJson']:
+        issues.append('Configuración privada inválida: secrets.json no contiene un objeto JSON válido.')
     if ntp != 'yes': issues.append('Reloj sin sincronización NTP confirmada.')
     for s in services:
         if s['load']=='loaded' and (s['active']=='failed' or
@@ -148,6 +180,7 @@ def health():
                 network=net, disks=disks, memory={k:mem.get(k) for k in ('MemTotal','MemAvailable')},
                 temperatureC=temperature, throttled=throttled or None, ntpSynchronized=ntp=='yes',
                 services=services, failedUnits=failed, usb=audio, webscreen=web,
+                runtime=layout,
                 issues=issues, ok=not issues)
 
 def display(h):
@@ -164,6 +197,9 @@ def display(h):
     print(f"Temperatura: {h['temperatureC']} °C · alimentación: {h['throttled'] or 'no disponible'}")
     for d in h['disks']: print(f"Disco {d['path']}: {d['usedPercent']}% usado · {d['freeBytes']//(1024**2)} MiB libres")
     print('RAM disponible:', (h['memory']['MemAvailable'] or 0)//(1024**2), 'MiB')
+    runtime=h['runtime']
+    print('Runtime ATLAS:', 'OK' if runtime['ready'] else 'INCOMPLETO',
+          '· knowledge/conversation/tmp/secrets')
     for s in h['services']: print(f"  {s['name']}: {s['active']} / {s['enabled']}")
     print('USB:\n' + (h['usb'] or 'no disponible'))
     print('\n' + ('\n'.join('! '+i for i in h['issues']) or 'Sin incidencias en las comprobaciones realizadas.'))

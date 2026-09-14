@@ -15,8 +15,25 @@ Las imágenes de ATLAS OS se generan desde una copia de trabajo y se sanea esa c
 
 La sincronización de código usa una selección explícita de archivos. Excluye
 `.runtime`, `.certs`, `.models`, `.venv`, logs, backups, perfiles de Google Chrome,
-sesiones de OpenClaw y proyectos personales generados. Los templates privados
+el almacén OAuth de Codex, `.atlas/config/secrets.json`, la conversación privada
+de `.atlas/context/conversation` y proyectos personales generados. Los templates privados
 no deben sustituirse por las copias reales de una Raspberry Pi.
+
+## Native Broker, OAuth y proveedores
+
+El Native Broker mantiene un único proceso `codex app-server` y deja que Codex
+renueve su propio OAuth. El archivo `~/.codex/auth.json` debe ser regular, no un
+symlink, pertenecer al usuario del servicio y conservar permisos `0600`. Nunca se
+copia al repositorio, al navegador, a Companion, a los logs ni al contexto del
+modelo. WebScreen entrega al cliente únicamente el secreto Realtime efímero y
+no publica identificadores de cuenta.
+
+Las claves de Tavily y ElevenLabs viven en
+`/home/atlas/.atlas/config/secrets.json`, también como archivo regular `0600` e
+ignorado por Git. Solo se admiten los campos documentados en
+`.atlas/config/README.md`. Los diagnósticos pueden indicar si una credencial está
+disponible, pero no mostrar su valor ni serializar respuestas completas del
+proveedor.
 
 ## Superficies de desarrollo
 
@@ -50,7 +67,11 @@ La app utiliza un servicio independiente en HTTPS/5010. Cada código de
 emparejamiento incluye una clave de administración y un certificado fijado:
 **trátalo como una contraseña root del dispositivo**, no lo publiques ni lo
 añadas a capturas. `atlas-app unpair` invalida el único móvil emparejado.
-No hay roles de invitado en esta preview.
+No hay emparejamientos ni credenciales de invitado en esta preview. Los
+perfiles declarativos de `.atlas/roles` documentan los límites futuros de
+contexto y capacidades, pero el selector aún no está conectado al runtime. No
+conceden acceso al Companion, no sustituyen el emparejamiento y no deben
+presentarse como una barrera de seguridad activa hasta que exista enforcement.
 
 La clave se guarda cifrada con Android Keystore; la copia de seguridad de la
 app está desactivada. La huella/credencial se verifica en Android y no se envía

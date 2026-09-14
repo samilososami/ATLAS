@@ -1,6 +1,7 @@
 import importlib.machinery
 import importlib.util
 from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -38,4 +39,15 @@ class RafasTests(unittest.TestCase):
             {'name':'atlas-webscreen.service','load':'loaded','active':'failed','enabled':'enabled','scope':'system'}]}
         with patch.object(r,'health',return_value=h),patch.object(r,'display'),patch.object(r.os,'geteuid',return_value=0),patch.object(r,'run',return_value=(0,'','')) as call:
             r.doctor(); call.assert_called_once_with(['systemctl','start','atlas-webscreen.service'],20)
+    def test_runtime_layout_requires_private_standalone_paths(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(r, 'ATLAS_HOME', Path(directory)):
+            root=Path(directory)/'.atlas'
+            for path in ('context/knowledge','context/conversation','runtime/tmp','config'):
+                (root/path).mkdir(parents=True,exist_ok=True)
+            secrets=root/'config/secrets.json';secrets.write_text('{"version": 1}');secrets.chmod(0o600)
+            self.assertTrue(r.runtime_layout()['ready'])
+            secrets.chmod(0o644)
+            self.assertFalse(r.runtime_layout()['ready'])
+    def test_core_services_do_not_depend_on_openclaw(self):
+        self.assertFalse(any('openclaw' in name.casefold() for name in r.SERVICES))
 if __name__=='__main__': unittest.main()

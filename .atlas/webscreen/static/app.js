@@ -32,14 +32,10 @@ function sendBrowserAcknowledgement(url, options = {}) {
 
 const LANGUAGE = "es-ES";
 const SILENCE_MS = 700;
-const ADAPTIVE_FINAL_SILENCE_MS = 700;
 const NO_SPEECH_MS = 8000;
 const FOLLOW_UP_NO_SPEECH_MS = 4000;
 const FOLLOW_UP_ECHO_REJECT_WINDOW_MS = 1800;
 const MAX_RECORDING_MS = 60000;
-const SPECULATIVE_STABLE_MS = 250;
-const SPECULATIVE_MIN_CHARS = 12;
-const SPECULATIVE_MIN_WORDS = 3;
 const WAKE_ECHO_MUTE_MS = 2000;
 const WAKE_ECHO_TAIL_MS = 1200;
 const A1_PLAYBACK_MIC_TAIL_MS = 200;
@@ -173,12 +169,6 @@ let wakePendingResultIndex = -1;
 let parentInteractionId = "";
 let replyExpected = false;
 let interactionToken = 0;
-let speculativeTimer = 0;
-let speculativeCandidate = "";
-let speculativeSent = false;
-let speculativeMode = "";
-let speculativeHotListener = false;
-let lastRecognitionWasFinal = false;
 let activeView = "atlas";
 let dictationRecognition = null;
 let dictationRunning = false;
@@ -495,7 +485,7 @@ async function loadSettings() {
     settingsResult.className = "tool-result";
     settingsResult.textContent = settings.voiceIdOverride
       ? "Voice ID personalizado activo."
-      : "Usando el Voice ID configurado en OpenClaw.";
+      : "Usando el Voice ID configurado en ATLAS.";
   } catch (error) {
     settingsResult.className = "tool-result error";
     settingsResult.textContent = error.message;
@@ -520,7 +510,7 @@ async function saveSettings(event) {
     settingsResult.className = "tool-result success";
     settingsResult.textContent = settings.voiceIdOverride
       ? "Voice ID guardado y activo."
-      : "Se vuelve a usar el Voice ID de OpenClaw.";
+      : "Se vuelve a usar el Voice ID de ATLAS.";
     void checkHealth();
   } catch (error) {
     settingsResult.className = "tool-result error";
@@ -942,19 +932,6 @@ function isLocalSilenceCommand(text, allowBare = false) {
   );
 }
 
-function isImmediateConversationCandidate(text) {
-  const phrase = normalizeSpeechText(text);
-  return /^(?:hola|buenas|hey|ey)(?: atlas)?$/.test(phrase)
-    || /^(?:que tal|como estas|como te va|todo bien)(?: atlas)?$/.test(phrase)
-    || /^(?:buenos dias|buenas tardes|buenas noches)(?: atlas)?$/.test(phrase)
-    || /^(?:adios|hasta luego|hasta pronto|nos vemos)(?: atlas)?$/.test(phrase);
-}
-
-function isImmediateNoStarterCandidate(text) {
-  const phrase = normalizeSpeechText(text);
-  return /^(?:atlas )?(?:(?:dime|me dices|puedes decirme) que hora es|que hora(?: es)?|dime la hora|me dices la hora)$/.test(phrase);
-}
-
 function containsAtlasFragment(text) {
   return normalizeSpeechText(text).split(" ").some((word) => word.includes("atlas"));
 }
@@ -974,81 +951,7 @@ function isLikelyFollowUpPlaybackEcho(text, durationMs) {
   return followUpEchoReference.includes(candidate) || candidate.includes(followUpEchoReference);
 }
 
-function clearSpeculativeTimer() {
-  window.clearTimeout(speculativeTimer);
-  speculativeTimer = 0;
-}
-
-function scheduleSpeculativeStarter(transcript) {
-  if (!interactionActive || !nativeTranscribing || speculativeSent || !currentRequestId) return;
-  const candidate = transcript.replace(/\s+/g, " ").trim();
-  if (isImmediateNoStarterCandidate(candidate)) {
-    clearSpeculativeTimer();
-    speculativeCandidate = candidate;
-    return;
-  }
-  const immediateConversation = isImmediateConversationCandidate(candidate);
-  if (!immediateConversation
-      && (candidate.length < SPECULATIVE_MIN_CHARS
-        || candidate.split(" ").length < SPECULATIVE_MIN_WORDS)) {
-    clearSpeculativeTimer();
-    speculativeCandidate = candidate;
-    return;
-  }
-  if (candidate === speculativeCandidate && speculativeTimer) return;
-  speculativeCandidate = candidate;
-  clearSpeculativeTimer();
-  speculativeTimer = window.setTimeout(() => {
-    speculativeTimer = 0;
-    if (!interactionActive || !nativeTranscribing || speculativeSent) return;
-    const stableTranscript = `${finalTranscript} ${interimTranscript}`.replace(/\s+/g, " ").trim();
-    if (stableTranscript !== speculativeCandidate) {
-      scheduleSpeculativeStarter(stableTranscript);
-      return;
-    }
-    speculativeSent = true;
-    addLog("Preámbulo anticipado solicitado durante la transcripción");
-    void accessFetch("/api/starter", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        interactionId: currentRequestId,
-        transcript: stableTranscript,
-        ttsProvider: selectedVoiceProvider(),
-      }),
-      cache: "no-store",
-    }).then(async (response) => {
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const result = await response.json();
-      speculativeMode = result.mode || "";
-      speculativeHotListener = Boolean(result.hotListener);
-      if (result.hotListener) {
-        addLog("El oyente caliente de ATLAS ya ha recibido la frase");
-      }
-      if (result.mode === "read-only-main") {
-        addLog("El agente principal ya adelanta la consulta de solo lectura");
-      } else if (result.mode === "omitted") {
-        addLog("La petición es inmediata; no necesita preámbulo");
-      } else if (!result.hotListener) {
-        addLog("El agente principal ya prepara el preámbulo en paralelo");
-      }
-    }).catch((error) => {
-      addLog(`No se pudo anticipar el preámbulo: ${error.message}`, null, "error");
-    });
-  }, SPECULATIVE_STABLE_MS);
-}
-
 function recordingSilenceThresholdMs() {
-  const liveTranscript = `${finalTranscript} ${interimTranscript}`.replace(/\s+/g, " ").trim();
-  const wordCount = liveTranscript ? liveTranscript.split(" ").length : 0;
-  if (
-    speculativeSent
-    && (speculativeMode === "read-only-main" || speculativeHotListener)
-    && lastRecognitionWasFinal
-    && wordCount >= 3
-  ) {
-    return ADAPTIVE_FINAL_SILENCE_MS;
-  }
   return SILENCE_MS;
 }
 
@@ -1187,8 +1090,6 @@ function configureRecognition() {
     if (nativeTranscribing) {
       let newInterim = "";
       let receivedText = false;
-      let receivedFinal = false;
-      let receivedInterim = false;
       for (let index = event.resultIndex; index < event.results.length; index += 1) {
         const result = event.results[index];
         let text = String(result[0]?.transcript || "").trim();
@@ -1209,10 +1110,8 @@ function configureRecognition() {
         }
         receivedText = true;
         if (result.isFinal) {
-          receivedFinal = true;
           finalTranscript = `${finalTranscript} ${text}`.trim();
         } else {
-          receivedInterim = true;
           newInterim = `${newInterim} ${text}`.trim();
         }
       }
@@ -1220,13 +1119,11 @@ function configureRecognition() {
       if (receivedText) {
         speechDetected = true;
         lastSpeechAt = performance.now();
-        lastRecognitionWasFinal = receivedFinal && !receivedInterim && !newInterim;
       }
       const liveTranscript = `${finalTranscript} ${interimTranscript}`.trim();
       transcriptElement.textContent = liveTranscript || "Escuchando…";
       transcriptElement.classList.toggle?.("placeholder", !liveTranscript);
       window.AtlasFaceBridge?.transcript(liveTranscript);
-      scheduleSpeculativeStarter(liveTranscript);
       return;
     }
     const changedResults = [];
@@ -1358,12 +1255,6 @@ async function startRecording(mode = "wake", parentId = "", options = {}) {
   parentInteractionId = parentId || "";
   replyExpected = false;
   currentRequestId = crypto.randomUUID();
-  speculativeSent = false;
-  speculativeCandidate = "";
-  speculativeMode = "";
-  speculativeHotListener = false;
-  lastRecognitionWasFinal = false;
-  clearSpeculativeTimer();
   recordingStartedAt = performance.now();
   recordingStartedIso = new Date().toISOString();
   lastSpeechAt = recordingStartedAt;
@@ -1389,9 +1280,7 @@ async function stopRecordingAndSend(reason, silenceThresholdMs = 0) {
   window.cancelAnimationFrame(monitorFrame);
   stopTimer();
   const durationMs = performance.now() - recordingStartedAt;
-  const stoppedAt = new Date().toISOString();
   const transcript = `${finalTranscript} ${interimTranscript}`.replace(/\s+/g, " ").trim();
-  clearSpeculativeTimer();
   nativeTranscribing = false;
   stopRecognition();
   addLog(`Transcripción detenida: ${reason}`, durationMs);
@@ -1418,183 +1307,7 @@ async function stopRecordingAndSend(reason, silenceThresholdMs = 0) {
   transcriptElement.textContent = transcript;
   transcriptElement.classList.remove("placeholder");
   window.AtlasFaceBridge?.transcript(transcript);
-  setScreen("PROCESANDO", "ATLAS lo está procesando", "Enviando la transcripción nativa a OpenClaw.", "working");
-  startInterruptMonitoring();
-  const token = interactionToken;
-  const controller = new AbortController();
-  requestController = controller;
-  try {
-    const response = await accessFetch("/api/text", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Atlas-Request-Id": currentRequestId,
-        "X-Atlas-Interaction-Id": currentRequestId,
-        "X-Atlas-Wake-At": wakeDetectedIso || recordingStartedIso,
-        "X-Atlas-Recording-Started-At": recordingStartedIso,
-        "X-Atlas-Recording-Stopped-At": stoppedAt,
-        "X-Atlas-Recording-Duration-Ms": String(Math.round(durationMs)),
-        "X-Atlas-Silence-Threshold-Ms": String(Math.round(silenceThresholdMs)),
-        "X-Atlas-Stop-Reason": reason,
-        "X-Atlas-TTS-Provider": selectedVoiceProvider(),
-        "X-Atlas-Input-Mode": recordingMode,
-        "X-Atlas-Parent-Interaction-Id": parentInteractionId,
-      },
-      body: JSON.stringify({ transcript, transcriptionDurationMs: Math.round(durationMs) }),
-      cache: "no-store",
-      signal: controller.signal,
-    });
-    if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
-    await readEventStream(response.body, token);
-  } catch (error) {
-    if (token === interactionToken && hasControl() && error.name !== "AbortError") failInteraction(error.message || "No se pudo completar la interacción.");
-  } finally {
-    if (requestController === controller) requestController = null;
-  }
-}
-
-async function readEventStream(stream, token) {
-  const reader = stream.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  while (true) {
-    const { value, done } = await reader.read();
-    if (token !== interactionToken) {
-      await reader.cancel().catch(() => {});
-      return;
-    }
-    buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || "";
-    for (const line of lines) {
-      if (line.trim()) await handleServerEvent(JSON.parse(line), token);
-    }
-    if (done) break;
-  }
-  if (buffer.trim() && token === interactionToken) {
-    await handleServerEvent(JSON.parse(buffer), token);
-  }
-}
-
-async function handleServerEvent(event, token) {
-  if (token !== interactionToken) return;
-  if (event.type === "request") {
-    addLog(event.sessionRenewed ? "Nueva sesión de agente creada" : "Sesión de agente reutilizada");
-  } else if (event.type === "state" && event.state === "transcribing") {
-    const native = event.provider === "chrome-native";
-    setScreen(
-      native ? "TRANSCRIPCIÓN LISTA" : "TRANSCRIBIENDO",
-      native ? "Texto recibido" : "Transcribiendo",
-      native ? "Chrome ha completado la transcripción en el navegador." : "Whisper está procesando el audio localmente.",
-      "working",
-    );
-  } else if (event.type === "state" && event.state === "processing") {
-    setScreen("PROCESANDO", "ATLAS lo está procesando", "OpenClaw está ejecutando el turno del agente.", "working");
-    addLog("Procesamiento de OpenClaw iniciado");
-  } else if (event.type === "state" && event.state === "synthesizing") {
-    const provider = voiceProviderLabel(event.provider);
-    if (!streamedSpeechActive) {
-      setScreen("GENERANDO VOZ", "Preparando la voz", `${provider} está preparando la respuesta.`, "working");
-    }
-    addLog("Síntesis de voz iniciada");
-  } else if (event.type === "stage" && event.name === "transcription") {
-    addLog("Transcripción completada", event.durationMs);
-  } else if (event.type === "stage" && event.name === "processing") {
-    addLog("Respuesta de OpenClaw completada", event.durationMs);
-  } else if (event.type === "stage" && event.name === "tts") {
-    addLog(`Voz preparada con ${voiceProviderLabel(event.provider)}`, event.durationMs);
-  } else if (event.type === "transcript") {
-    transcriptElement.textContent = event.text;
-    transcriptElement.classList.remove("placeholder");
-    window.AtlasFaceBridge?.transcript(event.text);
-    addLog(`Transcripción: ${event.text}`);
-  } else if (event.type === "dismissed") {
-    addLog(event.reason === "deferred"
-      ? "Aplazamiento detectado localmente; OpenClaw no se ha llamado"
-      : event.reason === "silent"
-        ? "Orden de silencio resuelta localmente; OpenClaw no se ha llamado"
-        : "Cancelación local detectada; OpenClaw no se ha llamado");
-  } else if (event.type === "tool" && event.phase === "start") {
-    addLog(`OpenClaw usa: ${event.title}`);
-  } else if (event.type === "metric") {
-    const label = event.name === "gatewayAccepted"
-      ? "Gateway aceptó el turno"
-      : event.name === "firstOpenClawDelta"
-        ? "Primer fragmento de OpenClaw"
-        : event.name === "firstOpenClawPreamble"
-          ? "Primer preámbulo interno de OpenClaw"
-        : event.name;
-    addLog(label, event.durationMs);
-  } else if (event.type === "starter") {
-    responseElement.textContent = event.text;
-    responseElement.classList.remove("placeholder");
-    setScreen("EN PROCESO", "ATLAS se pone a ello", event.text, "working");
-    addLog(`Respuesta inicial: ${event.text}`);
-    // No bloqueamos el lector de eventos mientras habla el preámbulo. Así los
-    // fragmentos finales que OpenClaw ya esté enviando entran enseguida en la
-    // cola de voz del navegador, en lugar de acumularse hasta acabar la frase.
-    void playSpeech(event.text, event.audio, event.provider, "starter", token)
-      .then((played) => {
-        if (!played || token !== interactionToken || streamedSpeechActive) return;
-        setScreen("PROCESANDO", "ATLAS sigue trabajando", "OpenClaw está completando la petición.", "working");
-      })
-      .catch((error) => {
-        if (token === interactionToken) addLog(`El preámbulo no se pudo reproducir: ${error.message}`, null, "error");
-      });
-  } else if (event.type === "response_delta") {
-    responseElement.textContent = event.text;
-    responseElement.classList.remove("placeholder");
-    if (!streamedSpeechActive) {
-      setScreen("RESPONDIENDO", "ATLAS está respondiendo", "La respuesta escrita está llegando en directo.", "working");
-    }
-  } else if (event.type === "speech_chunk") {
-    queueStreamedSpeech(event.text, token);
-  } else if (event.type === "speech_stream_abort") {
-    stopCurrentPlayback();
-    addLog("OpenClaw corrigió el texto en streaming; reproduciré la respuesta final completa");
-  } else if (event.type === "progress") {
-    responseElement.textContent = event.text;
-    responseElement.classList.remove("placeholder");
-    setScreen("AVANCE", "ATLAS sigue trabajando", event.text, "working");
-    addLog(`Actualización: ${event.text}`);
-    void playSpeech(event.text, event.audio, event.provider, "progress", token)
-      .then((played) => {
-        if (!played || token !== interactionToken || streamedSpeechActive) return;
-        setScreen("PROCESANDO", "ATLAS sigue trabajando", "OpenClaw está completando la petición.", "working");
-      })
-      .catch((error) => {
-        if (token === interactionToken) addLog(`La actualización no se pudo reproducir: ${error.message}`, null, "error");
-      });
-  } else if (event.type === "response") {
-    replyExpected = replyExpected || Boolean(event.expectsReply);
-    responseElement.textContent = event.text;
-    responseElement.classList.remove("placeholder");
-    if (!streamedSpeechActive) {
-      setScreen("RESPUESTA", "ATLAS ha respondido", "La respuesta ya está escrita; ahora se generará la voz.", "working");
-    }
-  } else if (event.type === "speech") {
-    replyExpected = replyExpected || Boolean(event.expectsReply);
-    if (event.provider === "browser" && Number(event.streamedChunks || 0) > 0) {
-      await finishStreamedSpeech(event.remainingText || "", token);
-    } else {
-      await playSpeech(event.text, event.audio, event.provider, "final", token);
-    }
-  } else if (event.type === "done") {
-    replyExpected = replyExpected || Boolean(event.expectsReply);
-    addLog("Interacción completada", event.durationMs);
-    addLog(`Log guardado: ${event.log}`);
-    const completedId = currentRequestId;
-    const shouldFollowUp = replyExpected;
-    if (shouldFollowUp) {
-      addLog("ATLAS ha terminado; di ATLAS para continuar");
-    }
-    finishInteraction({ waitForReply: shouldFollowUp, completedId });
-  } else if (event.type === "cancelled") {
-    addLog("Interacción cancelada");
-    finishInteraction();
-  } else if (event.type === "error") {
-    failInteraction(event.message || "Error desconocido");
-  }
+  failInteraction("Esta versión del cliente requiere OpenAI Realtime; recarga la página para restaurar WebRTC.");
 }
 
 function reportBrowserEventFor(interactionId, stage, message, durationMs = null, error = null) {
@@ -1907,7 +1620,6 @@ async function playRealtimeExternalText(text, provider, { onStart } = {}) {
 }
 
 function resetInteractionState() {
-  clearSpeculativeTimer();
   interactionActive = false;
   interruptMonitoring = false;
   nativeTranscribing = false;
@@ -1918,11 +1630,6 @@ function resetInteractionState() {
   wakePendingResultIndex = -1;
   parentInteractionId = "";
   replyExpected = false;
-  speculativeCandidate = "";
-  speculativeSent = false;
-  speculativeMode = "";
-  speculativeHotListener = false;
-  lastRecognitionWasFinal = false;
   resetStreamedSpeechState();
   stopTimer();
 }

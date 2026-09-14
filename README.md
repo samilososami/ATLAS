@@ -5,7 +5,7 @@
 <h1>
 </h1>
 
-ATLAS es un prototipo de agente de inteligencia artificial físico, personalizable y de bajo coste. Integra OpenClaw, modelos de lenguaje, memoria persistente, herramientas del sistema y distintos canales de comunicación en un dispositivo dedicado.
+ATLAS es un prototipo de agente de inteligencia artificial físico, personalizable y de bajo coste. Integra modelos de lenguaje, memoria persistente, herramientas del sistema y distintas superficies de interacción en un dispositivo dedicado.
 
 El objetivo no es presentar ATLAS como una inteligencia consciente ni como un modelo creado desde cero. El proyecto estudia cómo desplegar, configurar, personalizar y evaluar un agente basado en tecnologías abiertas para que pueda ejecutar tareas concretas de forma útil, natural y verificable.
 
@@ -13,15 +13,22 @@ El objetivo no es presentar ATLAS como una inteligencia consciente ni como un mo
 
 ATLAS busca superar el enfoque rígido de los asistentes basados únicamente en comandos predefinidos. Puede interpretar peticiones en lenguaje natural, utilizar tools, consultar memoria, interactuar con el sistema y coordinar acciones dentro de los límites definidos por el usuario.
 
-OpenClaw mantiene la autenticación y sus canales de agente. WebScreen utiliza una ruta directa de Realtime con contexto y herramientas, sin consultar obligatoriamente a otro agente. El conjunto conecta:
+El runtime actual es independiente. Un **Native Broker** persistente mantiene `codex app-server`, renueva el OAuth local de Codex, consulta las cuotas y crea secretos efímeros para OpenAI Realtime. WebScreen y `atlas-chat` hablan directamente con Realtime y ejecutan las herramientas de ATLAS sin delegar la conversación en otro agente. El conjunto conecta:
 
 - Large Language Models (LLM), principalmente mediante servicios en la nube.
 - Memoria y contexto persistentes escritos en Markdown.
 - Tools, skills, scripts y servicios del sistema.
-- Channels como Telegram, interfaces web y futuras integraciones.
+- WebScreen, terminal, aplicación Android y futuras integraciones.
 - Pipelines de Speech-to-Text (STT) y Text-to-Speech (TTS).
 
 ATLAS es la capa de identidad, comportamiento, integración, automatización y experiencia física construida alrededor de esa base.
+
+La carpeta [`.atlas/roles`](.atlas/roles/README.md) define perfiles declarativos
+de contexto y capacidades. `atlas-full` representa el ATLAS personal completo;
+`profesores` es una demostración aislada y de solo lectura que carga únicamente
+la identidad y un horario docente ficticio. Los manifiestos ya están
+versionados, pero la selección y composición dinámica de roles queda para una
+fase posterior y no se presenta como una función activa.
 
 ## Objetivos
 
@@ -38,13 +45,13 @@ ATLAS es la capa de identidad, comportamiento, integración, automatización y e
 
 ATLAS A1 es la primera implementación física del proyecto. Actualmente se ejecuta en una Raspberry Pi 5 con 4 GB de RAM.
 
-La Raspberry Pi actúa como Gateway, entorno de ejecución y punto de conexión con el hardware. Los modelos más grandes se ejecutan normalmente en la nube; los modelos locales se reservan para tareas compatibles con los recursos disponibles, como determinados procesos de STT, TTS o experimentación con modelos pequeños.
+La Raspberry Pi actúa como runtime local, entorno de ejecución y punto de conexión con el hardware. Los modelos más grandes se ejecutan normalmente en la nube; los modelos locales se reservan para tareas compatibles con los recursos disponibles, como determinados procesos de STT, TTS o experimentación con modelos pequeños.
 
 La pantalla actual es una SunFounder TS7 Pro táctil de siete pulgadas y resolución 1024 × 600. El diseño físico completo, el audio, el micrófono y la carcasa se documentarán conforme avance el prototipo.
 
 ## Software
 
-ATLAS OS 1.0 está basado en Debian 13 para arquitectura `aarch64` y personalizado para funcionar como sistema dedicado de ATLAS. Incluye la identidad visual del proyecto, OpenClaw, servicios persistentes y comandos específicos para controlar el dispositivo.
+ATLAS OS está basado en Debian 13 para arquitectura `aarch64` y personalizado para funcionar como sistema dedicado de ATLAS. El runtime de desarrollo actual incluye el Native Broker, servicios persistentes y comandos específicos para controlar el dispositivo. La imagen pública 1.0 conserva una fotografía anterior del proyecto; sus [notas de versión](docs/ATLAS-OS-1.0.md) distinguen esa imagen histórica del runtime actual.
 
 <p align="center">
   <img src="assets/fastfetch.png" alt="Fastfetch de ATLAS OS 1.0" width="760">
@@ -56,7 +63,7 @@ La versión mostrada utiliza:
 - Identidad `ATLAS OS 1.0 (Debian 13)`.
 - Shell presentada como `atsh 1.0`, basada en Bash.
 - Fastfetch y Neofetch con identidad visual propia.
-- OpenClaw como Gateway del agente.
+- Native Broker con `codex app-server` para OAuth, cuota y reservas efímeras.
 
 ### WebScreen y conversación por voz
 
@@ -104,9 +111,9 @@ shows the actual 1024 × 600 display after deployment.
 
 ![ATLAS minimal WebScreen face](docs/images/webscreen-expressions/00-neutral.png)
 
-Una sola pestaña controla WebScreen a la vez. Las demás muestran **Tomar control**: al pulsarlo, el permiso pasa inmediatamente al nuevo dispositivo, sin solicitud ni confirmación. La pestaña anterior detiene micrófono, audio y trabajo activo y muestra la pantalla bloqueada. La conversación de OpenClaw se conserva; este control de uso no sustituye una futura autenticación.
+Una sola pestaña controla WebScreen a la vez. Las demás muestran **Tomar control**: al pulsarlo, el permiso pasa inmediatamente al nuevo dispositivo, sin solicitud ni confirmación. La pestaña anterior detiene micrófono, audio y trabajo activo y muestra la pantalla bloqueada. La conversación persistente de Realtime se conserva; este control de uso no sustituye una futura autenticación.
 
-- `gpt-realtime-2.1` conversa, razona y utiliza `atlas_shell`, `atlas_web_search` (Tavily), `atlas_routine`, `atlas_phone`, `atlas_android` y `atlas_actions` directamente. Recibe identidad, Markdown, informes actuales y contexto conversacional; no usa el preámbulo ni `openclaw_agent_consult` del pipeline antiguo. Las tools del móvil tienen allowlists cerradas: la ruta nativa es prioritaria y Android Use ejecuta secuencias previsibles en un lote local con esperas semánticas, parada en el primer fallo y una única captura final.
+- `gpt-realtime-2.1` conversa, razona y utiliza `atlas_shell`, `atlas_web_search` (Tavily), `atlas_routine`, `atlas_phone`, `atlas_android` y `atlas_actions` directamente. Recibe identidad, Markdown, informes actuales y contexto conversacional; no usa el preámbulo ni el agente del prototipo anterior. Las tools del móvil tienen allowlists cerradas: la ruta nativa es prioritaria y Android Use ejecuta secuencias previsibles en un lote local con esperas semánticas, parada en el primer fallo y una única captura final.
 - Las rutinas deterministas se guardan en `.atlas/routines/ROUTINES.md`. Una
   frase exacta se resuelve localmente antes de abrir una respuesta de Realtime,
   con pasos de shell, variables capturadas y respuesta `[SAY]` opcional.
@@ -132,12 +139,12 @@ Una sola pestaña controla WebScreen a la vez. Las demás muestran **Tomar contr
 - Solo en A1, el micrófono y el detector se bloquean durante la reproducción y 200 ms después. El resto de dispositivos conserva sus interrupciones naturales. Al terminar la respuesta se vuelve a esperar la palabra Atlas: ya no se abre una continuación automática de diez segundos.
 - Se pueden elegir voces nativas de OpenAI, navegador o ElevenLabs, y esfuerzo Default, Minimal, Low, Medium, High y Xhigh, según admita el proveedor. ElevenLabs usa por defecto `eleven_flash_v2_5` y el proxy reenvía cada fragmento HTTP disponible sin esperar un bloque completo de 8 KiB. Default omite el ajuste de razonamiento. Los resultados provisionales de Chrome se sustituyen al corregirse y el texto idéntico no reinicia la espera.
 - Las reservas WebRTC son efímeras. El OAuth persistente y las credenciales permanecen en la Raspberry Pi y no se entregan al navegador.
-- Cada interacción directa o delegada se registra en JSON Lines con tiempos, transcripción, modelo, voz, tool calls y resultado, sin incluir secretos.
+- Cada interacción y sus tool calls se registran en JSON Lines con tiempos, transcripción, modelo, voz y resultado, sin incluir secretos.
 - Si Realtime o WebRTC fallan, se intenta reconectar sin cambiar silenciosamente al agente antiguo. Su código histórico está preservado en [`Backups/WebScreen/legacy-preamble-2026-08-29`](Backups/WebScreen/legacy-preamble-2026-08-29).
 
-OpenClaw sigue disponible en otros canales, pero el WebScreen actual recibe su contexto y actúa con herramientas directas de Realtime. Los ajustes experimentales de audio del A1 no se aplican al portátil.
+OpenClaw se utilizó al principio como arquitectura del agente. Ofrecía buena calidad, pero el salto entre capas elevaba con frecuencia el tiempo de respuesta a unos 7–15 segundos y rompía la sensación de conversación. El runtime actual lo sustituyó por Realtime directo, que en pruebas comparables suele entregar la primera respuesta en unos 2–3 segundos. OpenClaw ya no forma parte del flujo ni es una dependencia instalada necesaria; su código antiguo se conserva como material histórico en `Backups/` y las referencias documentales restantes están señaladas como historia o migración.
 
-La recuperación distingue HTTP, permisos de página, Gateway, WebRTC y audio físico. Tolera pérdidas breves, renueva tokens caducados y detecta respuestas bloqueadas sin repetir acciones automáticamente. El [mapa de conexiones](openclaw/workspace/ATLAS-CONNECTIONS.md) enlaza los componentes, diagnósticos e instaladores. La [verificación de septiembre](docs/WEBSCREEN-RELIABILITY-2026-09-06.md) recoge pruebas, tiempos y límites de la validación.
+La recuperación distingue HTTP, permisos de página, Native Broker/OAuth, WebRTC y audio físico. Tolera pérdidas breves, renueva tokens caducados y detecta respuestas bloqueadas sin repetir acciones automáticamente. El [mapa de conexiones](.atlas/context/knowledge/ATLAS-CONNECTIONS.md) enlaza los componentes, diagnósticos e instaladores. La [verificación de septiembre](docs/WEBSCREEN-RELIABILITY-2026-09-06.md) recoge pruebas, tiempos y límites de la validación.
 
 ### App Android · preview 0.2.8
 
@@ -158,9 +165,9 @@ unless a USB/Bluetooth mouse is connected. [Full command guide](atlas-commands/R
 
 La terminal usa Zsh con autocompletado, highlighting y **TECLAO**, el teclado táctil oscuro. Un doble toque abre el teclado sin tapar la zona de escritura; un toque lo cierra y dos dedos permiten recorrer el historial. El zoom cambia la letra y reajusta las líneas sin cambiar la ventana. Esta terminal tiene acceso root local: úsala únicamente en un dispositivo bajo tu control. RAFAS es su alternativa de recuperación sin entorno gráfico.
 
-## Workspace de OpenClaw
+## Contexto de ATLAS
 
-El directorio [`openclaw/workspace`](openclaw/workspace) contiene la base pública del contexto de ATLAS.
+El directorio [`.atlas/context/knowledge`](.atlas/context/knowledge) contiene la base pública y versionada del contexto de ATLAS. [`.atlas/context/conversation`](.atlas/context/conversation) guarda el resumen conversacional privado y mutable de la instalación. El orden de carga se declara en [`manifest.json`](.atlas/context/knowledge/manifest.json), para que WebScreen y `atlas-chat` compartan la misma fuente sin depender de la estructura de otra aplicación.
 
 - `AGENTS.md`, `IDENTITY.md` y `SOUL.md` conservan el comportamiento e identidad definidos para ATLAS.
 - `USER.md`, `MEMORY.md`, `TDR.md`, `ENVIRONMENT.md` y `HEARTBEAT.md` se distribuyen como templates sin datos personales.
@@ -173,7 +180,7 @@ ATLAS puede utilizar ADB para conectarse a teléfonos, televisores y otros dispo
 
 Un temporizador independiente mantiene cada diez minutos un informe privado de los hosts activos y de los servicios TCP más comunes de la red local. ATLAS consulta primero ese informe para responder preguntas rápidas o localizar una IP. Los escaneos completos de todos los puertos se reservan para un objetivo privado concreto y una petición que realmente los necesite.
 
-Los tokens, API keys, sesiones, credenciales, historiales, datos personales y configuraciones privadas no forman parte del repositorio ni de las imágenes publicadas.
+Los tokens, API keys, sesiones, credenciales, historiales y configuraciones privadas de cada instalación no forman parte del repositorio ni de las imágenes publicadas. La demostración del rol `profesores` contiene únicamente el directorio docente revisado para este proyecto y un horario explícitamente ficticio; no publica correos, teléfonos, credenciales ni el horario real del instituto.
 
 ## Comandos de ATLAS
 
@@ -183,8 +190,17 @@ Para instalar o actualizar el chat de terminal en ATLAS A1, conservando copias
 fechadas y dejándolo disponible tanto para `sami` como para root:
 
 ```bash
+sudo bash system/install-native-broker.sh
+atlas-broker health
+atlas-broker usage
+atlas-broker session
 sudo bash system/install-chat.sh
 ```
+
+El instalador del broker conserva el almacén OAuth de Codex; los diagnósticos
+no muestran el token ni el identificador de cuenta. El despliegue general copia
+también los manifiestos de `.atlas/roles`, pero todavía no cambia de perfil en
+tiempo de ejecución.
 
 ## Estructura del repositorio
 
@@ -193,12 +209,15 @@ Las [herramientas misceláneas](misc/README.md) reúnen [TECLAO](misc/atlas-touc
 ```text
 ATLAS/
 ├── .atlas/                 Runtime público: WebScreen, desktop, pantalla y proyectos
+│   ├── broker/             Native Broker sobre Codex app-server
+│   ├── config/             Esquema de configuración privada; secretos fuera de Git
+│   ├── context/            Conocimiento versionado y conversación privada
+│   └── roles/              Perfiles declarativos de contexto y capacidades
 ├── assets/                 Recursos visuales y capturas
 ├── android/                App ATLAS, fuentes y construcción de APK
 ├── atlas-commands/         Comandos de administración de ATLAS A1
 ├── docs/                   Notas de versiones y documentación técnica
 ├── misc/                   TECLAO, RAFAS y herramientas misceláneas
-├── openclaw/workspace/     Identidad pública y templates de OpenClaw
 ├── system/                 Helpers, servicios, ADB, Nmap, terminal, HDMI y personalización
 ├── README.md               Presentación del proyecto
 └── SECURITY.md             Política de publicación segura
@@ -206,15 +225,15 @@ ATLAS/
 
 ## Estado actual
 
-ATLAS se encuentra en desarrollo activo. La versión 1.0 establece la identidad del agente, su sistema operativo base, el Gateway de OpenClaw, el contexto persistente y las primeras herramientas de control.
+ATLAS se encuentra en desarrollo activo. La versión 1.0 estableció la identidad del agente, su sistema operativo base, el primer runtime y las primeras herramientas de control. El código actual sustituye aquel gateway por una arquitectura nativa con contexto persistente y Realtime directo.
 
 La voz, la pantalla táctil y las herramientas de recuperación están en desarrollo activo. El código de este repositorio avanza por delante de la imagen de la release 1.0: esta actualización no genera ni sustituye ninguna imagen del sistema. Consulta el [mapa de instalación y límites actuales](.atlas/README.md).
 
 ## RAFAS
 
-RAFAS significa ***Recovery Access For ATLAS Systems***. Su primera implementación ya permite abrir una consola de recuperación local independiente del entorno gráfico, de OpenClaw y de la red.
+RAFAS significa ***Recovery Access For ATLAS Systems***. Su primera implementación ya permite abrir una consola de recuperación local independiente del entorno gráfico, del Native Broker y de la red.
 
-Durante el desarrollo de ATLAS A1 fueron apareciendo errores e incidencias. Habitualmente, ATLAS podía resolverlos por sí mismo o recuperarse mediante sus herramientas de auto-reparación. Sin embargo, algunos fallos afectaban al propio Gateway de OpenClaw, al provider del modelo —por ejemplo, OpenAI— o a NetworkManager. En esas situaciones, ATLAS entraba en un estado de hibernación operativa y no podía reparar el problema desde dentro.
+Durante el desarrollo de ATLAS A1 fueron apareciendo errores e incidencias. Habitualmente, ATLAS podía resolverlos por sí mismo o recuperarse mediante sus herramientas de auto-reparación. Sin embargo, algunos fallos afectaban al broker/OAuth, al proveedor del modelo —por ejemplo, OpenAI— o a NetworkManager. En esas situaciones, ATLAS entraba en un estado de hibernación operativa y no podía reparar el problema desde dentro.
 
 Hasta entonces, la alternativa era conectarse por SSH a la terminal de ATLAS OS y resolverlo manualmente. Esto se volvía especialmente complicado si el fallo estaba relacionado con la conectividad: si la Raspberry Pi no conseguía conectarse a Internet, tampoco era posible acceder a ella por red.
 
@@ -222,7 +241,7 @@ Con la incorporación de la pantalla al ATLAS A1 surgió RAFAS. Con un teclado U
 
 Un pequeño servicio espera eventos del teclado, sin sondeo periódico ni registro de pulsaciones. Se inicia con el sistema y se reinicia si falla. No es un sistema operativo alternativo: necesita que Linux, systemd, el teclado y la pantalla sigan funcionando.
 
-`atlas-rafas` añade un diagnóstico de Wi-Fi, rutas, DNS, HTTPS, reloj, almacenamiento, memoria, temperatura, alimentación, USB y servicios. `atlas-rafas doctor` recupera servicios habilitados y ofrece conexión Wi-Fi interactiva cuando falta red; `doctor --check` no modifica nada. No borra datos, resetea OAuth ni reinicia redes sanas. Consulta su [manual](openclaw/workspace/atlas-commands/ATLAS-RAFAS.md).
+`atlas-rafas` añade un diagnóstico de Wi-Fi, rutas, DNS, HTTPS, reloj, almacenamiento, memoria, temperatura, alimentación, USB y servicios. `atlas-rafas doctor` recupera servicios habilitados y ofrece conexión Wi-Fi interactiva cuando falta red; `doctor --check` no modifica nada. No borra datos, resetea OAuth ni reinicia redes sanas. Consulta su [manual](.atlas/context/knowledge/atlas-commands/ATLAS-RAFAS.md).
 
 **Esta versión de desarrollo ofrece acceso root local sin contraseña adicional.** Está pensada exclusivamente para dispositivos bajo control de su propietario. La autenticación y las herramientas visuales de recuperación se incorporarán más adelante. [Código, funcionamiento y límites](misc/rafas/README.md).
 

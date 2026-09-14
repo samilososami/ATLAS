@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# The broker always runs as ATLAS' unprivileged runtime user.  This keeps the
+# Codex OAuth store private even when the command is launched through sudo.
+ATLAS_USER=${ATLAS_USER:-sami}
+ATLAS_HOME=${ATLAS_HOME:-/home/atlas}
+PYTHON=${ATLAS_PYTHON:-/usr/bin/python3}
+CLIENT="$ATLAS_HOME/.atlas/broker/cli.py"
+RUNTIME_PATH="/usr/local/bin:/usr/bin:/bin:$ATLAS_HOME/.npm-global/bin"
+
+if [[ ! -x $PYTHON ]]; then
+  echo "atlas-broker: no encuentro Python en $PYTHON" >&2
+  exit 1
+fi
+if [[ ! -r $CLIENT ]]; then
+  echo "atlas-broker: no encuentro el broker nativo en $CLIENT" >&2
+  exit 1
+fi
+
+if (( $# == 0 )); then
+  set -- health
+fi
+
+run_broker() {
+  env \
+    HOME="$ATLAS_HOME" \
+    ATLAS_HOME="$ATLAS_HOME" \
+    CODEX_HOME="$ATLAS_HOME/.codex" \
+    PATH="$RUNTIME_PATH" \
+    PYTHONDONTWRITEBYTECODE=1 \
+    "$PYTHON" "$CLIENT" "$@"
+}
+
+if (( EUID == 0 )); then
+  if [[ $ATLAS_USER == root ]]; then
+    exec env \
+      HOME="$ATLAS_HOME" \
+      ATLAS_HOME="$ATLAS_HOME" \
+      CODEX_HOME="$ATLAS_HOME/.codex" \
+      PATH="$RUNTIME_PATH" \
+      PYTHONDONTWRITEBYTECODE=1 \
+      "$PYTHON" "$CLIENT" "$@"
+  fi
+  if command -v runuser >/dev/null 2>&1; then
+    exec runuser -u "$ATLAS_USER" -- env \
+      HOME="$ATLAS_HOME" \
+      ATLAS_HOME="$ATLAS_HOME" \
+      CODEX_HOME="$ATLAS_HOME/.codex" \
+      PATH="$RUNTIME_PATH" \
+      PYTHONDONTWRITEBYTECODE=1 \
+      "$PYTHON" "$CLIENT" "$@"
+  fi
+  exec sudo -u "$ATLAS_USER" -H -- env \
+    HOME="$ATLAS_HOME" \
+    ATLAS_HOME="$ATLAS_HOME" \
+    CODEX_HOME="$ATLAS_HOME/.codex" \
+    PATH="$RUNTIME_PATH" \
+    PYTHONDONTWRITEBYTECODE=1 \
+    "$PYTHON" "$CLIENT" "$@"
+fi
+
+if [[ $(id -un) != "$ATLAS_USER" ]]; then
+  echo "atlas-broker: ejecútalo como $ATLAS_USER o como root" >&2
+  exit 1
+fi
+
+run_broker "$@"

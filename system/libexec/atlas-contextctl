@@ -9,7 +9,10 @@ from pathlib import Path
 from uuid import uuid4
 
 
-ROOT = Path(os.environ.get("ATLAS_CONTEXT_DIR", "/home/atlas/.atlas/context"))
+ROOT = Path(os.environ.get(
+    "ATLAS_CONVERSATION_DIR",
+    os.environ.get("ATLAS_CONTEXT_DIR", "/home/atlas/.atlas/context/conversation"),
+))
 CONTEXT = ROOT / "CONTEXT.md"
 REVISION = ROOT / "REVISION"
 REQUEST = ROOT / "COMPACT_REQUEST"

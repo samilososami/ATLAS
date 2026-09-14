@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-HELPER="/usr/local/lib/atlas/atlas-spotifyctl"
+ATLAS_HOME=${ATLAS_HOME:-/home/atlas}
+ATLAS_USER=${ATLAS_USER:-$(stat -c %U "$ATLAS_HOME" 2>/dev/null || id -un)}
+HELPER=${ATLAS_SPOTIFY_HELPER:-/usr/local/lib/atlas/atlas-spotifyctl}
 
 if [[ ! -x "$HELPER" ]]; then
   echo "atlas-spotify is not installed correctly: missing $HELPER" >&2
   exit 1
 fi
 
-exec "$HELPER" "$@"
+exec env ATLAS_HOME="$ATLAS_HOME" ATLAS_USER="$ATLAS_USER" \
+  ATLAS_SPOTIFY_DIR="${ATLAS_SPOTIFY_DIR:-$ATLAS_HOME/.atlas/spotify}" \
+  "$HELPER" "$@"

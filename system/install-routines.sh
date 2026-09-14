@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install the routine engine without replacing the live registry.
 set -euo pipefail
-if (( EUID != 0 )); then exec sudo -- "$0" "$@"; fi
+if (( EUID != 0 )); then exec sudo --preserve-env=ATLAS_HOME,ATLAS_USER -- "$0" "$@"; fi
 
 repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 atlas_home=${ATLAS_HOME:-/home/atlas}
@@ -19,11 +19,11 @@ for path in /usr/local/bin/atlas-routines "$target/routine_engine.py" \
   "$atlas_home/.atlas/webscreen/README.md" \
   "$atlas_home/.atlas/chat/atlas_chat.py" "$atlas_home/.atlas/chat/README.md" \
   "$atlas_home/.atlas/chat/TERMINAL_INSTRUCTIONS.md" \
-  "$atlas_home/.openclaw/workspace/AGENTS.md" \
-  "$atlas_home/.openclaw/workspace/TOOLS.md" \
-  "$atlas_home/.openclaw/workspace/TDR.md" \
-  "$atlas_home/.openclaw/workspace/README.md" \
-  "$atlas_home/.openclaw/workspace/atlas-commands/ATLAS-ROUTINES.md"; do
+  "$atlas_home/.atlas/context/knowledge/AGENTS.md" \
+  "$atlas_home/.atlas/context/knowledge/TOOLS.md" \
+  "$atlas_home/.atlas/context/knowledge/TDR.md" \
+  "$atlas_home/.atlas/context/knowledge/README.md" \
+  "$atlas_home/.atlas/context/knowledge/atlas-commands/ATLAS-ROUTINES.md"; do
   [[ ! -f $path ]] || cp --parents -- "$path" "$backup/"
 done
 [[ ! -f $target/ROUTINES.md ]] || cp --parents -- "$target/ROUTINES.md" "$backup/"
@@ -60,13 +60,13 @@ install -m 644 -o "$atlas_user" -g "$atlas_group" \
 install -m 644 -o "$atlas_user" -g "$atlas_group" \
   "$repo/.atlas/chat/TERMINAL_INSTRUCTIONS.md" "$atlas_home/.atlas/chat/TERMINAL_INSTRUCTIONS.md"
 
-doc_dir="$atlas_home/.openclaw/workspace/atlas-commands"
+doc_dir="$atlas_home/.atlas/context/knowledge/atlas-commands"
 install -d -m 755 -o "$atlas_user" -g "$atlas_group" "$doc_dir"
 install -m 644 -o "$atlas_user" -g "$atlas_group" \
-  "$repo/openclaw/workspace/atlas-commands/ATLAS-ROUTINES.md" "$doc_dir/ATLAS-ROUTINES.md"
+  "$repo/.atlas/context/knowledge/atlas-commands/ATLAS-ROUTINES.md" "$doc_dir/ATLAS-ROUTINES.md"
 for file in AGENTS.md TOOLS.md TDR.md README.md; do
   install -m 644 -o "$atlas_user" -g "$atlas_group" \
-    "$repo/openclaw/workspace/$file" "$atlas_home/.openclaw/workspace/$file"
+    "$repo/.atlas/context/knowledge/$file" "$atlas_home/.atlas/context/knowledge/$file"
 done
 
 printf 'atlas-routines installed. Live registry preserved. Backup: %s\n' "$backup"

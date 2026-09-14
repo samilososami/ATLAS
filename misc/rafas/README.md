@@ -3,7 +3,7 @@
 **Recovery Access For ATLAS Systems**
 
 Your escape hatch when the clever parts have called in sick. RAFAS is a native
-Linux console on `tty8`, independent of Chrome, Xorg, OpenClaw, model providers
+Linux console on `tty8`, independent of Chrome, Xorg, the Native Broker, model providers
 and networking. It opens a plain root Bash prompt in `/home/atlas`, with the
 ATLAS logo and a monochrome R.A.F.A.S. banner. No user shell plugins are loaded.
 The recovery header reveals itself from top to bottom, one line every two
@@ -35,7 +35,7 @@ prefixes; the shortcut is not a keyboard remapper.
 Systemd restarts the listener after a crash and enables it at boot. The listener
 only asks a separate activation unit to switch surfaces; it never waits for a
 browser to exit. Graphical shutdown is bounded and can kill only the stuck
-physical display service, not the Gateway, WebScreen backend or network.
+physical display service, not the Native Broker, WebScreen backend or network.
 
 This is recovery from userspace failures, not an alternate boot image. It cannot
 work through loss of power, a frozen kernel, broken USB/display hardware, an

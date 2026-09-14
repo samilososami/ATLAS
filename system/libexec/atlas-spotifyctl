@@ -12,6 +12,7 @@ import base64
 import hashlib
 import json
 import os
+import pwd
 import secrets
 import shutil
 import subprocess
@@ -25,8 +26,10 @@ from urllib.parse import parse_qs, quote, urlencode, urlparse
 from urllib.request import Request, urlopen
 
 
-ATLAS_USER = "sami"
-ROOT = Path(os.environ.get("ATLAS_SPOTIFY_DIR", "/home/atlas/.atlas/spotify"))
+ATLAS_HOME = Path(os.environ.get("ATLAS_HOME", "/home/atlas"))
+ATLAS_USER = os.environ.get("ATLAS_USER", "sami")
+ROOT = Path(os.environ.get("ATLAS_SPOTIFY_DIR", ATLAS_HOME / ".atlas/spotify"))
+SSH_TARGET = os.environ.get("ATLAS_SPOTIFY_SSH_TARGET", f"{ATLAS_USER}@atlas-a1")
 CONFIG = ROOT / "config.json"
 TOKENS = ROOT / "tokens.json"
 AUTHORIZE_URL = "https://accounts.spotify.com/authorize"
@@ -270,7 +273,7 @@ def cmd_output(_: argparse.Namespace) -> int:
         text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False,
     ).stdout.strip() or "inactive"
     configured_device = "unknown"
-    config = Path("/home/atlas/.atlas/spotify/spotifyd/spotifyd.conf")
+    config = ROOT / "spotifyd/spotifyd.conf"
     try:
         for line in config.read_text(encoding="utf-8").splitlines():
             if line.strip().startswith("device ="):
@@ -325,7 +328,7 @@ def cmd_login(args: argparse.Namespace) -> int:
         else:
             print("No local browser launcher found; open the URL shown above.")
     print("\nIf this URL is opened from another computer, first run there:")
-    print(f"  ssh -N -L {CALLBACK_PORT}:127.0.0.1:{CALLBACK_PORT} sami@192.168.1.142")
+    print(f"  ssh -N -L {CALLBACK_PORT}:127.0.0.1:{CALLBACK_PORT} {SSH_TARGET}")
     print("Then open the URL in that same computer. Waiting up to 5 minutes for Spotify...")
     deadline = time.monotonic() + args.timeout
     while time.monotonic() < deadline and not result:
@@ -388,12 +391,14 @@ def parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     if os.geteuid() == 0 and os.environ.get("ATLAS_SPOTIFY_AS_SAMI") != "1":
+        runtime_uid = pwd.getpwnam(ATLAS_USER).pw_uid
         os.execvp("runuser", [
             "runuser", "-u", ATLAS_USER, "--", "env",
-            "ATLAS_SPOTIFY_AS_SAMI=1", "HOME=/home/atlas", "USER=sami", "LOGNAME=sami",
-            "XDG_RUNTIME_DIR=/run/user/1000",
-            "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus",
-            "PULSE_SERVER=unix:/run/user/1000/pulse/native",
+            "ATLAS_SPOTIFY_AS_SAMI=1", f"ATLAS_HOME={ATLAS_HOME}", f"ATLAS_USER={ATLAS_USER}",
+            f"ATLAS_SPOTIFY_DIR={ROOT}", f"HOME={ATLAS_HOME}", f"USER={ATLAS_USER}",
+            f"LOGNAME={ATLAS_USER}", f"XDG_RUNTIME_DIR=/run/user/{runtime_uid}",
+            f"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{runtime_uid}/bus",
+            f"PULSE_SERVER=unix:/run/user/{runtime_uid}/pulse/native",
             sys.executable, str(Path(__file__).resolve()), *sys.argv[1:],
         ])
     args = parser().parse_args()

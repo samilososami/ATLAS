@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ATLAS_HOME="${ATLAS_HOME:-/home/atlas}"
+
 if [ -t 1 ] && [ "${ATLAS_NO_COLOR:-0}" != "1" ]; then
   BOLD=$'\033[1m'
   RESET=$'\033[0m'
@@ -213,13 +215,9 @@ throttle_decode() {
 pretty_process() {
   local comm="$1"
   local args="$2"
-  if [ "$comm" = "openclaw" ]; then
-    echo "OpenClaw Gateway"
-    return
-  fi
   case "$args" in
     *atlas-webscreen*server.py*) echo "ATLAS WebScreen" ;;
-    *openclaw*gateway*|*openclaw*dist/index.js*gateway*) echo "OpenClaw Gateway" ;;
+    *codex*app-server*) echo "ATLAS Native Broker" ;;
     *whisper*) echo "Whisper" ;;
     *avahi-daemon*) echo "Avahi/mDNS" ;;
     *sshd*) echo "SSH" ;;
@@ -288,7 +286,7 @@ cpu_snapshot() {
 }
 
 cpu_and_top_cpu_sample() {
-  local sample top_pid top_delta total1 idle1 total2 idle2 total_delta idle_delta pid ticks1 ticks2 delta line comm mem args name self_pid shell_pid stat_file sample_start sample_end clock_ticks cpu_cores openclaw_delta screen_delta whisper_delta
+  local sample top_pid top_delta total1 idle1 total2 idle2 total_delta idle_delta pid ticks1 ticks2 delta line comm mem args name self_pid shell_pid stat_file sample_start sample_end clock_ticks cpu_cores screen_delta whisper_delta
   self_pid="$$"
   shell_pid="${BASHPID:-$$}"
   clock_ticks="$(getconf CLK_TCK 2>/dev/null || echo 100)"
@@ -321,7 +319,6 @@ cpu_and_top_cpu_sample() {
 
   top_pid=""
   top_delta=0
-  openclaw_delta=0
   screen_delta=0
   whisper_delta=0
   while read -r pid ticks1; do
@@ -331,7 +328,6 @@ cpu_and_top_cpu_sample() {
     if [ "$delta" -gt 0 ]; then
       args="$(tr '\0' ' ' < "/proc/${pid}/cmdline" 2>/dev/null || true)"
       case "$args" in
-        *openclaw*gateway*|*openclaw*dist/index.js*gateway*) openclaw_delta=$((openclaw_delta + delta)) ;;
         *atlas-webscreen*server.py*) screen_delta=$((screen_delta + delta)) ;;
         *whisper-cli*|*whisper.cpp*|*whisper*) whisper_delta=$((whisper_delta + delta)) ;;
       esac
@@ -345,15 +341,14 @@ cpu_and_top_cpu_sample() {
   rm -f "$sample"
 
   cpu_breakdown_line="$(
-    awk -v openclaw="$openclaw_delta" -v screen="$screen_delta" -v whisper="$whisper_delta" -v total="$total_delta" -v idle="$idle_delta" 'BEGIN {
+    awk -v screen="$screen_delta" -v whisper="$whisper_delta" -v total="$total_delta" -v idle="$idle_delta" 'BEGIN {
       busy = total - idle;
-      other = busy - openclaw - screen - whisper;
+      other = busy - screen - whisper;
       if (other < 0) other = 0;
       if (total <= 0) {
-        printf "OpenClaw 0.0%% · WebScreen 0.0%% · Whisper 0.0%% · otros 0.0%%";
+        printf "WebScreen 0.0%% · Whisper 0.0%% · otros 0.0%%";
       } else {
-        printf "OpenClaw %.1f%% · WebScreen %.1f%% · Whisper %.1f%% · otros %.1f%%",
-          100 * openclaw / total,
+        printf "WebScreen %.1f%% · Whisper %.1f%% · otros %.1f%%",
           100 * screen / total,
           100 * whisper / total,
           100 * other / total;
@@ -482,25 +477,28 @@ system_service_run_state() {
 
 atlas_cast_state() {
   local pid state
-  pid="$(cat /home/atlas/.atlas/desktop/runtime/cast.pid 2>/dev/null || true)"
+  pid="$(cat "$ATLAS_HOME/.atlas/desktop/runtime/cast.pid" 2>/dev/null || true)"
   if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then state="running"; else state="stopped"; fi
   printf "%s	%s
 " "$state" "manual"
 }
 
-openclaw_gateway_state() {
-  local active enabled state
-  active="$(systemctl --user is-active openclaw-gateway.service 2>/dev/null || true)"
-  enabled="$(systemctl --user is-enabled openclaw-gateway.service 2>/dev/null || true)"
-  if [ "$active" = "active" ]; then
-    state="running"
-  elif ss -ltn 2>/dev/null | grep -q ':18789'; then
-    state="running"
+atlas_runtime_state() {
+  local state="ready" detail="knowledge+conversation+runtime+secrets" mode
+  [ -d "$ATLAS_HOME/.atlas/context/knowledge" ] || state="incomplete"
+  [ -d "$ATLAS_HOME/.atlas/context/conversation" ] || state="incomplete"
+  [ -d "$ATLAS_HOME/.atlas/runtime/tmp" ] || state="incomplete"
+  if [ -f "$ATLAS_HOME/.atlas/config/secrets.json" ]; then
+    mode="$(stat -c %a "$ATLAS_HOME/.atlas/config/secrets.json" 2>/dev/null || true)"
+    if [ "$mode" != 600 ]; then
+      state="unsafe"
+      detail="secrets mode ${mode:-unknown}; expected 600"
+    fi
   else
-    state="stopped"
+    state="incomplete"
+    detail="secrets missing"
   fi
-  printf "%s	%s
-" "$state" "${enabled:-unknown}"
+  printf "%s\t%s\n" "$state" "$detail"
 }
 
 network_urls() {
@@ -575,17 +573,17 @@ IFS=$'\t' read -r ram_used ram_total ram_pct < <(ram_values)
 IFS=$'\t' read -r storage_used storage_total storage_pct < <(storage_values)
 temp="$(temp_line)"
 IFS=$'\t' read -r fan_status fan_details < <(fan_values)
-IFS=$'	' read -r gateway_state gateway_enabled < <(openclaw_gateway_state)
 IFS=$'	' read -r cast_state cast_enabled < <(atlas_cast_state)
 IFS=$'	' read -r desktop_state desktop_enabled < <(system_service_run_state atlas-desktop.service)
 IFS=$'	' read -r webscreen_state webscreen_enabled < <(system_service_run_state atlas-webscreen.service)
 IFS=$'	' read -r screen_power screen_mode screen_surface screen_boot < <(atlas_screen_values)
 IFS=$'	' read -r app_service app_transport app_device app_connection < <(atlas_app_values)
-gateway_state_color="$(run_color "$gateway_state")"
+IFS=$'\t' read -r runtime_state runtime_detail < <(atlas_runtime_state)
 cast_state_color="$(run_color "$cast_state")"
 desktop_state_color="$(run_color "$desktop_state")"
 webscreen_state_color="$(run_color "$webscreen_state")"
 if [ "$app_service" = active ]; then app_service_color="$GREEN"; else app_service_color="$RED"; fi
+if [ "$runtime_state" = ready ]; then runtime_state_color="$GREEN"; elif [ "$runtime_state" = unsafe ]; then runtime_state_color="$RED"; else runtime_state_color="$YELLOW"; fi
 if [ "$screen_power" = "on" ]; then
   screen_power_color="$GREEN"
 elif [ "$screen_power" = "off" ]; then
@@ -616,7 +614,7 @@ ${BOLD}Temperature:${RESET} ${CYAN}${temp}${RESET}    ${BOLD}Fan:${RESET} ${CYAN
 ${BOLD}Throttle:${RESET} throttled=${CYAN}${throttle_code:-unknown}${RESET}${throttle_rest:+ / ${throttle_rest}}
 
 ${BOLD}Top RAM:${RESET} $(top_process pmem)
-${BOLD}OpenClaw Gateway:${RESET} ${gateway_state_color}${gateway_state}${RESET} / ${gateway_enabled}
+${BOLD}Atlas Runtime:${RESET} ${runtime_state_color}${runtime_state}${RESET} / ${runtime_detail}
 ${BOLD}Atlas WebScreen:${RESET} ${webscreen_state_color}${webscreen_state}${RESET} / ${webscreen_enabled}
 ${BOLD}Atlas Desktop:${RESET} ${desktop_state_color}${desktop_state}${RESET} / ${desktop_enabled}
 ${BOLD}Atlas Cast:${RESET} ${cast_state_color}${cast_state}${RESET} / ${cast_enabled}

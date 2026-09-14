@@ -338,8 +338,8 @@ rendering-efficiency improvement, not the demonstrated leak fix.
 ## Source map
 
 - [WebScreen runtime](README.md) and [Realtime instructions](REALTIME_INSTRUCTIONS.md).
-- [Screen command](../../openclaw/workspace/atlas-commands/ATLAS-SCREEN.md).
-- [Connection map](../../openclaw/workspace/ATLAS-CONNECTIONS.md).
+- [Screen command](../context/knowledge/atlas-commands/ATLAS-SCREEN.md).
+- [Connection map](../context/knowledge/ATLAS-CONNECTIONS.md).
 - `server.py::render_new_design_shell`: serves the existing DOM at `/new/`
   with presentation assets. No second HTML copy or duplicate credential flow.
 - `static/navigation.js`: exact drawer/waiting-screen labels and same-host

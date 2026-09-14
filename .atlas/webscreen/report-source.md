@@ -2,6 +2,11 @@
 
 Fecha de la medición: 28 de agosto de 2026.
 
+> Documento histórico: describe la arquitectura OpenClaw/Gateway medida ese día
+> y explica por qué se sustituyó. El runtime actual usa el Native Broker,
+> `codex app-server` y Realtime directo; consulta [README.md](README.md) para el
+> flujo vigente. Las cifras siguientes se conservan como evidencia del TDR.
+
 ## Resumen ejecutivo
 
 WebScreen no crea un proceso ni una conexión nueva para cada intervención. Ya

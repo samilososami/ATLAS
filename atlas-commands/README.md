@@ -46,6 +46,21 @@ Muestra ATLAS A1 STATUS y un resumen de temperatura, CPU, memoria, almacenamient
 atlas-status
 ```
 
+## `atlas-broker`
+
+Diagnostica el Native Broker sin mostrar OAuth, cuenta ni secretos. El proceso
+real usa `codex app-server` para renovar el login, consultar cuotas y crear
+reservas efímeras de Realtime.
+
+```bash
+atlas-broker health
+atlas-broker usage
+atlas-broker session
+```
+
+El wrapper se ejecuta como `sami` también cuando se llama desde root. Consulta
+el [manual del broker](../.atlas/broker/README.md).
+
 ## `atlas-rafas`
 
 Diagnóstico de red, Wi-Fi, DNS, HTTPS, reloj, almacenamiento, RAM, alimentación,
@@ -129,7 +144,7 @@ internamente `package` y `uri`. `tree` redacta los campos de contraseña y sus
 descendientes. Un error recuperable de acción o inspección conserva la sesión;
 `stop` sigue siendo obligatorio al terminar o abandonar la tarea y ante
 cancelación, timeout, salida o pérdida terminal de transporte/Accesibilidad. No
-se repiten acciones tras perder la conexión. [Manual operativo](../openclaw/workspace/atlas-commands/ATLAS-ANDROIDUSE.md).
+se repiten acciones tras perder la conexión. [Manual operativo](../.atlas/context/knowledge/atlas-commands/ATLAS-ANDROIDUSE.md).
 
 ## `atlas-chat`
 
@@ -254,7 +269,7 @@ atlas-webscreen disable
 
 Gestiona la memoria conversacional persistente compartida por WebScreen y las
 sesiones normales de `atlas-chat`. No modifica los Markdown cruciales del
-workspace ni la memoria de OpenClaw.
+corpus de conocimiento en `.atlas/context/knowledge`.
 
 ```bash
 atlas-context status
@@ -290,6 +305,29 @@ la música al HDMI de la pantalla; no sustituye la salida de voz de ATLAS. Un
 servicio local añade a `.atlas/spotify/HISTORY.md` cada canción reproducida con
 timestamp, título, álbum y artista; ese historial es privado y todavía no
 activa recomendaciones ni automatismos.
+
+## `atlas-wake`
+
+Laboratorio local y opcional para probar el modelo temporal `Hey Atlas` y
+perfiles de voz. No sustituye ni activa el detector de producción de WebScreen.
+
+```bash
+atlas-wake status
+atlas-wake profiles
+atlas-wake listen --seconds 30
+```
+
+## Instalación focalizada
+
+Las superficies que antes solo existían como copias manuales tienen
+instaladores idempotentes. Conservan perfiles, tokens, historial, cachés y
+sesiones privadas, y dejan los wrappers globales disponibles para `sami` y root:
+
+```bash
+sudo bash system/install-desktop.sh
+sudo bash system/install-spotify.sh
+sudo bash system/install-wake.sh
+```
 
 ## Seguridad
 

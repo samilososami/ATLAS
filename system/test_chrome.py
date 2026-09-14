@@ -32,7 +32,10 @@ class ChromeLaunchers(unittest.TestCase):
                      '.atlas/desktop/bin/open-chrome'):
             source = (ROOT / path).read_text()
             self.assertIn('google-chrome-stable ', source)
-            self.assertIn('runuser -u sami', source)
+            if path.endswith('open-chrome'):
+                self.assertIn('runuser -u "$ATLAS_USER"', source)
+            else:
+                self.assertIn('runuser -u sami', source)
             self.assertNotIn('--no-sandbox', source)
             self.assertNotIn('chromium', source.lower())
 
@@ -40,7 +43,8 @@ class ChromeLaunchers(unittest.TestCase):
         kiosk = (ROOT / 'system/libexec/atlas-screen-kiosk-session').read_text()
         self.assertIn('/screen/chrome-profile', kiosk)
         desktop = (ROOT / '.atlas/desktop/bin/open-chrome').read_text()
-        self.assertIn('ROOT="/home/atlas/.atlas/desktop"', desktop)
+        self.assertIn('ATLAS_HOME=${ATLAS_HOME:-/home/atlas}', desktop)
+        self.assertIn('ROOT="$ATLAS_HOME/.atlas/desktop"', desktop)
         self.assertIn('--user-data-dir="$ROOT/chrome-profile"', desktop)
         self.assertIn('chrome-profile/', (ROOT / '.gitignore').read_text().splitlines())
 

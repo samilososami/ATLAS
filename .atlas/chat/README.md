@@ -1,17 +1,20 @@
 # ATLAS Chat
 
-`atlas-chat` is the text-only terminal surface for ATLAS. It opens a direct
-`gpt-realtime-2.1` session through the same OpenClaw OAuth reservation used by
-WebScreen, then loads the same `REALTIME_INSTRUCTIONS.md`, complete Markdown
-context, persistent Realtime conversation and direct tools. Besides
-`atlas_shell`, `atlas_web_search` and `atlas_routine`, it exposes the same
-closed phone contracts as WebScreen: `atlas_phone` for permission-backed
-native APIs, `atlas_android` for explicit Accessibility control and
-`atlas_actions` for an ordered native/visual/shell sequence without a model
-round-trip between deterministic steps. A final
-`TERMINAL_INSTRUCTIONS.md` layer changes only presentation: terminal responses
-can use concise Markdown, paths, digits and technical units instead of the
-speech-oriented formatting used by WebScreen.
+`atlas-chat` es la superficie de terminal por texto de ATLAS. Abre una sesión
+directa de `gpt-realtime-2.1` mediante la misma implementación del Native Broker
+que WebScreen.
+El broker conserva un `codex app-server` persistente para renovar el OAuth de
+Codex y crear una credencial Realtime efímera; ni el token persistente ni la
+cuenta aparecen en la terminal. Después carga `REALTIME_INSTRUCTIONS.md`, el
+contexto Markdown definido en `.atlas/context/knowledge/manifest.json`, la
+conversación privada de `.atlas/context/conversation` y las herramientas
+directas. Además de `atlas_shell`, `atlas_web_search` y `atlas_routine`, expone
+los mismos contratos cerrados del teléfono que WebScreen: `atlas_phone` para
+APIs nativas respaldadas por permisos, `atlas_android` para el control explícito
+de Accesibilidad y `atlas_actions` para secuencias nativas, visuales o de shell
+sin volver al modelo entre pasos deterministas. La capa final
+`TERMINAL_INSTRUCTIONS.md` solo cambia la presentación: permite Markdown
+conciso, rutas, cifras y unidades técnicas en lugar del formato pensado para voz.
 
 Before opening a model response, the client checks the same exact local routine
 registry as WebScreen. A match appears as a grey `RUTINA` panel. With
@@ -23,7 +26,7 @@ Failures are passed to Realtime with their execution id and are never replayed
 automatically. The model also receives `atlas_routine` for list/show/create,
 modify and delete flows.
 
-For cross-surface faults, use the [connection map](../../openclaw/workspace/ATLAS-CONNECTIONS.md). A successful terminal turn checks the model/context/tools, not Chrome wake detection or physical audio; see the [reliability verification](../../docs/WEBSCREEN-RELIABILITY-2026-09-06.md).
+For cross-surface faults, use the [connection map](../context/knowledge/ATLAS-CONNECTIONS.md). A successful terminal turn checks the model/context/tools, not Chrome wake detection or physical audio; see the [reliability verification](../../docs/WEBSCREEN-RELIABILITY-2026-09-06.md).
 
 ```bash
 atlas-chat
@@ -88,7 +91,8 @@ sudo bash system/install-chat.sh
 
 The installer makes dated backups, installs the command for the normal user and
 root, reuses WebScreen's virtual environment, installs only missing Python
-dependencies, and safely adds missing cross-references to the live workspace.
+dependencies, and safely adds missing cross-references to the live ATLAS
+knowledge directory. It preserves OAuth, private context and provider secrets.
 
 ## Terminal interface · 1.2
 
@@ -99,7 +103,7 @@ Alt+Enter or Ctrl+J inserts a newline, including after a pasted paragraph.
 History suggestions appear in grey; the right arrow accepts them.
 
 `@AGENTS.md`, `@atlas-commands/` and `@"path with spaces.md"` resolve against
-the OpenClaw workspace. Absolute paths also work. References send the resolved
+`.atlas/context/knowledge`. Absolute paths also work. References send the resolved
 path, not the contents; ATLAS can read it with its ordinary tools when needed.
 `/files` shows the reference root. No recursive background indexing is used.
 

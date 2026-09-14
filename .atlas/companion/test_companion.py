@@ -1,5 +1,5 @@
 import asyncio, base64, json, os, secrets, sys, time, unittest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).parent))
 from crypto import Cipher,b64
@@ -42,6 +42,40 @@ class CryptoTests(unittest.TestCase):
 
 class CompanionTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):self.c=Companion(cfg())
+    @staticmethod
+    def http_response(status,payload):
+        response=MagicMock();response.status=status
+        response.json=AsyncMock(return_value=payload)
+        context=MagicMock();context.__aenter__=AsyncMock(return_value=response)
+        context.__aexit__=AsyncMock(return_value=None)
+        http=MagicMock();http.get.return_value=context
+        return http
+    async def test_quota_uses_webscreen_loopback_snapshot(self):
+        payload={'fiveHour':None,'weekly':{'usedPercent':42.5,'remainingPercent':57.5,
+            'resetAt':1770000000000},'updatedAt':1760000000000,'planProfile':'pro',
+            'available':True,'stale':False,'refreshing':False,'message':'Cuenta de Codex de ATLAS',
+            'accountEmail':'must-not-leak','accessToken':'must-not-leak'}
+        self.c.http=self.http_response(200,payload)
+        with patch.object(self.c,'command',new=AsyncMock()) as command:
+            result=await self.c.quota()
+        command.assert_not_awaited()
+        self.c.http.get.assert_called_once()
+        self.assertEqual(self.c.http.get.call_args.args[0],
+                         'http://127.0.0.1:5000/api/internal/codex-usage')
+        self.assertTrue(result['available'])
+        self.assertEqual(result['weekly']['usedPercent'],42.5)
+        self.assertNotIn('accountEmail',result)
+        self.assertNotIn('accessToken',result)
+    async def test_quota_returns_generic_unavailable_on_http_error(self):
+        self.c.http=self.http_response(503,{'error':'private upstream details'})
+        result=await self.c.quota()
+        self.assertEqual(result,{'available':False,
+            'message':'Cuota no disponible; no significa cero'})
+    async def test_quota_returns_generic_unavailable_on_invalid_payload(self):
+        self.c.http=self.http_response(200,['not','a','quota'])
+        result=await self.c.quota()
+        self.assertFalse(result['available'])
+        self.assertNotIn('not',json.dumps(result))
     async def test_tailscale_status_endpoint_prefers_private_ipv4(self):
         status={'BackendState':'Running','Self':{'Online':True,'HostName':'atlas-a1',
             'TailscaleIPs':['100.112.71.111','fd7a:115c:a1e0::1']},'Peer':{}}

@@ -6,16 +6,18 @@ from codex_usage import CodexUsageCache, normalize_usage
 
 
 def sample():
-    return {"updatedAt": 1787945065846, "providers": [{
-        "provider": "openai", "email": "private@example.invalid", "token": "not-for-browser",
-        "windows": [{"label": "Week", "usedPercent": 15, "resetAt": 1788542641000},
-                    {"label": "5h", "usedPercent": 98, "resetAt": 1787955841000}],
-        "billing": [{"type": "balance", "amount": 123}],
-    }]}
+    return {
+        "fiveHour": {"usedPercent": 98, "resetAt": 1787955841000},
+        "weekly": {"usedPercent": 15, "resetAt": 1788542641000},
+        "updatedAt": 1787945065846,
+        "planProfile": "plus",
+        "available": True,
+        "accountId": "private-account",
+    }
 
 
 class CodexUsageTests(unittest.TestCase):
-    def test_label_mapping_and_remaining(self):
+    def test_stable_window_mapping_and_remaining(self):
         data = normalize_usage(sample())
         self.assertEqual(data["fiveHour"]["remainingPercent"], 2)
         self.assertEqual(data["weekly"]["remainingPercent"], 85)
@@ -25,35 +27,50 @@ class CodexUsageTests(unittest.TestCase):
         data = normalize_usage(sample())
         self.assertEqual(set(data), {"fiveHour", "weekly", "updatedAt", "planProfile"})
         self.assertEqual(data["planProfile"], "plus")
-        self.assertNotIn("not-for-browser", str(data))
-        self.assertNotIn("private@example", str(data))
-        self.assertNotIn("billing", str(data))
+        self.assertNotIn("private-account", str(data))
 
     def test_missing_is_not_zero(self):
         self.assertIsNone(normalize_usage({})["weekly"])
         data = sample()
-        data["providers"][0]["windows"] = [{"label": "5h", "usedPercent": 0}]
+        data["weekly"] = None
+        data["fiveHour"]["usedPercent"] = 0
         self.assertIsNone(normalize_usage(data)["weekly"])
         self.assertEqual(normalize_usage(data)["fiveHour"]["remainingPercent"], 100)
 
     def test_pro_plan_uses_weekly_profile(self):
         data = sample()
-        data["providers"][0]["plan"] = "prolite"
-        data["providers"][0]["windows"] = [
-            {"label": "168h", "usedPercent": 2, "resetAt": 1789083660000},
-        ]
+        data["planProfile"] = "pro"
+        data["fiveHour"] = None
+        data["weekly"] = {"usedPercent": 2, "resetAt": 1789083660000}
         normalized = normalize_usage(data)
         self.assertEqual(normalized["planProfile"], "pro")
         self.assertIsNone(normalized["fiveHour"])
         self.assertEqual(normalized["weekly"]["remainingPercent"], 98)
 
-    def test_invalid_values_and_providers(self):
+    def test_accepts_standalone_broker_dto_without_leaking_extra_fields(self):
+        normalized = normalize_usage({
+            "fiveHour": None,
+            "weekly": {"usedPercent": 59.04, "resetAt": 1789083660000},
+            "updatedAt": 1787945065846,
+            "planProfile": "pro",
+            "available": True,
+            "accountId": "private-account",
+        })
+        self.assertEqual(normalized["weekly"]["usedPercent"], 59.0)
+        self.assertEqual(normalized["weekly"]["remainingPercent"], 41.0)
+        self.assertEqual(normalized["planProfile"], "pro")
+        self.assertNotIn("private-account", str(normalized))
+
+    def test_invalid_values_and_retired_provider_shape(self):
         data = sample()
         for value in [float("nan"), float("inf"), True, "98", None]:
-            data["providers"][0]["windows"][1]["usedPercent"] = value
+            data["fiveHour"]["usedPercent"] = value
             self.assertIsNone(normalize_usage(data)["fiveHour"])
-        data["providers"][0]["provider"] = "another-provider"
-        self.assertIsNone(normalize_usage(data)["weekly"])
+        retired = {"updatedAt": 1787945065846, "providers": [{
+            "provider": "openai",
+            "windows": [{"label": "Week", "usedPercent": 15}],
+        }]}
+        self.assertEqual(normalize_usage(retired), normalize_usage({}))
 
     def test_no_secret_errors_and_last_good_retained(self):
         fetch = Mock(return_value=sample())
@@ -65,6 +82,14 @@ class CodexUsageTests(unittest.TestCase):
         self.assertTrue(data["stale"])
         self.assertEqual(data["weekly"]["remainingPercent"], 85)
         self.assertNotIn("token=", str(data))
+
+    def test_initial_failure_retries_quickly_instead_of_hiding_quota_for_a_minute(self):
+        cache = CodexUsageCache(Mock(side_effect=RuntimeError("temporary")),
+                                refresh_seconds=60, failure_retry_seconds=3)
+        with patch("codex_usage.time.monotonic", return_value=100):
+            cache._refresh()
+        self.assertEqual(cache.next_refresh, 103)
+        self.assertFalse(cache.data["fiveHour"] or cache.data["weekly"])
 
     def test_one_fetch_for_many_clients_nonblocking(self):
         ready, release = threading.Event(), threading.Event()

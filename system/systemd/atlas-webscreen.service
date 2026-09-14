@@ -10,6 +10,10 @@ Group=sami
 WorkingDirectory=/home/atlas/.atlas/webscreen
 Environment=ATLAS_WEBSCREEN_HOST=0.0.0.0
 Environment=ATLAS_WEBSCREEN_SESSION_IDLE=1800
+Environment=ATLAS_HOME=/home/atlas
+Environment=HOME=/home/atlas
+Environment=CODEX_HOME=/home/atlas/.codex
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:/home/atlas/.npm-global/bin
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/home/atlas/.atlas/webscreen/start.sh
 Restart=on-failure

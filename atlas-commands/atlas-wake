@@ -1,3 +1,12 @@
-#!/bin/sh
-set -eu
-exec /home/atlas/.atlas/wakeword/.venv/bin/python /home/atlas/.atlas/wakeword/atlas_wake.py "$@"
+#!/usr/bin/env bash
+set -euo pipefail
+ATLAS_HOME=${ATLAS_HOME:-/home/atlas}
+ATLAS_USER=${ATLAS_USER:-$(stat -c %U "$ATLAS_HOME" 2>/dev/null || id -un)}
+runtime="$ATLAS_HOME/.atlas/wakeword"
+python="$runtime/.venv/bin/python"
+[[ -x $python ]] || { echo "atlas-wake: runtime missing; run system/install-wake.sh" >&2; exit 1; }
+if (( EUID == 0 )) && [[ $ATLAS_USER != root ]]; then
+  exec runuser -u "$ATLAS_USER" -- env HOME="$ATLAS_HOME" ATLAS_WAKE_ROOT="$runtime" \
+    "$python" "$runtime/atlas_wake.py" "$@"
+fi
+exec env ATLAS_WAKE_ROOT="$runtime" "$python" "$runtime/atlas_wake.py" "$@"

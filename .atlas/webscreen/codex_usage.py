@@ -22,54 +22,42 @@ def normalize_usage(summary: dict[str, Any]) -> dict[str, Any]:
     }
     if not isinstance(summary, dict):
         return result
-    providers = summary.get("providers")
-    if not isinstance(providers, list):
-        return result
-    for provider in providers:
-        if not isinstance(provider, dict) or provider.get("provider") not in {
-            "openai", "openai-codex", "codex",
-        }:
-            continue
-        windows = provider.get("windows")
-        if provider.get("error") or not isinstance(windows, list):
-            continue
-        plan = str(provider.get("plan") or "").strip().lower()
-        if plan.startswith("pro"):
-            result["planProfile"] = "pro"
-        elif plan:
-            result["planProfile"] = "plus"
-        for window in windows:
+    # The standalone ATLAS broker already returns this stable DTO. Keep the
+    # validation here so callers cannot smuggle account/auth fields through.
+    if "fiveHour" in summary or "weekly" in summary:
+        for source_key, target_key in (("fiveHour", "fiveHour"), ("weekly", "weekly")):
+            window = summary.get(source_key)
             if not isinstance(window, dict):
                 continue
-            label = str(window.get("label") or "").lower().replace(" ", "")
-            key = {"5h": "fiveHour", "300m": "fiveHour", "week": "weekly",
-                   "weekly": "weekly", "7d": "weekly", "168h": "weekly"}.get(label)
             used = window.get("usedPercent")
-            if not key or not finite_number(used):
+            if not finite_number(used):
                 continue
-            used = round(max(0.0, min(100.0, used)), 1)
+            used = round(max(0.0, min(100.0, float(used))), 1)
             reset = window.get("resetAt")
-            result[key] = {"usedPercent": used, "remainingPercent": round(100 - used, 1),
-                           "resetAt": int(reset) if finite_number(reset) and reset > 0 else None}
-    # Older Gateway builds did not report a plan name. The shape of the
-    # authoritative quota response is still enough to select the presentation.
-    if result["planProfile"] == "auto":
-        if result["fiveHour"] is not None:
-            result["planProfile"] = "plus"
-        elif result["weekly"] is not None:
-            result["planProfile"] = "pro"
-    updated = summary.get("updatedAt")
-    if finite_number(updated) and updated > 0:
-        result["updatedAt"] = int(updated)
+            result[target_key] = {
+                "usedPercent": used,
+                "remainingPercent": round(100.0 - used, 1),
+                "resetAt": int(reset) if finite_number(reset) and reset > 0 else None,
+            }
+        profile = str(summary.get("planProfile") or "auto").strip().lower()
+        result["planProfile"] = profile if profile in {"auto", "plus", "pro"} else "auto"
+        updated = summary.get("updatedAt")
+        if finite_number(updated) and updated > 0:
+            result["updatedAt"] = int(updated)
+        if result["planProfile"] == "auto":
+            result["planProfile"] = "plus" if result["fiveHour"] else "pro" if result["weekly"] else "auto"
+        return result
     return result
 
 
 class CodexUsageCache:
     """One background fetch per minute, shared by every connected browser."""
 
-    def __init__(self, fetch: Callable[[], dict[str, Any]], refresh_seconds: float = 60) -> None:
+    def __init__(self, fetch: Callable[[], dict[str, Any]], refresh_seconds: float = 60,
+                 failure_retry_seconds: float = 5) -> None:
         self.fetch = fetch
         self.refresh_seconds = refresh_seconds
+        self.failure_retry_seconds = failure_retry_seconds
         self.lock = threading.Lock()
         self.data = normalize_usage({})
         self.inflight = False
@@ -93,7 +81,10 @@ class CodexUsageCache:
         finally:
             with self.lock:
                 self.inflight = False
-                self.next_refresh = time.monotonic() + self.refresh_seconds
+                has_data = self.data["fiveHour"] is not None or self.data["weekly"] is not None
+                delay = (self.failure_retry_seconds
+                         if self.failed and not has_data else self.refresh_seconds)
+                self.next_refresh = time.monotonic() + delay
 
     def snapshot(self) -> dict[str, Any]:
         with self.lock:

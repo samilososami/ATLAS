@@ -2,6 +2,16 @@
 
 ATLAS OS 1.0 es la primera imagen pública del sistema utilizado por ATLAS A1. Está basada en Debian 13.5 (`trixie`) para arquitectura `aarch64` y preparada para Raspberry Pi 5.
 
+> Esta nota describe la imagen 1.0 tal como se publicó. Aquella imagen incluía
+> OpenClaw y por eso se conserva su procedimiento original más abajo. El runtime
+> de desarrollo actual ya no depende de OpenClaw: utiliza el Native Broker de
+> ATLAS, `codex app-server`, Realtime directo y el contexto de `.atlas/context`.
+> No uses el onboarding o el estado del gateway de esta página como guía de una
+> instalación actual. Para el runtime vigente, consulta
+> [`.atlas/README.md`](../.atlas/README.md), instala el broker con
+> `system/install-native-broker.sh` y valida con `atlas-broker health`, `usage`
+> y `session`.
+
 ## Estado de esta imagen
 
 Esta versión se publica inicialmente como prerelease. La estructura de disco, los filesystems y el contenido se han validado offline, pero la imagen reconstruida todavía debe grabarse y arrancarse en una microSD de prueba antes de considerarse validada en hardware.

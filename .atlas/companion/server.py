@@ -82,16 +82,27 @@ class Companion:
         return {'output':output.decode(errors='replace'), 'exitCode':p.returncode,
                 'timedOut':timed_out,'truncated':overflow}
     async def quota(self):
-        # CLI uses the existing Gateway auth. Never return raw provider errors.
-        result=await self.command('openclaw gateway call usage.status --json',12)
+        # WebScreen owns the persistent Codex app-server/OAuth session. Reuse
+        # its loopback-only, already-sanitised view instead of spawning another
+        # provider client.
+        unavailable={'available':False,'message':'Cuota no disponible; no significa cero'}
+        if self.http is None: return unavailable
         try:
-            raw=json.loads(result['output'][result['output'].index('{'):])
-            import sys
-            sys.path.insert(0,str(ROOT/'.atlas/webscreen'))
-            from codex_usage import normalize_usage
-            q=normalize_usage(raw)
-            return {**q,'available':bool(q['fiveHour'] or q['weekly'])}
-        except Exception: return {'available':False,'message':'Cuota no disponible; no significa cero'}
+            async with self.http.get(
+                WEB+'/api/internal/codex-usage',
+                timeout=ClientTimeout(total=4),
+            ) as response:
+                if response.status>=400: return unavailable
+                raw=await response.json(content_type=None)
+            if not isinstance(raw,dict): return unavailable
+            # Explicit allow-list: even a compromised local response cannot
+            # forward account, billing or OAuth material to the phone.
+            result={key:raw.get(key) for key in (
+                'fiveHour','weekly','updatedAt','planProfile','stale','refreshing','message'
+            ) if key in raw}
+            result['available']=bool(raw.get('available'))
+            return result
+        except Exception: return unavailable
     async def tailscale(self):
         result=await self.command('tailscale status --json',5)
         try:

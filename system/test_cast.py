@@ -25,10 +25,12 @@ class CastWebScreenTests(unittest.TestCase):
         self.assertIn('as_atlas "$ROOT/bin/open-chrome" "$WEBSCREEN_URL"', branch)
 
     def test_runtime_deploy_installs_command_and_both_context_docs(self) -> None:
-        source = DEPLOY.read_text(encoding="utf-8")
-        self.assertIn('install -m 755 "$repo/atlas-commands/atlas-cast" /usr/local/bin/atlas-cast', source)
-        self.assertIn("ATLAS-CAST.md", source)
-        self.assertIn("ATLAS-DESKTOP.md", source)
+        deploy = DEPLOY.read_text(encoding="utf-8")
+        installer = (ROOT / "system/install-desktop.sh").read_text(encoding="utf-8")
+        self.assertIn('bash "$repo/system/install-desktop.sh"', deploy)
+        self.assertIn("atlas-cast", installer)
+        self.assertIn("ATLAS-CAST.md", installer)
+        self.assertIn("ATLAS-DESKTOP.md", installer)
 
 
 if __name__ == "__main__":

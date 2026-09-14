@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Add atlas-chat cross-references without replacing private workspace prose."""
+"""Add atlas-chat cross-references without replacing private knowledge prose."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from pathlib import Path
 
 
 REPO, HOME, BACKUP = map(Path, sys.argv[1:])
-WORKSPACE = HOME / ".openclaw" / "workspace"
+WORKSPACE = HOME / ".atlas" / "context" / "knowledge"
 OWNER = HOME.stat()
 
 

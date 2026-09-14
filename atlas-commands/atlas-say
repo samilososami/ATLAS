@@ -4,13 +4,19 @@ import datetime as dt
 import json
 import os
 import pathlib
+import stat
 import subprocess
 import sys
 
 import requests
 
-CONFIG_PATH = pathlib.Path("/home/atlas/.openclaw/openclaw.json")
-TMP_DIR = pathlib.Path("/home/atlas/.openclaw/workspaces/tmp")
+ATLAS_HOME = pathlib.Path(os.environ.get("ATLAS_HOME", "/home/atlas"))
+CONFIG_PATH = pathlib.Path(
+    os.environ.get("ATLAS_SECRETS_FILE", ATLAS_HOME / ".atlas/config/secrets.json")
+)
+TMP_DIR = pathlib.Path(
+    os.environ.get("ATLAS_RUNTIME_TMP", ATLAS_HOME / ".atlas/runtime/tmp")
+)
 def die(message: str, code: int = 1) -> None:
     print(message, file=sys.stderr)
     raise SystemExit(code)
@@ -18,11 +24,19 @@ def die(message: str, code: int = 1) -> None:
 
 def load_config() -> dict:
     try:
-        return json.loads(CONFIG_PATH.read_text())
+        mode = CONFIG_PATH.stat().st_mode
+        if stat.S_IMODE(mode) != 0o600:
+            die(f"ATLAS secrets must be private (chmod 600): {CONFIG_PATH}")
+        value = json.loads(CONFIG_PATH.read_text())
     except FileNotFoundError:
-        die(f"OpenClaw config not found: {CONFIG_PATH}")
+        die(f"ATLAS secrets not found: {CONFIG_PATH}. Run the ATLAS runtime migration first.")
+    except OSError as exc:
+        die(f"ATLAS secrets could not be read ({exc.__class__.__name__}): {CONFIG_PATH}")
     except json.JSONDecodeError as exc:
-        die(f"OpenClaw config is not valid JSON: {exc}")
+        die(f"ATLAS secrets are not valid JSON: {exc}")
+    if not isinstance(value, dict):
+        die(f"ATLAS secrets must contain a JSON object: {CONFIG_PATH}")
+    return value
 
 
 def config_get(data: dict, path: str):
@@ -37,24 +51,19 @@ def config_get(data: dict, path: str):
 def resolve_elevenlabs_config(data: dict, voice_id_override: str | None = None) -> tuple[str, str]:
     api_key = (
         os.environ.get("ELEVENLABS_API_KEY")
-        or config_get(data, "skills.entries.sag.apiKey")
-        or config_get(data, "plugins.entries.elevenlabs.config.apiKey")
-        or config_get(data, "plugins.entries.elevenlabs.apiKey")
+        or config_get(data, "elevenlabs.apiKey")
     )
     voice_id = (
         voice_id_override
         or os.environ.get("ELEVENLABS_VOICE_ID")
-        or config_get(data, "skills.entries.sag.env.ELEVENLABS_VOICE_ID")
-        or config_get(data, "skills.entries.sag.env.SAG_VOICE_ID")
-        or config_get(data, "plugins.entries.elevenlabs.config.voiceId")
-        or config_get(data, "plugins.entries.elevenlabs.voiceId")
+        or config_get(data, "elevenlabs.voiceId")
     )
     if isinstance(api_key, dict):
-        die("ElevenLabs API key is a SecretRef/object. atlas-say currently expects a resolved key or ELEVENLABS_API_KEY.")
+        die("ElevenLabs API key is an object. atlas-say expects a resolved string or ELEVENLABS_API_KEY.")
     if not api_key:
-        die("ElevenLabs API key not found. Configure sag/ElevenLabs or set ELEVENLABS_API_KEY.")
+        die("ElevenLabs API key not found in ATLAS secrets or ELEVENLABS_API_KEY.")
     if not voice_id:
-        die("ElevenLabs voice ID not found. Configure sag env ELEVENLABS_VOICE_ID or set ELEVENLABS_VOICE_ID.")
+        die("ElevenLabs voice ID not found in ATLAS secrets or ELEVENLABS_VOICE_ID.")
     return str(api_key), str(voice_id)
 
 
@@ -68,8 +77,12 @@ def build_text(parts: list[str]) -> str:
 
 
 def synthesize_elevenlabs(text: str, api_key: str, voice_id: str) -> pathlib.Path:
-    TMP_DIR.mkdir(parents=True, exist_ok=True)
-    ts = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
+    TMP_DIR.mkdir(parents=True, mode=0o700, exist_ok=True)
+    try:
+        TMP_DIR.chmod(0o700)
+    except PermissionError:
+        pass
+    ts = dt.datetime.now().strftime("%Y%m%d-%H%M%S-%f")
     out = TMP_DIR / f"atlas-say-{ts}.mp3"
     model_id = os.environ.get("ATLAS_SAY_ELEVENLABS_MODEL", "eleven_multilingual_v2")
     url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
@@ -96,8 +109,9 @@ def synthesize_elevenlabs(text: str, api_key: str, voice_id: str) -> pathlib.Pat
         die(f"ElevenLabs returned HTTP {response.status_code}: {detail}")
     out.write_bytes(response.content)
     try:
-        os.chown(out, 1000, 1000)
-    except PermissionError:
+        owner = TMP_DIR.stat()
+        os.chown(out, owner.st_uid, owner.st_gid)
+    except (OSError, PermissionError):
         pass
     return out
 

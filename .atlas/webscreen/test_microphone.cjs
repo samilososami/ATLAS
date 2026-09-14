@@ -49,7 +49,7 @@ function page({ hostname = 'localhost', search = '?kiosk=1', permission = 'grant
       hasControl: () => owner,
       bind(value) { adapter = value; },
       fetch: settingsFetch || (async url => ({ ok: true, json: async () => url === '/api/health'
-        ? { ready: true, openclaw: { model: 'test' } } : {} })),
+        ? { ready: true, broker: { model: 'test' } } : {} })),
     },
   };
   let realtimeCallbacks;
@@ -531,9 +531,11 @@ test('a temporarily refused Chrome wake is not marked accepted forever', async (
   assert.equal(p.wakeCalls.length, 2, 'accepted result is deduplicated');
 });
 
-test('Realtime failures never activate the legacy OpenClaw conversation path', () => {
+test('Realtime failures never activate or call the retired server conversation path', () => {
   assert.doesNotMatch(source, /realtimeFallbackActive\s*=\s*true/u);
   assert.doesNotMatch(source, /initializeMicrophone\(true\)/u);
+  assert.doesNotMatch(source, /["']\/api\/(?:starter|text)["']/u);
+  assert.doesNotMatch(source, /scheduleSpeculativeStarter/u);
   assert.match(source, /scheduleRealtimeReconnect\(error\)/u);
 });
 

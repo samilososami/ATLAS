@@ -1947,12 +1947,6 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
         return;
       }
       this.faceResponseHasOtherTools = true;
-      if (name === "openclaw_agent_control") {
-        const mode = String(args.mode || "status");
-        if (mode === "cancel") this.interruptWork();
-        this.submitToolResult(callId, { ok: true, mode, message: "Control aplicado por ATLAS WebScreen." });
-        return;
-      }
       if (name === "atlas_web_search") {
         await this.handleWebSearch(callId, args);
         return;

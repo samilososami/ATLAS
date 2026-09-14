@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Merge managed command references without replacing a private workspace."""
+"""Merge managed command references without replacing private knowledge."""
 from pathlib import Path
 import os, shutil, sys
 
 repo,home,backup=map(Path,sys.argv[1:])
-workspace=home/'.openclaw/workspace';owner=home.stat()
+workspace=home/'.atlas/context/knowledge';owner=home.stat()
 def merge(path,body):
     start='<!-- atlas-companion:begin -->';end='<!-- atlas-companion:end -->'
     previous=path.read_text() if path.exists() else ''
@@ -29,8 +29,8 @@ For mobile connections, BLE pairing and Tailscale status, read ATLAS-APP.md and 
 For visual phone control, read ATLAS-ANDROIDUSE.md and use the bounded `atlas-androiduse` wrapper.
 '''
 merge(workspace/'atlas-commands/ATLAS-RAFAS.md',rafas)
-merge(workspace/'atlas-commands/ATLAS-APP.md',(repo/'openclaw/workspace/atlas-commands/ATLAS-APP.md').read_text())
-merge(workspace/'atlas-commands/ATLAS-ANDROIDUSE.md',(repo/'openclaw/workspace/atlas-commands/ATLAS-ANDROIDUSE.md').read_text())
+merge(workspace/'atlas-commands/ATLAS-APP.md',(repo/'.atlas/context/knowledge/atlas-commands/ATLAS-APP.md').read_text())
+merge(workspace/'atlas-commands/ATLAS-ANDROIDUSE.md',(repo/'.atlas/context/knowledge/atlas-commands/ATLAS-ANDROIDUSE.md').read_text())
 merge(workspace/'AGENTS.md','''## Diagnostic and mobile command map
 
 - `atlas-commands/ATLAS-RAFAS.md`: `atlas-rafas`, structured health and conservative interactive doctor.

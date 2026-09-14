@@ -32,7 +32,7 @@ class RealtimeBackendTests(unittest.TestCase):
                     self.assertEqual(json.loads(app.SETTINGS_FILE.read_text())["elevenlabsVoiceId"], "custom-test-voice")
                     handler = self.handler()
                     handler.read_json_payload = Mock(return_value={})
-                    with patch.object(app.BRIDGE, "create_talk_session", return_value={
+                    with patch.object(app.BROKER, "create_talk_session", return_value={
                         "transport": "webrtc", "clientSecret": "test-only",
                     }) as create:
                         handler.handle_realtime_session()
@@ -56,7 +56,7 @@ class RealtimeBackendTests(unittest.TestCase):
                      patch.object(app, "current_session", return_value=("test", False, 0)), \
                      patch.object(app, "get_webscreen_settings", return_value={"realtimeReasoningEffort": "default"}), \
                      patch.object(app, "save_webscreen_settings") as save, \
-                     patch.object(app.BRIDGE, "create_talk_session") as create:
+                     patch.object(app.BROKER, "create_talk_session") as create:
                     handler = self.handler()
                     handler.read_json_payload = Mock(return_value={key: value})
                     getattr(handler, method)()
@@ -101,20 +101,19 @@ class RealtimeBackendTests(unittest.TestCase):
             "clientSecret": "ephemeral-test-only", "offerUrl": "https://api.openai.com/v1/realtime/calls",
         }
         with patch.object(app, "current_session", return_value=("agent:main:test", False, 0)), \
-             patch.object(app.BRIDGE, "create_talk_session", return_value=session) as create, \
+             patch.object(app.BROKER, "create_talk_session", return_value=session) as create, \
              patch.object(app, "build_realtime_context", return_value=(
                  "private atlas context", {"chars": 21, "estimatedTokens": 5, "sources": []},
              )):
             handler.handle_realtime_session()
         params = create.call_args.args[0]
         self.assertEqual(params["model"], "gpt-realtime-2.1")
-        # This is the only value accepted by the OpenClaw reservation schema;
-        # the actual Realtime runtime tool remains atlas_shell.
-        self.assertEqual(params["brain"], "agent-consult")
+        # The standalone broker exposes ATLAS' native tool runtime directly.
+        self.assertEqual(params["brain"], "native-tools")
         self.assertEqual(params["transport"], "webrtc")
         self.assertNotIn("reasoningEffort", params)
         handler.send_json.assert_called_once_with(200, {
-            "session": session, "sessionKey": "agent:main:test", "legacyFallback": False,
+            "session": session, "sessionKey": "agent:main:test",
         })
         self.assertEqual(session["atlasOutput"], "native")
         self.assertEqual(session["offerUrl"], "/api/realtime/offer")
@@ -122,6 +121,10 @@ class RealtimeBackendTests(unittest.TestCase):
         self.assertIn("# ATLAS Realtime", session["atlasInstructions"])
         self.assertEqual(session["atlasContext"], "private atlas context")
         self.assertEqual(session["atlasContextStats"]["estimatedTokens"], 5)
+        self.assertEqual(
+            session["atlasContextStats"]["channelInstructions"]["name"],
+            "runtime/REALTIME_INSTRUCTIONS.md",
+        )
 
     def test_realtime_offer_proxy_builds_multipart_without_exposing_a_cors_hop(self):
         class Response:
@@ -159,14 +162,15 @@ class RealtimeBackendTests(unittest.TestCase):
         self.assertIn("AGENTS.md", context)
         self.assertLess(len(context), 400)
 
-    def test_legacy_openclaw_conversation_endpoints_are_disabled(self):
-        for path in app.LEGACY_AGENT_API_PATHS:
+    def test_retired_conversation_routes_are_410_compatibility_only(self):
+        self.assertTrue({"/api/starter", "/api/text"}.issubset(app.RETIRED_API_PATHS))
+        for path in app.RETIRED_API_PATHS - {"/api/resident/wait"}:
             with self.subTest(path=path):
                 handler = self.handler()
                 handler.path = path
                 handler.handle_controlled_post()
                 handler.send_json.assert_called_once_with(410, {
-                    "error": "El pipeline legacy de OpenClaw está desactivado; usa OpenAI Realtime",
+                    "error": "Esta ruta histórica ya no está disponible; usa OpenAI Realtime",
                     "realtimeOnly": True,
                 })
 
@@ -212,8 +216,116 @@ class RealtimeBackendTests(unittest.TestCase):
         self.assertIn("do-not-load-heartbeats", context)
         self.assertIn("Use the working TV route.", context)
         self.assertIn(f"runtime/adb/devices/{report_name}", context)
-        self.assertIn("AGENTS.md is the canonical master map", context)
+        self.assertIn("AGENTS.md is its master map", context)
         self.assertFalse(stats["truncated"])
+
+    def test_budget_prioritizes_core_memory_and_map_before_manuals(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            workspace = root / "knowledge"
+            workspace.mkdir()
+            for name in ("IDENTITY.md", "SOUL.md", "USER.md", "TDR.md", "TOOLS.md"):
+                (workspace / name).write_text(f"marker-{name}\n", encoding="utf-8")
+            (workspace / "MEMORY.md").write_text("memory-map-marker", encoding="utf-8")
+            (workspace / "AGENTS.md").write_text("agents-marker\n" + "map " * 2000, encoding="utf-8")
+            commands = workspace / "atlas-commands"
+            commands.mkdir()
+            (commands / "ATLAS-STATUS.md").write_text("manual-marker", encoding="utf-8")
+            adb_reports = root / "adb"
+            adb_reports.mkdir()
+            (adb_reports / "phone.md").write_text("adb-report-marker\n" + "device " * 500, encoding="utf-8")
+            context, stats = app.build_realtime_context(
+                workspace,
+                adb_reports,
+                persistent_context="conversation-marker",
+                maximum_chars=2500,
+            )
+
+        for marker in (
+            "marker-IDENTITY.md", "marker-SOUL.md", "marker-USER.md",
+            "marker-TDR.md", "marker-TOOLS.md", "memory-map-marker",
+            "conversation-marker", "agents-marker",
+        ):
+            self.assertIn(marker, context)
+        self.assertNotIn("manual-marker", context)
+        self.assertNotIn("adb-report-marker", context)
+        self.assertLessEqual(len(context), 2500)
+        self.assertEqual(stats["chars"], len(context))
+        self.assertEqual(stats["estimatedTokens"], app.estimate_context_tokens(context))
+        self.assertTrue(stats["budgetApplied"])
+        self.assertTrue(stats["truncated"])
+        self.assertIn("atlas-commands/ATLAS-STATUS.md", stats["omittedSources"])
+        self.assertEqual(stats["storedFillerChars"], len("conversation-marker"))
+        self.assertEqual(stats["fillerChars"], len("conversation-marker"))
+
+    def test_relative_knowledge_path_keeps_manifest_priority(self):
+        with tempfile.TemporaryDirectory(dir=Path.cwd()) as directory:
+            root = Path(directory)
+            workspace = root / "knowledge"
+            workspace.mkdir()
+            (workspace / "IDENTITY.md").write_text("identity-priority-marker", encoding="utf-8")
+            (workspace / "AGENTS.md").write_text("agents-priority-marker", encoding="utf-8")
+            (workspace / "ADB.md").write_text("alphabetical-fallback-marker", encoding="utf-8")
+            relative_workspace = workspace.relative_to(Path.cwd())
+            context, stats = app.build_realtime_context(
+                relative_workspace,
+                root / "missing-adb",
+                persistent_context="",
+                maximum_chars=2048,
+            )
+
+        self.assertIn("identity-priority-marker", context)
+        self.assertIn("agents-priority-marker", context)
+        names = [source["name"] for source in stats["sources"]]
+        self.assertLess(names.index("IDENTITY.md"), names.index("AGENTS.md"))
+        if "ADB.md" in names:
+            self.assertLess(names.index("AGENTS.md"), names.index("ADB.md"))
+
+    def test_repository_manifest_keeps_every_required_source_in_the_offer_budget(self):
+        knowledge = Path(__file__).resolve().parents[1] / "context" / "knowledge"
+        context, stats = app.build_realtime_context(
+            knowledge,
+            knowledge / ".missing-adb-for-test",
+            persistent_context="repository-conversation-marker",
+            maximum_chars=app.REALTIME_OFFER_CONTEXT_MAX_CHARS,
+        )
+        source_names = [source["name"] for source in stats["sources"]]
+        for required in (
+            "IDENTITY.md", "SOUL.md", "USER.md", "TDR.md", "TOOLS.md",
+            "MEMORY.md", "AGENTS.md", "runtime/conversation/CONTEXT.md",
+        ):
+            self.assertIn(required, source_names)
+        self.assertIn("repository-conversation-marker", context)
+        self.assertLessEqual(len(context), app.REALTIME_OFFER_CONTEXT_MAX_CHARS)
+        self.assertTrue(app.read_realtime_instructions())
+
+    def test_knowledge_resolver_uses_atlas_context_and_environment_override(self):
+        with patch.dict(app.os.environ, {}, clear=False):
+            app.os.environ.pop("ATLAS_KNOWLEDGE_DIR", None)
+            self.assertEqual(
+                app.resolve_knowledge_dir(),
+                app.ATLAS_HOME / ".atlas" / "context" / "knowledge",
+            )
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.dict(app.os.environ, {"ATLAS_KNOWLEDGE_DIR": directory}):
+            self.assertEqual(app.resolve_knowledge_dir(), Path(directory))
+
+    def test_conversation_resolver_prefers_canonical_env_and_accepts_old_alias(self):
+        with patch.dict(app.os.environ, {}, clear=False):
+            app.os.environ.pop("ATLAS_CONVERSATION_DIR", None)
+            app.os.environ.pop("ATLAS_CONTEXT_DIR", None)
+            self.assertEqual(
+                app.resolve_conversation_dir(),
+                app.ATLAS_HOME / ".atlas" / "context" / "conversation",
+            )
+        with patch.dict(app.os.environ, {"ATLAS_CONTEXT_DIR": "/tmp/legacy-context"}):
+            app.os.environ.pop("ATLAS_CONVERSATION_DIR", None)
+            self.assertEqual(app.resolve_conversation_dir(), Path("/tmp/legacy-context"))
+        with patch.dict(app.os.environ, {
+            "ATLAS_CONTEXT_DIR": "/tmp/legacy-context",
+            "ATLAS_CONVERSATION_DIR": "/tmp/atlas-conversation",
+        }):
+            self.assertEqual(app.resolve_conversation_dir(), Path("/tmp/atlas-conversation"))
 
     def test_realtime_context_separates_crucial_and_persistent_memory(self):
         with tempfile.TemporaryDirectory() as directory, \
@@ -289,7 +401,7 @@ class RealtimeBackendTests(unittest.TestCase):
         }
         with patch.object(app, "current_session", return_value=("agent:main:test", False, 0)), \
              patch.object(app, "get_webscreen_settings", return_value=settings), \
-             patch.object(app.BRIDGE, "create_talk_session", return_value=session) as create:
+             patch.object(app.BROKER, "create_talk_session", return_value=session) as create:
             handler.handle_realtime_session()
         params = create.call_args.args[0]
         self.assertEqual(params["voice"], "verse")
@@ -379,17 +491,6 @@ class RealtimeBackendTests(unittest.TestCase):
             self.assertIn('"echoCancellation":true', text)
             self.assertIn('"sampleRate":48000', text)
 
-    def test_legacy_interaction_log_carries_verified_client_origin(self):
-        with tempfile.TemporaryDirectory() as directory, patch.object(app, "LOG_DIR", Path(directory)):
-            log = app.InteractionLog("legacy-turn-1", {
-                "client_kind": "browser", "client_ip": "192.168.1.141",
-                "client_id": "abcdef012345",
-            })
-            log.add("input.transcript", "Transcripción", text="Hola")
-            text = log.path.read_text(encoding="utf-8")
-            self.assertIn('"client_kind":"browser"', text)
-            self.assertIn('"client_ip":"192.168.1.141"', text)
-
     def test_realtime_shell_runs_as_a_bounded_tool(self):
         with patch.object(app, "REALTIME_SHELL_TIMEOUT_SECONDS", 3):
             result = app.execute_realtime_shell("printf atlas-shell-test", "test-shell-run", 3)
@@ -415,8 +516,8 @@ class RealtimeBackendTests(unittest.TestCase):
             with self.subTest(command=command):
                 app.validate_realtime_shell_command(command)
 
-    def test_tavily_search_reuses_private_openclaw_key_without_returning_it(self):
-        secret = "tvly-test-secret-that-must-never-leave-the-backend"
+    def test_tavily_search_reuses_private_atlas_key_without_returning_it(self):
+        secret = "test-tavily-secret-that-must-never-leave-the-backend"
 
         class Response:
             def __enter__(self):
@@ -435,13 +536,8 @@ class RealtimeBackendTests(unittest.TestCase):
                     }],
                 }).encode()
 
-        config = {
-            "plugins": {"entries": {"tavily": {
-                "enabled": True,
-                "config": {"webSearch": {"apiKey": secret}},
-            }}},
-        }
-        with patch.object(app, "load_openclaw_config", return_value=config), \
+        config = {"tavily": {"apiKey": secret}}
+        with patch.object(app, "load_atlas_secrets", return_value=config), \
              patch.object(app.urllib.request, "urlopen", return_value=Response()) as request:
             result = app.execute_tavily_search("latest ATLAS information")
         sent = request.call_args.args[0]
@@ -451,8 +547,8 @@ class RealtimeBackendTests(unittest.TestCase):
         self.assertEqual(result["count"], 1)
         self.assertNotIn(secret, json.dumps(result))
 
-    def test_tavily_search_requires_existing_openclaw_configuration(self):
-        with patch.object(app, "load_openclaw_config", return_value={}):
+    def test_tavily_search_requires_existing_atlas_configuration(self):
+        with patch.object(app, "load_atlas_secrets", return_value={}):
             with self.assertRaisesRegex(RuntimeError, "Tavily no está configurado"):
                 app.execute_tavily_search("ATLAS")
 

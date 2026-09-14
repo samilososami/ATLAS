@@ -1,14 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Audio devices belong to sami's desktop session.  Commands launched by a
+ATLAS_HOME="${ATLAS_HOME:-/home/atlas}"
+ATLAS_AUDIO_USER="${ATLAS_AUDIO_USER:-$(stat -c %U "$ATLAS_HOME" 2>/dev/null || id -un)}"
+ATLAS_AUDIO_GROUP="$(id -gn "$ATLAS_AUDIO_USER" 2>/dev/null || id -gn)"
+
+# Audio devices belong to the ATLAS desktop owner's session. Commands launched by a
 # system service do not inherit its D-Bus variables, and a direct root call
 # otherwise targets a separate (usually nonexistent) root audio server.
-if [ "$(id -u)" -eq 0 ] && id sami >/dev/null 2>&1; then
-  exec runuser -u sami -- env \
-    HOME=/home/atlas \
-    XDG_RUNTIME_DIR=/run/user/"$(id -u sami)" \
-    DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/"$(id -u sami)"/bus \
+if [ "$(id -u)" -eq 0 ] && [ "$ATLAS_AUDIO_USER" != root ]; then
+  atlas_audio_uid="$(id -u "$ATLAS_AUDIO_USER")"
+  exec runuser -u "$ATLAS_AUDIO_USER" -- env \
+    HOME="$ATLAS_HOME" \
+    ATLAS_HOME="$ATLAS_HOME" \
+    ATLAS_AUDIO_USER="$ATLAS_AUDIO_USER" \
+    XDG_RUNTIME_DIR=/run/user/"$atlas_audio_uid" \
+    DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/"$atlas_audio_uid"/bus \
     "$0" "$@"
 fi
 
@@ -16,7 +23,7 @@ ATLAS_AUDIO_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
 export XDG_RUNTIME_DIR="$ATLAS_AUDIO_RUNTIME_DIR"
 export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=$ATLAS_AUDIO_RUNTIME_DIR/bus}"
 
-TMP_DIR="/home/atlas/.openclaw/workspaces/tmp"
+TMP_DIR="${ATLAS_RUNTIME_TMP:-$ATLAS_HOME/.atlas/runtime/tmp}"
 
 if [ -t 1 ]; then
   BOLD="$(tput bold 2>/dev/null || true)"
@@ -53,7 +60,10 @@ USAGE
 }
 
 ensure_tmp() {
-  install -d -m 700 -o atlas -g atlas "$TMP_DIR" 2>/dev/null || mkdir -p "$TMP_DIR"
+  install -d -m 700 -o "$ATLAS_AUDIO_USER" -g "$ATLAS_AUDIO_GROUP" "$TMP_DIR" 2>/dev/null || {
+    mkdir -p "$TMP_DIR"
+    chmod 700 "$TMP_DIR" 2>/dev/null || true
+  }
 }
 
 ensure_audio_server() {

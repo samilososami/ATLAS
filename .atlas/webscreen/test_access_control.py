@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from functools import partial
 from http.server import ThreadingHTTPServer
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from access_control import AccessControl, AccessError
 import server as app
@@ -169,6 +169,20 @@ class HTTPAccessTests(unittest.TestCase):
         for path in ('settings', 'codex-usage', 'wake/profiles', 'clap/profile'):
             self.assertEqual(self.request('/api/' + path, self.b, method='GET')[0], 200)
 
+    def test_internal_usage_is_loopback_only_and_needs_no_browser_lease(self):
+        safe = {'available': True, 'weekly': {'usedPercent': 12}, 'planProfile': 'pro'}
+        with patch.object(app.CODEX_USAGE, 'snapshot', return_value=safe):
+            status, payload = self.request('/api/internal/codex-usage', method='GET')
+        self.assertEqual(status, 200)
+        self.assertEqual(payload, safe)
+
+        handler = object.__new__(app.AtlasScreenHandler)
+        handler.path = '/api/internal/codex-usage'
+        handler.client_address = ('192.0.2.8', 12345)
+        handler.send_json = Mock()
+        handler.do_GET()
+        handler.send_json.assert_called_once_with(403, {'error': 'Ruta interna del broker'})
+
     def test_real_http_direct_takeover(self):
         result = self.request('/api/access/takeover', self.b)
         self.assertEqual(result[0], 200)
@@ -221,7 +235,7 @@ class HTTPAccessTests(unittest.TestCase):
         self.assertEqual(self.request('/api/access/connect', extra={'Origin': 'http://other.test'})[0], 403)
         self.assertEqual(self.request('/api/access/connect', extra={'X-Atlas-Access': ''})[0], 403)
         self.assertEqual(self.request('/api/resident/wait?phase=next', method='GET',
-                                     extra={'Sec-Fetch-Site': 'same-origin'})[0], 403)
+                                     extra={'Sec-Fetch-Site': 'same-origin'})[0], 410)
 
     def test_context_empty_consumes_body_before_next_keepalive_request(self):
         connection = http.client.HTTPConnection(*self.server.server_address, timeout=2)

@@ -1,0 +1,52 @@
+{
+  "$schema": "../role.schema.json",
+  "schemaVersion": 1,
+  "id": "profesores",
+  "displayName": "Profesorado",
+  "description": "Consulta demostrativa de profesores, materias, aulas y horarios.",
+  "default": false,
+  "context": {
+    "sources": [
+      {
+        "path": "../../context/knowledge/IDENTITY.md",
+        "required": true,
+        "mode": "read-only"
+      },
+      {
+        "path": "PROFESORES.md",
+        "required": true,
+        "mode": "read-only"
+      }
+    ],
+    "includeKnowledgeManifest": false,
+    "includeConversation": false
+  },
+  "runtimeFacts": {
+    "currentDateTime": true
+  },
+  "capabilities": {
+    "defaultPolicy": "deny",
+    "allow": [
+      "context.read",
+      "runtime.current_datetime.read"
+    ],
+    "deny": [
+      "shell",
+      "filesystem.read.unlisted",
+      "filesystem.write",
+      "network",
+      "web.search",
+      "conversation.read",
+      "conversation.write",
+      "screen",
+      "audio",
+      "cast",
+      "phone.native",
+      "phone.accessibility",
+      "routines.read",
+      "routines.execute",
+      "routines.write"
+    ],
+    "tools": []
+  }
+}

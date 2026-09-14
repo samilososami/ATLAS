@@ -6,6 +6,11 @@ provides encrypted RPC, an actual resumable PTY, health/usage data and phone
 tools. It runs as the A1 account; that account may have sudo. A pairing key is
 therefore an administration credential, not a shareable invitation.
 
+Quota data comes from the same local Native Broker contract used by WebScreen:
+Codex `app-server` owns OAuth refresh and only a normalised, secret-free quota
+snapshot reaches Companion. Companion does not invoke OpenClaw or read provider
+tokens itself.
+
 ## Install and join the tailnet
 
 ```sh
@@ -178,7 +183,7 @@ A recoverable label, gesture or screenshot failure leaves the active session in
 place so the caller can inspect or correct it with a shorter batch. `stop` is mandatory after the
 requested visual task or when abandoning it, and on cancellation, overall
 timeout, client exit, lost socket/device or lost Accessibility control. Read
-[`ATLAS-ANDROIDUSE.md`](../../openclaw/workspace/atlas-commands/ATLAS-ANDROIDUSE.md)
+[`ATLAS-ANDROIDUSE.md`](../context/knowledge/atlas-commands/ATLAS-ANDROIDUSE.md)
 before using this fallback.
 
 ## Resumable terminal

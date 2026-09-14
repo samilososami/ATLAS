@@ -376,6 +376,8 @@ class AtlasChatTests(unittest.TestCase):
         calls = []
 
         class WebScreen:
+            REALTIME_OFFER_CONTEXT_MAX_CHARS = 48 * 1024
+
             @staticmethod
             def build_realtime_context(**kwargs):
                 calls.append(kwargs)
@@ -384,11 +386,30 @@ class AtlasChatTests(unittest.TestCase):
         chat.webscreen = WebScreen()
         chat.persist = False
         self.assertEqual(chat._build_context(), ("context", {}))
-        self.assertEqual(calls, [{"persistent_context": ""}])
+        self.assertEqual(calls, [{
+            "persistent_context": "",
+            "maximum_chars": 48 * 1024,
+        }])
 
         chat.persist = True
         chat._build_context()
-        self.assertEqual(calls[-1], {"persistent_context": None})
+        self.assertEqual(calls[-1], {
+            "persistent_context": None,
+            "maximum_chars": 48 * 1024,
+        })
+
+    def test_client_resolves_the_atlas_knowledge_directory(self):
+        module = self.load_client()
+        expected = module.ATLAS_HOME / ".atlas" / "context" / "knowledge"
+        with patch.dict(module.os.environ, {}, clear=False):
+            module.os.environ.pop("ATLAS_KNOWLEDGE_DIR", None)
+            self.assertEqual(module.resolve_knowledge_dir(), expected)
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.dict(module.os.environ, {"ATLAS_KNOWLEDGE_DIR": directory}):
+            self.assertEqual(module.resolve_knowledge_dir(), Path(directory))
+            self.assertEqual(module.AtlasCompleter().workspace, Path(directory))
+
+        self.assertNotIn(".openclaw/workspace", CLIENT.read_text())
 
     def test_terminal_overlay_and_installer_contract_are_complete(self):
         terminal = (ROOT / ".atlas/chat/TERMINAL_INSTRUCTIONS.md").read_text()
@@ -406,7 +427,7 @@ class AtlasChatTests(unittest.TestCase):
     def test_command_surface_is_documented(self):
         manuals = (
             ROOT / ".atlas/chat/README.md",
-            ROOT / "openclaw/workspace/atlas-commands/ATLAS-CHAT.md",
+            ROOT / ".atlas/context/knowledge/atlas-commands/ATLAS-CHAT.md",
         )
         for manual in manuals:
             text = manual.read_text()
@@ -419,7 +440,7 @@ class AtlasChatTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             home = root / "home"
-            workspace = home / ".openclaw/workspace"
+            workspace = home / ".atlas/context/knowledge"
             webscreen = home / ".atlas/webscreen"
             backup = home / ".atlas/backups/test"
             (workspace / "atlas-commands").mkdir(parents=True)

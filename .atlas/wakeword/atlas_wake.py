@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import queue
 import re
 import sys
@@ -18,7 +19,7 @@ import wave
 from datetime import UTC, datetime
 from pathlib import Path
 
-ROOT = Path("/home/atlas/.atlas/wakeword")
+ROOT = Path(os.environ.get("ATLAS_WAKE_ROOT", "/home/atlas/.atlas/wakeword"))
 MODELS = ROOT / "models"
 PROFILES = ROOT / "profiles"
 DEFAULT_MODEL = MODELS / "hey_atlas.tflite"

@@ -1,9 +1,25 @@
 # ATLAS runtime
 
-This is the public source layout for `/home/atlas/.atlas`. Your working parts
-live here; OpenClaw keeps your identity and memory in its own workspace.
+This is the public source layout for `/home/atlas/.atlas`. The current runtime,
+identity, knowledge and conversation state all live here; it has no OpenClaw
+runtime dependency.
 
-- `webscreen/`: voice UI, HTTP backend, Gateway bridge, runtime plugin,
+- [`broker/`](broker/README.md): native Python broker around one persistent `codex app-server`.
+  Codex owns OAuth refresh and account quota reads; the broker mints short-lived
+  Realtime client secrets without exposing the persistent credential.
+- `config/`: schema and notes for private provider settings. The live
+  `secrets.json` is mode `0600`, ignored by Git and contains only the allowlisted
+  Tavily and ElevenLabs fields.
+- `context/knowledge/`: versioned identity, manuals and knowledge selected by
+  `manifest.json`. `context/conversation/` contains mutable private conversation
+  state. WebScreen and `atlas-chat` load both layers through the same resolver.
+- [`roles/`](roles/README.md): declarative context and capability profiles. The
+  default `atlas-full` profile describes the complete runtime; `profesores`
+  demonstrates an isolated, read-only role that loads only identity and its
+  fictitious teaching timetable. Dynamic selection/composition is documented
+  as future work and is not presented as an active runtime feature. The role
+  schema and deployment contract are covered by `system/test_roles.py`.
+- `webscreen/`: voice UI, HTTP backend, Native Broker adapter,
   instructions and regression tests. Its README explains the voice pipeline.
   `webscreen/static/new/` contains the minimal animated face presentation at
   `/new/`; [its design guide](webscreen/NEW_DESIGN.md) maps the visual/audio
@@ -55,9 +71,10 @@ live here; OpenClaw keeps your identity and memory in its own workspace.
 No Google Chrome profile, runtime state, recordings, conversation logs, certificates,
 model weights or private generated projects belong in this public tree.
 The starter workspace now lives under `webscreen/starter/` for compatibility
-and diagnostics. The legacy hot listener is disabled. WebScreen now uses direct
-Realtime with Markdown context, shell and Tavily; no conversation is delegated
-to the OpenClaw `main` agent.
+and diagnostics. WebScreen uses direct Realtime with Markdown context, shell
+and Tavily; no conversation is delegated to another agent. The earlier
+OpenClaw/prelude source remains in `Backups/` as historical project evidence;
+any surviving description elsewhere is explicitly labelled historical.
 
 ## Files outside this directory
 
@@ -76,10 +93,27 @@ The repository's `system/` directory mirrors supporting installation targets:
 - `plymouth/atlas/` → `/usr/share/plymouth/themes/atlas/`: the native boot theme.
 
 The executable wrappers live in `atlas-commands/` and belong in
-`/usr/local/bin/`, available to both the normal user and root. These are source
-files for the existing ATLAS OS installation, not a universal installer.
-Review paths, the `sami` service user and `/home/atlas` home before installing.
-Never overwrite a live user's files without a focused backup.
+`/usr/local/bin/`, available to both the normal user and root. Focused,
+idempotent installers now cover the runtime surfaces used by the coordinated
+deploy; each preserves existing private state and creates a scoped backup when
+it actually replaces a file. `ATLAS_HOME` and `ATLAS_USER` remain explicit
+overrides for non-default installations.
+
+Install or update Codex CLI, the Native Broker and the `atlas-broker` wrapper
+without replacing an existing OAuth store with
+`sudo bash system/install-native-broker.sh`. Validate `atlas-broker health`,
+`usage` and `session` before removing any previous authentication source.
+
+`system/deploy-runtime-update.sh` also installs the declarative role manifests
+under `/home/atlas/.atlas/roles`; copying them does not activate a role switch.
+Until a selector is implemented, WebScreen and `atlas-chat` continue to load
+the complete knowledge manifest and private conversation layer described above.
+
+Install or update the shared conversation controller with
+`sudo bash system/install-context.sh`. It places the private helper under
+`/usr/local/lib/atlas` and the `atlas-context` wrapper under `/usr/local/bin`;
+the wrapper works for the normal runtime account and root while keeping writes
+owned by the runtime account. The coordinated deploy invokes this installer.
 
 Install or update the text-only Realtime client with
 `sudo bash system/install-chat.sh`. The focused installer copies `atlas-chat`
@@ -91,6 +125,12 @@ content.
 Install or update the routine engine with `sudo bash system/install-routines.sh`.
 It installs `atlas-routines` for the normal user and root, copies the engine and
 manuals, and deliberately preserves an existing live `ROUTINES.md`.
+
+The optional desktop/cast, Spotify and local wake-word laboratory are installed
+with `system/install-desktop.sh`, `system/install-spotify.sh` and
+`system/install-wake.sh`. The wake installer never starts a listener, and all
+three retain runtime profiles, browser state, pairing/authentication data and
+other machine-local content.
 
 Install the focused Bluetooth/ADB reliability fixes with
 `sudo bash system/install-device-connections.sh`. It backs up the affected
@@ -185,25 +225,27 @@ claiming the full startup sequence has been visually verified.
 
 ## WebScreen integration
 
-WebScreen uses Python and Node.js plus the installed OpenClaw Gateway SDK for
-the configured authentication/reservation path. The conversation itself runs
-directly on Realtime with Markdown context and explicit tools; it is not
-delegated to the OpenClaw `main` agent. `webscreen/openclaw-plugin` and the hot
-listener belong to the archived pipeline, not a service to enable as a repair.
-Authenticate OpenClaw locally; never copy another installation's OAuth session,
-Gateway pairing or API keys. The bridge needs the documented operator scopes
-and device approval on first connection.
+WebScreen uses Python and browser JavaScript. Its `NativeBroker` adapter keeps
+one `codex app-server` process alive, lets Codex refresh the local ChatGPT OAuth,
+normalises the account quota and requests a short-lived client secret for every
+Realtime WebRTC session. The browser receives only that ephemeral secret. It
+never receives `~/.codex/auth.json`, provider API keys or account identifiers.
 
-The HTTP service starts independently of Gateway readiness and exposes a
-nonblocking health snapshot while bridge recovery happens in the background.
+The HTTP service starts independently of provider readiness and exposes a
+nonblocking health snapshot while the Native Broker recovers in the background.
 HTTP reachable does not mean Realtime is ready. Each browser and Companion
 session has its own ephemeral API lease, so the A1 kiosk and Android may use
 Realtime at the same time; opening one never disconnects the other. A transient
 lost heartbeat only expires its own lease. Transport recovery uses bounded waits
 and never replays a possibly executed action.
 
+The live context is `/home/atlas/.atlas/context/knowledge` plus private mutable
+state in `/home/atlas/.atlas/context/conversation`. Tavily and ElevenLabs are
+read only from `/home/atlas/.atlas/config/secrets.json`; the file must be a
+regular, non-symlinked `0600` file. OAuth stays in Codex's own private store.
+
 See [`webscreen/README.md`](webscreen/README.md) for implementation details and
-[`ATLAS-CONNECTIONS.md`](../openclaw/workspace/ATLAS-CONNECTIONS.md) for the
+[`ATLAS-CONNECTIONS.md`](context/knowledge/ATLAS-CONNECTIONS.md) for the
 cross-component map, exact recovery timers, diagnosis and validation boundaries.
 
 The current HTTP interface has privileged agent access and no browser login.

@@ -1,0 +1,40 @@
+{
+  "$schema": "../role.schema.json",
+  "schemaVersion": 1,
+  "id": "atlas-full",
+  "displayName": "ATLAS",
+  "description": "Perfil completo y predeterminado del ATLAS personal.",
+  "default": true,
+  "context": {
+    "knowledgeManifest": "../../context/knowledge/manifest.json",
+    "conversationDirectory": "../../context/conversation",
+    "channelInstructions": "../../webscreen/REALTIME_INSTRUCTIONS.md",
+    "includeConversation": true
+  },
+  "runtimeFacts": {
+    "currentDateTime": true
+  },
+  "capabilities": {
+    "defaultPolicy": "allow",
+    "allow": [
+      "realtime.voice",
+      "realtime.text",
+      "conversation.read",
+      "conversation.write",
+      "shell",
+      "filesystem.read",
+      "filesystem.write",
+      "network",
+      "web.search",
+      "screen",
+      "audio",
+      "cast",
+      "phone.native",
+      "phone.accessibility",
+      "routines.read",
+      "routines.execute",
+      "routines.write"
+    ],
+    "deny": []
+  }
+}

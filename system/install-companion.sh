@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install from this checkout, with dated backups. Does not alter voice processing.
 set -euo pipefail
-if (( EUID != 0 )); then exec sudo -- "$0" "$@"; fi
+if (( EUID != 0 )); then exec sudo --preserve-env=ATLAS_HOME,ATLAS_USER -- "$0" "$@"; fi
 repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 atlas_home=${ATLAS_HOME:-/home/atlas}
 test -d "$atlas_home" || { echo 'ATLAS_HOME must be the existing Pi account home'; exit 1; }

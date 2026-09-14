@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-HELPER="/usr/local/lib/atlas/atlas-contextctl"
+ATLAS_HOME=${ATLAS_HOME:-/home/atlas}
+ATLAS_USER=${ATLAS_USER:-$(stat -c %U "$ATLAS_HOME" 2>/dev/null || id -un)}
+HELPER=${ATLAS_CONTEXT_HELPER:-/usr/local/lib/atlas/atlas-contextctl}
+CONVERSATION_DIR=${ATLAS_CONVERSATION_DIR:-$ATLAS_HOME/.atlas/context/conversation}
 
 usage() {
   cat <<'USAGE'
@@ -11,20 +14,22 @@ usage: atlas-context <status|empty|compact>
   empty    erase only conversational context and request a fresh WebScreen session
   compact  request a semantic compaction from the next active WebScreen session
 
-Crucial Markdown context and OpenClaw memory are never modified.
+Crucial Markdown knowledge in .atlas/context/knowledge is never modified.
 USAGE
 }
 
-run_as_sami() {
-  if [ "$(id -u)" -eq 0 ]; then
-    runuser -u sami -- "$HELPER" "$@"
+run_as_atlas() {
+  if [ "$(id -u)" -eq 0 ] && [ "$ATLAS_USER" != root ]; then
+    runuser -u "$ATLAS_USER" -- env \
+      ATLAS_CONVERSATION_DIR="$CONVERSATION_DIR" \
+      "$HELPER" "$@"
   else
-    "$HELPER" "$@"
+    env ATLAS_CONVERSATION_DIR="$CONVERSATION_DIR" "$HELPER" "$@"
   fi
 }
 
 case "${1:-status}" in
-  status|empty|compact) run_as_sami "$1" ;;
+  status|empty|compact) run_as_atlas "$1" ;;
   -h|--help|help) usage ;;
   *) usage >&2; exit 2 ;;
 esac

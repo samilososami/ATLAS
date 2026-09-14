@@ -3,7 +3,7 @@
 set -Eeuo pipefail
 
 if (( EUID != 0 )); then
-  exec sudo -- "$0" "$@"
+  exec sudo --preserve-env=ATLAS_HOME,ATLAS_USER,ATLAS_DEPLOY_LOG,ATLAS_DEPLOY_RESULT -- "$0" "$@"
 fi
 
 repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
@@ -44,31 +44,46 @@ install_context_doc() {
   install -m 644 -o "$owner" -g "$group" "$source" "$target"
 }
 
-workspace="$atlas_home/.openclaw/workspace"
-install_context_doc "$repo/.atlas/webscreen/REALTIME_INSTRUCTIONS.md" "$atlas_home/.atlas/webscreen/REALTIME_INSTRUCTIONS.md"
-install_context_doc "$repo/openclaw/workspace/AGENTS.md" "$workspace/AGENTS.md"
-install_context_doc "$repo/openclaw/workspace/ATLAS-CONNECTIONS.md" "$workspace/ATLAS-CONNECTIONS.md"
-install_context_doc "$repo/openclaw/workspace/ENVIRONMENT.md" "$workspace/ENVIRONMENT.md"
-install_context_doc "$repo/openclaw/workspace/README.md" "$workspace/README.md"
-install_context_doc "$repo/openclaw/workspace/TOOLS.md" "$workspace/TOOLS.md"
-install_context_doc "$repo/openclaw/workspace/atlas-commands/ATLAS-WEBSCREEN.md" "$workspace/atlas-commands/ATLAS-WEBSCREEN.md"
-install_context_doc "$repo/openclaw/workspace/atlas-commands/ATLAS-CAST.md" "$workspace/atlas-commands/ATLAS-CAST.md"
-install_context_doc "$repo/openclaw/workspace/atlas-commands/ATLAS-DESKTOP.md" "$workspace/atlas-commands/ATLAS-DESKTOP.md"
-install_context_doc "$repo/openclaw/workspace/TDR.md" "$workspace/TDR.md"
-install_context_doc "$repo/atlas-commands/README.md" "$workspace/atlas-commands/README.md"
-
-if [[ ! -f /usr/local/bin/atlas-cast ]] || ! cmp -s -- "$repo/atlas-commands/atlas-cast" /usr/local/bin/atlas-cast; then
-  if [[ -f /usr/local/bin/atlas-cast ]]; then
-    install -d -m 700 -o "$owner" -g "$group" "$backup/usr/local/bin"
-    cp -p -- /usr/local/bin/atlas-cast "$backup/usr/local/bin/atlas-cast"
-  fi
-  install -m 755 "$repo/atlas-commands/atlas-cast" /usr/local/bin/atlas-cast
-fi
+knowledge="$atlas_home/.atlas/context/knowledge"
+roles="$atlas_home/.atlas/roles"
+install -d -m 700 -o "$owner" -g "$group" \
+  "$atlas_home/.atlas/context/conversation" \
+  "$atlas_home/.atlas/runtime/tmp" \
+  "$atlas_home/.atlas/config"
+channel_instructions=$(
+  python3 "$repo/system/list-context-manifest-files.py" \
+    --channel-instructions "$repo/.atlas/context/knowledge"
+)
+install_context_doc \
+  "$repo/.atlas/webscreen/$channel_instructions" \
+  "$atlas_home/.atlas/webscreen/$channel_instructions"
+canonical_context=$(
+  python3 "$repo/system/list-context-manifest-files.py" \
+    "$repo/.atlas/context/knowledge"
+)
+while IFS= read -r relative; do
+  [[ -n $relative ]] || continue
+  install_context_doc \
+    "$repo/.atlas/context/knowledge/$relative" \
+    "$knowledge/$relative"
+done <<<"$canonical_context"
+install_context_doc "$repo/atlas-commands/README.md" "$knowledge/atlas-commands/README.md"
+install_context_doc "$repo/.atlas/roles/README.md" "$roles/README.md"
+install_context_doc "$repo/.atlas/roles/role.schema.json" "$roles/role.schema.json"
+install_context_doc "$repo/.atlas/roles/atlas-full/role.json" "$roles/atlas-full/role.json"
+install_context_doc "$repo/.atlas/roles/profesores/role.json" "$roles/profesores/role.json"
+install_context_doc "$repo/.atlas/roles/profesores/PROFESORES.md" "$roles/profesores/PROFESORES.md"
 
 ATLAS_HOME="$atlas_home" bash "$repo/system/install-routines.sh"
+ATLAS_HOME="$atlas_home" ATLAS_USER="$owner" bash "$repo/system/install-context.sh"
+ATLAS_HOME="$atlas_home" ATLAS_USER="$owner" bash "$repo/system/install-native-broker.sh"
 ATLAS_HOME="$atlas_home" bash "$repo/system/install-webscreen-resilience.sh" --restart
 ATLAS_HOME="$atlas_home" bash "$repo/system/install-chat.sh"
 ATLAS_HOME="$atlas_home" bash "$repo/system/install-companion.sh"
+ATLAS_HOME="$atlas_home" bash "$repo/system/install-device-connections.sh"
+ATLAS_HOME="$atlas_home" ATLAS_USER="$owner" bash "$repo/system/install-desktop.sh"
+ATLAS_HOME="$atlas_home" ATLAS_USER="$owner" bash "$repo/system/install-spotify.sh"
+ATLAS_HOME="$atlas_home" ATLAS_USER="$owner" bash "$repo/system/install-wake.sh"
 
 test "$(tr -d '[:space:]' <"$atlas_home/.atlas/screen/mode")" = "$mode_before"
 test "$(systemctl is-active atlas-screen-kiosk.service || true)" = "$kiosk_before"

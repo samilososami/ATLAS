@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "channelInstructions": "REALTIME_INSTRUCTIONS.md",
+  "runtimeLocalPaths": [
+    "CUSTOM_INFO.md"
+  ],
+  "groups": [
+    {
+      "name": "core",
+      "paths": [
+        "IDENTITY.md",
+        "SOUL.md",
+        "USER.md",
+        "TDR.md",
+        "TOOLS.md"
+      ]
+    },
+    {
+      "name": "memory",
+      "paths": [
+        "MEMORY.md",
+        "NOTES.md",
+        "CUSTOM_INFO.md"
+      ]
+    },
+    {
+      "name": "conversation",
+      "virtual": "conversation",
+      "maxCharsWhenBudgeted": 6144
+    },
+    {
+      "name": "master-map",
+      "paths": [
+        "AGENTS.md"
+      ]
+    },
+    {
+      "name": "devices",
+      "virtual": "adb",
+      "maxCharsWhenBudgeted": 6144
+    },
+    {
+      "name": "knowledge",
+      "globs": [
+        "*.md"
+      ]
+    },
+    {
+      "name": "manuals",
+      "globs": [
+        "atlas-commands/**/*.md"
+      ]
+    },
+    {
+      "name": "additional",
+      "globs": [
+        "**/*.md"
+      ]
+    }
+  ]
+}

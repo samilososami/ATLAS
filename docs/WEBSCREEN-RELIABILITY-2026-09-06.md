@@ -1,5 +1,13 @@
 # WebScreen reliability — verification, 6 September 2026
 
+> Historical verification snapshot. It records the bridge that existed on 6
+> September. The current runtime uses the ATLAS Native Broker with persistent
+> `codex app-server`, direct Realtime and `.atlas/context`; OpenClaw is no longer
+> a runtime dependency. Keep the measurements below as evidence of that test,
+> not as the current architecture map. In particular, current voice turns
+> require a fresh local wake word after each response; the follow-up window
+> measured below belongs only to this historical snapshot.
+
 ## Scope and findings
 
 Reviewed 7,373 historical Realtime events plus current HTTP, system, audio and
@@ -84,11 +92,11 @@ node --test .atlas/webscreen/test_*.cjs
 python3 -m unittest discover -s system -p 'test_*.py'
 ```
 
-See [the operational map](../openclaw/workspace/ATLAS-CONNECTIONS.md),
+See [the current operational map](../.atlas/context/knowledge/ATLAS-CONNECTIONS.md),
 [WebScreen](../.atlas/webscreen/README.md) and
-[audio](../openclaw/workspace/atlas-commands/ATLAS-AUDIO.md). Focused installers
+[audio](../.atlas/context/knowledge/atlas-commands/ATLAS-AUDIO.md). Focused installers
 create dated backups. Apply private documentation changes as narrow patches,
-never overwrite a live private workspace with public templates. Reload the
+never overwrite live private context with public templates. Reload the
 actual kiosk after a deployment and verify session-ready logs separately from
 the service's active status. If Chrome itself stalls on reload, restart only
 the kiosk after confirming there is no live action to interrupt.

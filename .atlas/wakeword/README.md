@@ -5,6 +5,9 @@ not yet the production listener: WebScreen keeps its current Chrome-based
 detector until the replacement passes real recordings and false-activation
 tests.
 
+Install or refresh it with `sudo bash system/install-wake.sh`. The installer
+keeps existing models and private profiles, and never enables a listener.
+
 ## Current validation model
 
 `hey_atlas.tflite` is an openWakeWord-compatible community model for **"Hey

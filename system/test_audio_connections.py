@@ -142,6 +142,11 @@ sink_for_bt_mac() { echo "bluez.$1"; }
         self.assertNotIn('systemctl restart bluetooth', installer)
         self.assertNotIn('restart pipewire', installer)
 
+    def test_audio_runtime_is_owned_by_atlas_not_openclaw(self):
+        self.assertIn('.atlas/runtime/tmp', SOURCE)
+        self.assertNotIn('.openclaw', SOURCE)
+        self.assertIn('ATLAS_AUDIO_USER', SOURCE)
+
 
 if __name__ == '__main__':
     unittest.main()

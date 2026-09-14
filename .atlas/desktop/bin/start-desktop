@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="/home/atlas/.atlas/desktop"
+ATLAS_HOME=${ATLAS_HOME:-/home/atlas}
+ROOT="$ATLAS_HOME/.atlas/desktop"
 DISPLAY_NUM="${ATLAS_DESKTOP_DISPLAY_NUM:-1}"
 export DISPLAY=":${DISPLAY_NUM}"
 WIDTH="${ATLAS_DESKTOP_WIDTH:-1920}"
@@ -11,7 +12,7 @@ WALLPAPER="$ROOT/wallpapers/atlas-wallpaper.png"
 
 mkdir -p "$ROOT/logs" "$ROOT/runtime" "$ROOT/screenshots" "$ROOT/chrome-profile"
 chmod 700 "$ROOT/chrome-profile"
-export HOME="/home/atlas"
+export HOME="$ATLAS_HOME"
 export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-$ROOT/runtime/xdg}"
 mkdir -p "$XDG_RUNTIME_DIR"
 chmod 700 "$XDG_RUNTIME_DIR"

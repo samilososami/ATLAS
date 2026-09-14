@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Install atlas-chat with dated backups; safe to invoke as sami or root.
 set -euo pipefail
-if (( EUID != 0 )); then exec sudo -- "$0" "$@"; fi
+if (( EUID != 0 )); then exec sudo --preserve-env=ATLAS_HOME,ATLAS_USER -- "$0" "$@"; fi
 
 repo=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 atlas_home=${ATLAS_HOME:-/home/atlas}
@@ -20,7 +20,7 @@ install -d -m 700 -o "$atlas_user" -g "$atlas_group" "$backup"
 for path in /usr/local/bin/atlas-chat "$atlas_home/.atlas/chat/atlas_chat.py" \
   "$atlas_home/.atlas/chat/TERMINAL_INSTRUCTIONS.md" \
   "$atlas_home/.atlas/chat/README.md" "$atlas_home/.atlas/chat/requirements.txt" \
-  "$atlas_home/.openclaw/workspace/atlas-commands/ATLAS-CHAT.md"; do
+  "$atlas_home/.atlas/context/knowledge/atlas-commands/ATLAS-CHAT.md"; do
   if [[ -f $path ]]; then
     cp --parents -- "$path" "$backup/"
   fi
@@ -37,10 +37,10 @@ install -m 644 -o "$atlas_user" -g "$atlas_group" \
   "$repo/.atlas/chat/requirements.txt" "$atlas_home/.atlas/chat/requirements.txt"
 install -m 755 "$repo/atlas-commands/atlas-chat" /usr/local/bin/atlas-chat
 
-doc_dir="$atlas_home/.openclaw/workspace/atlas-commands"
+doc_dir="$atlas_home/.atlas/context/knowledge/atlas-commands"
 install -d -m 755 -o "$atlas_user" -g "$atlas_group" "$doc_dir"
 install -m 644 -o "$atlas_user" -g "$atlas_group" \
-  "$repo/openclaw/workspace/atlas-commands/ATLAS-CHAT.md" "$doc_dir/ATLAS-CHAT.md"
+  "$repo/.atlas/context/knowledge/atlas-commands/ATLAS-CHAT.md" "$doc_dir/ATLAS-CHAT.md"
 python3 "$repo/system/install-chat-docs.py" "$repo" "$atlas_home" "$backup"
 
 printf 'atlas-chat installed. Backup: %s\n' "$backup"

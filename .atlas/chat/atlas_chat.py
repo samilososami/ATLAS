@@ -54,7 +54,14 @@ COMMANDS = {
     "/compact": "Alternar vista compacta de herramientas",
     "/quit": "Salir de ATLAS",
 }
-WORKSPACE = ATLAS_HOME / ".openclaw/workspace"
+
+
+def resolve_knowledge_dir() -> Path:
+    configured = os.environ.get("ATLAS_KNOWLEDGE_DIR")
+    return Path(configured).expanduser() if configured else ATLAS_HOME / ".atlas" / "context" / "knowledge"
+
+
+WORKSPACE = resolve_knowledge_dir()
 MENTION = re.compile(r'(?<!\S)@(?:"([^"\n]*)"|([^\s]+))')
 
 PHONE_OPERATIONS = [
@@ -142,8 +149,8 @@ def compact_text(value: str, width: int, rows: int) -> tuple[str, bool]:
 
 
 class AtlasCompleter(Completer):
-    def __init__(self, workspace: Path = WORKSPACE):
-        self.workspace = workspace
+    def __init__(self, workspace: Path | None = None):
+        self.workspace = Path(workspace) if workspace is not None else resolve_knowledge_dir()
 
     def get_completions(self, document, complete_event):
         before = document.text_before_cursor
@@ -180,8 +187,9 @@ class AtlasCompleter(Completer):
                              display_meta='carpeta' if candidate.is_dir() else 'archivo local')
 
 
-def resolve_mentions(prompt: str, workspace: Path = WORKSPACE) -> str:
+def resolve_mentions(prompt: str, workspace: Path | None = None) -> str:
     """Resolve explicit references; content is read only through model tools."""
+    workspace = Path(workspace) if workspace is not None else resolve_knowledge_dir()
     def replace(match):
         raw = match.group(1) or match.group(2)
         path = Path(raw).expanduser()
@@ -523,8 +531,15 @@ class AtlasChat:
         os.chmod(LOG_DIR, 0o700)
 
     def _build_context(self) -> tuple[str, dict[str, Any]]:
+        # Realtime counts channel instructions and tool schemas against the
+        # same 65,536-token window.  An unbounded knowledge snapshot can fit
+        # on disk yet overflow only after those fixed inputs are added (the
+        # migrated A1 context reached 67,519 tokens).  Use the exact compact,
+        # priority-ordered primer used by WebScreen's initial WebRTC offer;
+        # AGENTS.md keeps the complete knowledge tree reachable on demand.
         return self.webscreen.build_realtime_context(
             persistent_context=None if self.persist else "",
+            maximum_chars=self.webscreen.REALTIME_OFFER_CONTEXT_MAX_CHARS,
         )
 
     @staticmethod
@@ -571,7 +586,7 @@ class AtlasChat:
 
         with self.console.status("[dim]Conectando con ATLAS…[/]", spinner="dots"):
             try:
-                reservation = self.webscreen.BRIDGE.create_talk_session(params)
+                reservation = self.webscreen.BROKER.create_talk_session(params)
                 context, self.context_stats = self._build_context()
                 instructions = self.webscreen.read_realtime_instructions()
                 terminal_instructions = self._terminal_instructions()
@@ -1211,7 +1226,7 @@ class AtlasChat:
     def shutdown(self) -> None:
         self.close()
         try:
-            self.webscreen.BRIDGE.stop()
+            self.webscreen.BROKER.stop()
         except Exception:
             pass
 
@@ -1326,7 +1341,7 @@ def main(argv: list[str] | None = None) -> int:
                 console.print(f"[grey58]{LOG_DIR}[/]")
                 continue
             if command == '/files':
-                console.print(Text(f'Referencias @ relativas a {WORKSPACE}\n'
+                console.print(Text(f'Referencias @ relativas a {resolve_knowledge_dir()}\n'
                                    'También puedes usar una ruta absoluta. Se envía la ruta, no se adjunta su contenido.', style='grey70'))
                 continue
             if command == '/compact':

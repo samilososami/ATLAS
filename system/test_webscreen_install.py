@@ -7,7 +7,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-PUBLIC = ('server.py', 'access_control.py', 'wifi_control.py', 'gateway_bridge.mjs', 'README.md',
+PUBLIC = ('server.py', 'access_control.py', 'wifi_control.py', 'codex_usage.py', 'README.md',
           'NEW_DESIGN.md', 'CLAP.md', 'static/access.js', 'static/clap.js',
           'static/app.js', 'static/wifi.js', 'static/index.html', 'static/navigation.js', 'static/realtime.js', 'static/styles.css',
           'static/new/face.css', 'static/new/face.js', 'static/new/audio.js',
@@ -60,7 +60,8 @@ class WebScreenInstaller(unittest.TestCase):
                 file = runtime / path
                 self.assertEqual(file.read_text(), 'public fixture: ' + path)
                 self.assertEqual(file.stat().st_mode & 0o777, 0o644)
-            backup = next((home / '.atlas/backups').iterdir())
+            backup = next(path for path in (home / '.atlas/backups').iterdir()
+                          if path.name.startswith('webscreen-resilience-'))
             self.assertEqual((backup / 'static/new/face.js').read_text(), 'previous face')
             helper = system / 'usr/local/libexec/atlas-screen-browser-watchdog.cjs'
             self.assertTrue(helper.is_file())
