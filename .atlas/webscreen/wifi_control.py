@@ -18,6 +18,7 @@ class WifiControlError(RuntimeError):
 
 
 Command = Callable[[list[str], int], tuple[int, str, str]]
+SecretCommand = Callable[[list[str], str, int], tuple[int, str, str]]
 WIFI_LOCK = threading.RLock()
 
 
@@ -53,6 +54,31 @@ def run_nmcli(arguments: list[str], timeout: int = 20) -> tuple[int, str, str]:
         completed = subprocess.run(
             command,
             stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            check=False,
+            env={**os.environ, "LC_ALL": "C"},
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return 127, "", str(error)
+    return completed.returncode, completed.stdout.strip(), completed.stderr.strip()
+
+
+def run_nmcli_secret(arguments: list[str], secret: str, timeout: int = 45) -> tuple[int, str, str]:
+    """Answer nmcli's password prompt through stdin, never argv or environment."""
+    executable = shutil.which("nmcli") or "/usr/bin/nmcli"
+    command = [executable, "--ask", *arguments]
+    if os.geteuid() != 0:
+        sudo = shutil.which("sudo") or "/usr/bin/sudo"
+        command = [sudo, "-n", *command]
+    try:
+        completed = subprocess.run(
+            command,
+            input=f"{secret}\n",
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -129,7 +155,12 @@ def scan_networks(command: Command = run_nmcli, *, rescan: bool = True) -> dict:
     return {"interface": interface, "active": active, "networks": networks}
 
 
-def connect_network(ssid: object, password: object, command: Command = run_nmcli) -> dict:
+def connect_network(
+    ssid: object,
+    password: object,
+    command: Command = run_nmcli,
+    secret_command: SecretCommand | None = None,
+) -> dict:
     if not isinstance(ssid, str):
         raise WifiControlError("Selecciona una red Wi-Fi válida")
     ssid = ssid.strip()
@@ -145,9 +176,17 @@ def connect_network(ssid: object, password: object, command: Command = run_nmcli
         arguments = ["--wait", "40", "device", "wifi", "connect", ssid, "ifname", interface]
         if password:
             # nmcli stores the secret in NetworkManager's root-only connection
-            # profile. The WebScreen never logs the request body or the command.
-            arguments.extend(["password", password])
-        code, output, error = command(arguments, 45)
+            # profile. --ask reads it from stdin, outside argv, environment,
+            # sudo's command journal and the WebScreen response.
+            if secret_command is not None:
+                code, output, error = secret_command(arguments, password, 45)
+            elif command is run_nmcli:
+                code, output, error = run_nmcli_secret(arguments, password, 45)
+            else:
+                # Dependency-injected unit runners receive the public argv only.
+                code, output, error = command(arguments, 45)
+        else:
+            code, output, error = command(arguments, 45)
         if code:
             # nmcli may echo an SSID but must never echo the submitted secret.
             message = error or output or "No se pudo conectar a la red"

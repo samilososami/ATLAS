@@ -39,8 +39,21 @@ class WifiControlTests(unittest.TestCase):
         with self.assertRaisesRegex(wifi.WifiControlError, "bad password"):
             wifi.connect_network("test", "12345678", fake)
         connect = next(arguments for arguments, _ in fake.calls if "connect" in arguments)
-        self.assertEqual(connect[-2:], ["password", "12345678"])
+        self.assertNotIn("12345678", connect)
+        self.assertNotIn("password", connect)
         self.assertNotIn("bash", connect)
+
+    def test_real_secret_runner_receives_password_outside_public_argv(self):
+        captured = {}
+
+        def secret_runner(arguments, secret, timeout):
+            captured.update(arguments=arguments, secret=secret, timeout=timeout)
+            return 1, "", f"authentication failed for {secret}"
+
+        with self.assertRaisesRegex(wifi.WifiControlError, "authentication failed for ••••"):
+            wifi.connect_network("test", "12345678", FakeNmcli(), secret_runner)
+        self.assertEqual(captured["secret"], "12345678")
+        self.assertNotIn("12345678", captured["arguments"])
 
     def test_connect_returns_a_fresh_snapshot_without_deadlocking(self):
         result = wifi.connect_network("casa:5G", "12345678", FakeNmcli())
