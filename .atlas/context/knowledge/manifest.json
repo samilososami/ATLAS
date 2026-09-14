@@ -2,7 +2,8 @@
   "version": 1,
   "channelInstructions": "REALTIME_INSTRUCTIONS.md",
   "runtimeLocalPaths": [
-    "CUSTOM_INFO.md"
+    "CUSTOM_INFO.md",
+    "PROFESORES.md"
   ],
   "groups": [
     {

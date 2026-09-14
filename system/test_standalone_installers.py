@@ -66,6 +66,7 @@ class StandaloneInstallerTests(unittest.TestCase):
         listed = set(result.stdout.splitlines())
         manifest = json.loads((knowledge / "manifest.json").read_text(encoding="utf-8"))
         runtime_local = set(manifest["runtimeLocalPaths"])
+        self.assertEqual(runtime_local, {"CUSTOM_INFO.md", "PROFESORES.md"})
         expected = {"manifest.json"}
         for group in manifest["groups"]:
             for relative in group.get("paths", []):
