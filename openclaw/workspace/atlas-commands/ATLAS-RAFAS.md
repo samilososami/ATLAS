@@ -61,5 +61,5 @@ kernel, broken USB/display hardware or dead systemd. No software cape defeats
 a disconnected power cable.
 
 The public `misc/rafas/README.md` documents its source and installation. The
-related `misc/atlas-touch-type/README.md` documents ATLAS TOUCH TYPE, the touch
+related `misc/atlas-touch-type/README.md` documents TECLAO, the touch
 keyboard used by the separate graphical terminal, not this native console.

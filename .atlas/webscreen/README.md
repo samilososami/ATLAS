@@ -18,7 +18,24 @@ for switching in the same tab, with the ordinary access revalidation after
 navigation. `atlas-webscreen status` lists both sets of LAN URLs.
 The original `/` and `--atlas`
 remain the debugging interface. Both render the same underlying DOM and load
-the same access, Realtime, wake, clap, settings, quota and context controllers.
+the same access, Realtime, wake, clap, WiFi, settings, quota and context controllers.
+
+## Offline display and WiFi recovery
+
+The HTTP server, `/` debugging interface, `/new/` face and every CSS, JavaScript,
+font and image needed to draw them are local. They therefore start and render
+without Internet or an associated WiFi network. The systemd units wait for
+NetworkManager itself, not `network-online.target`, so a missing uplink does not
+hold the recovery UI behind the online timeout. Realtime, provider-backed speech
+recognition, web search and remote clients still need the relevant connectivity.
+
+Both tool drawers expose **WiFi**. On the physical loopback kiosk only, **Escanear**
+asks NetworkManager for nearby SSIDs. Selecting a network opens the integrated
+**TECLAO**; the password is sent once to the local backend, is never retained by
+the browser or logged, and is stored only in NetworkManager's protected profile.
+Remote/LAN browser tokens cannot call these two mutation endpoints. The static
+page remains available after a failed connection, so the user can retry or pick
+another network without SSH.
 
 The new design lives in `static/new/`: blue vector face, quiet header, occasional
 blinks, wake-to-waveform transition and audio-driven mouth. Transcriptions and

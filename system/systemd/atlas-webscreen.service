@@ -1,7 +1,7 @@
 [Unit]
 Description=ATLAS WebScreen local web interface
-Wants=network-online.target
-After=network-online.target
+Wants=NetworkManager.service
+After=NetworkManager.service
 
 [Service]
 Type=simple

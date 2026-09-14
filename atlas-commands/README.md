@@ -222,7 +222,7 @@ atlas-screen enable --last
 atlas-screen disable
 ```
 
-El modo terminal abre una shell root Zsh con autocompletado, highlighting, zoom y ATLAS TOUCH TYPE. Doble toque abre el teclado; un toque lo cierra; dos dedos desplazan el historial. El zoom cambia los caracteres y reajusta las líneas sin redimensionar la ventana. Requiere las configuraciones de [`system`](../system) y los helpers de [`misc/atlas-touch-type`](../misc/atlas-touch-type).
+El modo terminal abre una shell root Zsh con autocompletado, highlighting, zoom y TECLAO. Doble toque abre el teclado; un toque lo cierra; dos dedos desplazan el historial. El zoom cambia los caracteres y reajusta las líneas sin redimensionar la ventana. Requiere las configuraciones de [`system`](../system) y los helpers de [`misc/atlas-touch-type`](../misc/atlas-touch-type).
 
 El modo `--rafas` abre la consola nativa de recuperación, blanca y sin entorno gráfico, como root en `/home/atlas`. También se activa manteniendo Ctrl y pulsando W, O, W en un teclado USB. Está disponible incluso con la pantalla apagada, pero sigue necesitando un kernel y hardware funcionales. Esta versión no pide contraseña local. [Funcionamiento y límites](../misc/rafas/README.md).
 

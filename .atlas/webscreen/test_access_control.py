@@ -158,6 +158,7 @@ class HTTPAccessTests(unittest.TestCase):
 
     def test_all_control_routes_accept_each_live_client_before_work(self):
         for path in ('text', 'voice', 'starter', 'cancel', 'settings', 'tts', 'client-event', 'wake/sample', 'clap/profile',
+                     'wifi/scan', 'wifi/connect',
                      'tts/stream-ticket', 'realtime/consult',
                      'realtime/shell', 'realtime/web-search', 'realtime/event'):
             for token, status in ((self.b, None), ('', 401)):
@@ -190,6 +191,31 @@ class HTTPAccessTests(unittest.TestCase):
             '192.168.1.50', '192.168.1.142:5000', 'atlas-a1',
         ))
         self.assertTrue(app.is_physical_a1_client('127.0.0.1', 'localhost:5000'))
+
+    def test_wifi_routes_only_operate_for_the_physical_kiosk(self):
+        kiosk = self.request('/api/access/connect', payload={'clientKind': 'atlas-a1'},
+                             extra={'Host': 'localhost'})[1]['token']
+        snapshot = {'interface': 'wlan0', 'active': 'Casa', 'networks': [
+            {'ssid': 'Casa', 'signal': 88, 'security': 'WPA2', 'secured': True, 'active': True},
+        ]}
+        with patch.object(app.wifi_control, 'scan_networks', return_value=snapshot) as scan:
+            status, payload = self.request('/api/wifi/scan', kiosk, extra={'Host': 'localhost'})
+            self.assertEqual(status, 200)
+            self.assertEqual(payload['active'], 'Casa')
+            scan.assert_called_once_with()
+        self.assertEqual(self.request('/api/wifi/scan', self.b)[0], 403)
+
+    def test_wifi_connect_passes_credentials_without_returning_them(self):
+        kiosk = self.request('/api/access/connect', payload={'clientKind': 'atlas-a1'},
+                             extra={'Host': 'localhost'})[1]['token']
+        snapshot = {'connected': True, 'interface': 'wlan0', 'active': 'test', 'networks': []}
+        with patch.object(app.wifi_control, 'connect_network', return_value=snapshot) as connect:
+            status, payload = self.request('/api/wifi/connect', kiosk,
+                {'ssid': 'test', 'password': 'private-value'}, extra={'Host': 'localhost'})
+            self.assertEqual(status, 200)
+            self.assertTrue(payload['connected'])
+            self.assertNotIn('private-value', json.dumps(payload))
+            connect.assert_called_once_with('test', 'private-value')
 
     def test_cross_origin_and_browser_internal_route(self):
         self.assertEqual(self.request('/api/access/connect', extra={'Origin': 'http://other.test'})[0], 403)

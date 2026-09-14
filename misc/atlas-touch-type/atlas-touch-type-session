@@ -18,7 +18,7 @@ pending_tap_x=0
 pending_tap_y=0
 
 keyboard_window() {
-  xdotool search --onlyvisible --name '^ATLAS TOUCH TYPE$' 2>/dev/null | head -n 1 || true
+  xdotool search --onlyvisible --name '^TECLAO$' 2>/dev/null | head -n 1 || true
 }
 
 keyboard_is_visible() {

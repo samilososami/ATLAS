@@ -262,6 +262,7 @@ function switchView(view) {
   }
   window.AtlasWakeEnrollment?.onViewChanged?.(view);
   window.AtlasClap?.onViewChanged?.(view);
+  window.AtlasWifi?.onViewChanged?.(view);
   setPanelOpen(false);
 }
 

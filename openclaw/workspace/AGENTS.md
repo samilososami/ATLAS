@@ -138,6 +138,8 @@ Reactions are lightweight social signals. Humans use them constantly — they sa
 
 The repository `.atlas/README.md` maps your runtime folders and system helpers.
 `/home/atlas/.atlas/webscreen/README.md` explains the voice pipeline.
+It also documents the physical-only WiFi recovery tab and the exact boundary
+between an offline-rendered local UI and Internet-dependent Realtime features.
 `/home/atlas/.atlas/webscreen/NEW_DESIGN.md` maps the minimal animated face,
 real input/output level hooks and shared controller. `atlas-screen --atlas-new`
 opens that presentation; `--atlas` preserves the diagnostic UI. Both require

@@ -12,10 +12,12 @@ runtime="$atlas_home/.atlas/webscreen"
 [[ -f "$runtime/start.sh" ]] || { echo "Existing WebScreen installation not found" >&2; exit 1; }
 atlas_user=${ATLAS_USER:-$(stat -c %U "$atlas_home")}
 atlas_group=$(id -gn "$atlas_user")
-files=(server.py access_control.py gateway_bridge.mjs README.md NEW_DESIGN.md CLAP.md static/access.js static/app.js static/clap.js static/index.html static/navigation.js static/realtime.js static/styles.css
+files=(server.py access_control.py wifi_control.py gateway_bridge.mjs README.md NEW_DESIGN.md CLAP.md static/access.js static/app.js static/clap.js static/wifi.js static/index.html static/navigation.js static/realtime.js static/styles.css
   static/new/face.css static/new/face.js static/new/audio.js static/new/petting.js static/new/logo.png static/new/atlas-wordmark.svg)
-system_sources=(atlas-commands/atlas-screen atlas-commands/atlas-webscreen system/libexec/atlas-screen-kiosk-session system/libexec/atlas-screen-browser-watchdog.cjs)
-system_targets=(usr/local/bin/atlas-screen usr/local/bin/atlas-webscreen usr/local/libexec/atlas-screen-kiosk-session usr/local/libexec/atlas-screen-browser-watchdog.cjs)
+system_sources=(atlas-commands/atlas-screen atlas-commands/atlas-webscreen system/libexec/atlas-screen-kiosk-session system/libexec/atlas-screen-browser-watchdog.cjs misc/atlas-touch-type/atlas-touch-type.py misc/atlas-touch-type/atlas-touch-type-session)
+system_targets=(usr/local/bin/atlas-screen usr/local/bin/atlas-webscreen usr/local/libexec/atlas-screen-kiosk-session usr/local/libexec/atlas-screen-browser-watchdog.cjs usr/local/libexec/atlas-touch-type.py usr/local/libexec/atlas-touch-type-session)
+unit_sources=(system/systemd/atlas-webscreen.service system/systemd/atlas-screen-boot-on.service)
+unit_targets=(etc/systemd/system/atlas-webscreen.service etc/systemd/system/atlas-screen-boot-on.service)
 system_root=${ATLAS_SYSTEM_ROOT:-/}
 command -v node >/dev/null || { echo "Node.js is required by the private-pipe kiosk watchdog." >&2; exit 1; }
 for path in "${files[@]}"; do
@@ -23,6 +25,9 @@ for path in "${files[@]}"; do
 done
 for path in "${system_sources[@]}"; do
   [[ -f "$repo/$path" ]] || { echo "Missing system source: $path" >&2; exit 1; }
+done
+for path in "${unit_sources[@]}"; do
+  [[ -f "$repo/$path" ]] || { echo "Missing unit source: $path" >&2; exit 1; }
 done
 backup="$atlas_home/.atlas/backups/webscreen-resilience-$(date +%Y%m%d-%H%M%S)"
 install -d -m 700 -o "$atlas_user" -g "$atlas_group" "$backup"
@@ -39,6 +44,14 @@ for index in "${!system_sources[@]}"; do
   if [[ -f "$system_root/$path" ]]; then cp -p -- "$system_root/$path" "$backup/system/$path"; fi
   install -m 755 -o root -g root "$repo/${system_sources[$index]}" "$system_root/$path"
 done
+for index in "${!unit_sources[@]}"; do
+  path=${unit_targets[$index]}
+  install -d -m 700 "$backup/system/$(dirname "$path")"
+  install -d -m 755 "$system_root/$(dirname "$path")"
+  if [[ -f "$system_root/$path" ]]; then cp -p -- "$system_root/$path" "$backup/system/$path"; fi
+  install -m 644 -o root -g root "$repo/${unit_sources[$index]}" "$system_root/$path"
+done
+if [[ "$system_root" == / ]]; then systemctl daemon-reload; fi
 printf 'WebScreen updated. Backup: %s\n' "$backup"
 if [[ ${1:-} == --restart ]]; then
   systemctl restart atlas-webscreen.service

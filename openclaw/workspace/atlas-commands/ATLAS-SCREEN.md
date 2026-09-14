@@ -166,7 +166,7 @@ It does not need a graphical session. Hold Ctrl and tap W, O, W on a USB keyboar
 to open it from any display mode, including off. See `ATLAS-RAFAS.md` for the
 service model and the deliberate local-root access without a password.
 
-The graphical terminal's touch keyboard is now ATLAS TOUCH TYPE; its helpers
+The graphical terminal and both WebScreen WiFi panels call the touch keyboard TECLAO; its native helpers
 are `/usr/local/libexec/atlas-touch-type.py` and `atlas-touch-type-session`.
 
 ## Desktop mode

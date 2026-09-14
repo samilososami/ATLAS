@@ -35,6 +35,7 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 from codex_usage import CodexUsageCache
 from access_control import AccessControl, AccessError
+import wifi_control
 
 HOST = os.environ.get("ATLAS_WEBSCREEN_HOST", "0.0.0.0")
 PORT = int(os.environ.get("ATLAS_WEBSCREEN_PORT", "5000"))
@@ -3176,6 +3177,10 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
             self.handle_wake_sample()
         elif self.path == "/api/clap/profile":
             self.handle_clap_profile()
+        elif self.path == "/api/wifi/scan":
+            self.handle_wifi_scan()
+        elif self.path == "/api/wifi/connect":
+            self.handle_wifi_connect()
         elif self.path == "/api/text":
             self.handle_text()
         elif self.path == "/api/voice":
@@ -3207,6 +3212,35 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
         if not isinstance(payload, dict):
             raise ValueError("Formato inválido")
         return payload
+
+    def require_physical_wifi_client(self) -> None:
+        """Keep NetworkManager credentials on the physical A1 kiosk."""
+        if self.log_client().get("client_kind") != "atlas-a1":
+            raise AccessError(
+                403,
+                "La configuración Wi-Fi solo está disponible en la pantalla física del ATLAS A1",
+            )
+
+    def handle_wifi_scan(self) -> None:
+        try:
+            self.read_json_payload(maximum=256)
+            self.require_physical_wifi_client()
+            self.send_json(200, wifi_control.scan_networks())
+        except AccessError as error:
+            self.send_json(error.status, {"error": str(error)})
+        except (ValueError, wifi_control.WifiControlError) as error:
+            self.send_json(503, {"error": str(error)[:300]})
+
+    def handle_wifi_connect(self) -> None:
+        try:
+            payload = self.read_json_payload(maximum=1024)
+            self.require_physical_wifi_client()
+            result = wifi_control.connect_network(payload.get("ssid"), payload.get("password", ""))
+            self.send_json(200, result)
+        except AccessError as error:
+            self.send_json(error.status, {"error": str(error)})
+        except (ValueError, wifi_control.WifiControlError) as error:
+            self.send_json(400, {"error": str(error)[:300]})
 
     def handle_wake_sample(self) -> None:
         """Store one browser-recorded wake-profile sample locally on ATLAS A1."""

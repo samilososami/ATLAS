@@ -391,10 +391,10 @@ assert.match(source, /interrupt_response:\s*!this\.physicalAtlasA1/);
 assert.match(source, /language:\s*"es"/);
 assert.match(source, /noise_reduction:\s*\{\s*type:\s*"far_field"\s*\}/);
 assert.match(source, /session\.atlasContext/);
-assert.match(source, /const offerBody = new FormData\(\)/,
-  'large initial context must be uploaded over HTTP multipart');
-assert.match(source, /offerBody\.append\("session"/,
-  'the initial Realtime session must accompany the SDP offer');
+assert.match(source, /body: JSON\.stringify\(\{\s*sdp: offer\.sdp, session: initialSession/,
+  'the browser must pass the initial Realtime session beside the SDP to the same-origin relay');
+assert.match(source, /providerOfferUrl: session\.atlasProviderOfferUrl/,
+  'the fixed same-origin relay request must carry the reserved provider target');
 assert.doesNotMatch(source, /this\.send\(\{\s*type: "session\.update",\s*session: \{\s*type: "realtime",\s*output_modalities:/,
   'the initial private context must not be sent through one data-channel frame');
 assert.match(source, /case "session\.created":\s*case "session\.updated":/,

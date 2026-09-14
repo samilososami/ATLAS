@@ -60,7 +60,7 @@ La versión mostrada utiliza:
 
 ### WebScreen y conversación por voz
 
-El código de [`ATLAS WebScreen`](.atlas/webscreen) conserva la interfaz de depuración con ATLAS, Transcripción, Texto a voz, Wake word, Doble aplauso y Ajustes.
+El código de [`ATLAS WebScreen`](.atlas/webscreen) conserva la interfaz de depuración con ATLAS, Transcripción, Texto a voz, Wake word, Doble aplauso, WiFi y Ajustes. Sus dos diseños y el backend son locales y arrancan sin Internet; desde la pantalla física, WiFi permite escanear redes y conectarse con el teclado táctil TECLAO.
 
 The new [minimal face design](.atlas/webscreen/NEW_DESIGN.md) is available at
 `/new/` and with `atlas-screen --atlas-new`. Its browser-rendered blue face
@@ -156,7 +156,7 @@ Chrome kiosk over localhost. The hidden mode keeps that same voice session and
 HDMI audio alive behind a black, minimum-brightness cover. The cursor is hidden
 unless a USB/Bluetooth mouse is connected. [Full command guide](atlas-commands/README.md#atlas-screen).
 
-La terminal usa Zsh con autocompletado, highlighting y **ATLAS TOUCH TYPE**, el teclado táctil oscuro. Un doble toque abre el teclado sin tapar la zona de escritura; un toque lo cierra y dos dedos permiten recorrer el historial. El zoom cambia la letra y reajusta las líneas sin cambiar la ventana. Esta terminal tiene acceso root local: úsala únicamente en un dispositivo bajo tu control. RAFAS es su alternativa de recuperación sin entorno gráfico.
+La terminal usa Zsh con autocompletado, highlighting y **TECLAO**, el teclado táctil oscuro. Un doble toque abre el teclado sin tapar la zona de escritura; un toque lo cierra y dos dedos permiten recorrer el historial. El zoom cambia la letra y reajusta las líneas sin cambiar la ventana. Esta terminal tiene acceso root local: úsala únicamente en un dispositivo bajo tu control. RAFAS es su alternativa de recuperación sin entorno gráfico.
 
 ## Workspace de OpenClaw
 
@@ -188,7 +188,7 @@ sudo bash system/install-chat.sh
 
 ## Estructura del repositorio
 
-Las [herramientas misceláneas](misc/README.md) reúnen [ATLAS TOUCH TYPE](misc/atlas-touch-type/README.md) y [RAFAS](misc/rafas/README.md), con su código y notas de instalación.
+Las [herramientas misceláneas](misc/README.md) reúnen [TECLAO](misc/atlas-touch-type/README.md) y [RAFAS](misc/rafas/README.md), con su código y notas de instalación.
 
 ```text
 ATLAS/
@@ -197,7 +197,7 @@ ATLAS/
 ├── android/                App ATLAS, fuentes y construcción de APK
 ├── atlas-commands/         Comandos de administración de ATLAS A1
 ├── docs/                   Notas de versiones y documentación técnica
-├── misc/                   ATLAS TOUCH TYPE, RAFAS y herramientas misceláneas
+├── misc/                   TECLAO, RAFAS y herramientas misceláneas
 ├── openclaw/workspace/     Identidad pública y templates de OpenClaw
 ├── system/                 Helpers, servicios, ADB, Nmap, terminal, HDMI y personalización
 ├── README.md               Presentación del proyecto

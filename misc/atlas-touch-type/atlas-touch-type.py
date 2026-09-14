@@ -42,15 +42,15 @@ def rounded_rectangle(canvas, x1, y1, x2, y2, radius, **kwargs):
     return canvas.create_polygon(points, smooth=True, splinesteps=24, **kwargs)
 
 
-class AtlasTouchType:
+class Teclao:
     def __init__(self, terminal_window):
         self.terminal_window = terminal_window
         self.modifiers = {"ctrl": False, "alt": False, "shift": False, "caps": False}
         self.buttons = []
 
-        self.root = tk.Tk(className="AtlasTouchType")
+        self.root = tk.Tk(className="Teclao")
         self.root.withdraw()
-        self.root.title("ATLAS TOUCH TYPE")
+        self.root.title("TECLAO")
         self.root.configure(bg=BG)
         try:
             self.root.configure(cursor="none")
@@ -79,7 +79,7 @@ class AtlasTouchType:
         self.root.update_idletasks()
         # Tk replaces its outer wrapper on first mapping; address the mapped
         # client, not the temporary pre-map window returned by wm_frame().
-        subprocess.run(['xprop', '-name', 'ATLAS TOUCH TYPE', '-f', '_NET_WM_STRUT_PARTIAL',
+        subprocess.run(['xprop', '-name', 'TECLAO', '-f', '_NET_WM_STRUT_PARTIAL',
                         '32c', '-set', '_NET_WM_STRUT_PARTIAL',
                         f'0, 0, 0, {HEIGHT}, 0, 0, 0, 0, 0, 0, 0, {WIDTH - 1}'],
                        check=True, stdout=subprocess.DEVNULL)
@@ -88,7 +88,7 @@ class AtlasTouchType:
 
     def draw_panel(self):
         rounded_rectangle(self.canvas, 0, 0, WIDTH - 1, HEIGHT - 1, 15, fill=PANEL, outline="#25344b")
-        self.canvas.create_text(16, 14, text="ATLAS TOUCH TYPE", anchor="w", fill=ACCENT,
+        self.canvas.create_text(16, 14, text="TECLAO", anchor="w", fill=ACCENT,
                                 font=("DejaVu Sans", 9, "bold"))
         self.add_button(WIDTH - 34, 4, 25, 20, "×", "close", "close", font_size=12)
 
@@ -253,7 +253,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--terminal-window", required=True)
     args = parser.parse_args()
-    AtlasTouchType(args.terminal_window).run()
+    Teclao(args.terminal_window).run()
 
 
 if __name__ == "__main__":

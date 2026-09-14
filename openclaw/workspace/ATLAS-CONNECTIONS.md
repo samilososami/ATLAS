@@ -17,6 +17,7 @@ Source paths below are relative to the repository. Live voice files are under
 | One active browser | `.atlas/webscreen/access_control.py`, `.atlas/webscreen/static/access.js` | [WebScreen ownership](atlas-commands/ATLAS-WEBSCREEN.md#one-screen-at-the-wheel) |
 | Wake, turns, playback and recovery | `.atlas/webscreen/static/app.js`, `.atlas/webscreen/static/realtime.js`, `.atlas/webscreen/REALTIME_INSTRUCTIONS.md` | [WebScreen voice](atlas-commands/ATLAS-WEBSCREEN.md#voice-follow-up-and-recovery) |
 | Calibrated double applause | `.atlas/webscreen/static/clap.js`, shared `app.js` analyser hook, `.atlas/webscreen/server.py` profile endpoint | [Double applause](../../.atlas/webscreen/CLAP.md) |
+| Offline WiFi recovery | `.atlas/webscreen/static/wifi.js`, `.atlas/webscreen/wifi_control.py`, NetworkManager | [WebScreen WiFi](atlas-commands/ATLAS-WEBSCREEN.md#urls) |
 | Minimal face, waveform and mouth | `.atlas/webscreen/static/new/`, shared `app.js` / `realtime.js` hooks | [New design](../../.atlas/webscreen/NEW_DESIGN.md), `atlas-screen --atlas-new` |
 | Same model without voice | `.atlas/chat/atlas_chat.py`, `.atlas/chat/TERMINAL_INSTRUCTIONS.md` | [atlas-chat](atlas-commands/ATLAS-CHAT.md), [chat runtime](../../.atlas/chat/README.md) |
 | Shared conversational memory | `.atlas/webscreen/server.py`, `system/libexec/atlas-contextctl`, `atlas-commands/atlas-context` | [Context](atlas-commands/ATLAS-CONTEXT.md) |

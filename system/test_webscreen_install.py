@@ -7,13 +7,15 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-PUBLIC = ('server.py', 'access_control.py', 'gateway_bridge.mjs', 'README.md',
+PUBLIC = ('server.py', 'access_control.py', 'wifi_control.py', 'gateway_bridge.mjs', 'README.md',
           'NEW_DESIGN.md', 'CLAP.md', 'static/access.js', 'static/clap.js',
-          'static/app.js', 'static/index.html', 'static/navigation.js', 'static/realtime.js', 'static/styles.css',
+          'static/app.js', 'static/wifi.js', 'static/index.html', 'static/navigation.js', 'static/realtime.js', 'static/styles.css',
           'static/new/face.css', 'static/new/face.js', 'static/new/audio.js',
           'static/new/petting.js', 'static/new/logo.png', 'static/new/atlas-wordmark.svg')
 SYSTEM = ('atlas-commands/atlas-screen', 'atlas-commands/atlas-webscreen', 'system/libexec/atlas-screen-kiosk-session',
-          'system/libexec/atlas-screen-browser-watchdog.cjs')
+          'system/libexec/atlas-screen-browser-watchdog.cjs', 'misc/atlas-touch-type/atlas-touch-type.py',
+          'misc/atlas-touch-type/atlas-touch-type-session')
+UNITS = ('system/systemd/atlas-webscreen.service', 'system/systemd/atlas-screen-boot-on.service')
 
 
 class WebScreenInstaller(unittest.TestCase):
@@ -40,6 +42,10 @@ class WebScreenInstaller(unittest.TestCase):
                 file = repo / path
                 file.parent.mkdir(parents=True, exist_ok=True)
                 file.write_text('system fixture: ' + path)
+            for path in UNITS:
+                file = repo / path
+                file.parent.mkdir(parents=True, exist_ok=True)
+                file.write_text('unit fixture: ' + path)
             install = repo / 'system/install-webscreen-resilience.sh'
             shutil.copyfile(ROOT / 'system/install-webscreen-resilience.sh', install)
             command = ['env', f'ATLAS_HOME={home}', f'ATLAS_SYSTEM_ROOT={system}',
@@ -61,6 +67,9 @@ class WebScreenInstaller(unittest.TestCase):
             self.assertEqual(helper.stat().st_mode & 0o777, 0o755)
             self.assertTrue((system / 'usr/local/bin/atlas-screen').is_file())
             self.assertTrue((system / 'usr/local/bin/atlas-webscreen').is_file())
+            unit = system / 'etc/systemd/system/atlas-webscreen.service'
+            self.assertEqual(unit.read_text(), 'unit fixture: system/systemd/atlas-webscreen.service')
+            self.assertEqual(unit.stat().st_mode & 0o777, 0o644)
             # Root-owned backup descendants are private. Return this *fixture*
             # to the test runner for ordinary TemporaryDirectory cleanup.
             if os.geteuid() != 0:

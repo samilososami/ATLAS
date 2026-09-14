@@ -8,7 +8,7 @@
     <meta name="google" content="notranslate" />
     <title>ATLAS WebScreen</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="stylesheet" href="/styles.css?v=2026-09-07-clap-2" />
+    <link rel="stylesheet" href="/styles.css?v=2026-09-14-wifi-1" />
   </head>
   <body>
     <section class="access-blocked" id="access-blocked" aria-labelledby="access-title">
@@ -39,6 +39,7 @@
         <button class="tool-tab" type="button" data-view="tts" aria-selected="false">Texto a voz</button>
         <button class="tool-tab" type="button" data-view="wakeword" aria-selected="false">Wake word</button>
         <button class="tool-tab" type="button" data-view="clap" aria-selected="false">Doble aplauso</button>
+        <button class="tool-tab" type="button" data-view="wifi" aria-selected="false">WiFi</button>
         <button class="tool-tab" type="button" data-view="settings" aria-selected="false">Ajustes</button>
         <a class="tool-tab webscreen-design-switch" data-webscreen-design-switch href="/new/" target="_self">New Webscreen</a>
       </nav>
@@ -256,6 +257,59 @@
       </main>
     </section>
 
+    <section class="app-view" id="view-wifi" data-view-panel="wifi" hidden>
+      <main class="tool-shell compact-tool wifi-shell">
+        <header class="tool-header">
+          <span class="brand">WiFi</span>
+          <span>Conexión local del ATLAS A1</span>
+        </header>
+        <section class="wifi-card" aria-labelledby="wifi-title">
+          <div class="wifi-heading">
+            <div>
+              <p class="wifi-kicker">NETWORKMANAGER</p>
+              <h1 id="wifi-title">Redes cercanas</h1>
+              <p id="wifi-current">Pulsa Escanear para buscar redes disponibles.</p>
+            </div>
+            <button class="primary wifi-scan" id="wifi-scan" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.9 9.4a11.2 11.2 0 0 1 14.2 0M7.8 12.4a6.9 6.9 0 0 1 8.4 0M10.6 15.4a2.5 2.5 0 0 1 2.8 0"/><circle cx="12" cy="18.3" r="1"/></svg>
+              <span>Escanear</span>
+            </button>
+          </div>
+          <output class="wifi-status" id="wifi-status" aria-live="polite">Listo para buscar.</output>
+          <div class="wifi-networks" id="wifi-networks" role="list" aria-label="Redes WiFi cercanas"></div>
+        </section>
+      </main>
+
+      <dialog class="wifi-dialog" id="wifi-dialog" aria-labelledby="wifi-dialog-title">
+        <form class="wifi-connect-form" id="wifi-connect-form" method="dialog">
+          <div class="wifi-dialog-heading">
+            <div>
+              <span>CONECTAR A</span>
+              <h2 id="wifi-dialog-title">WiFi</h2>
+              <p id="wifi-security"></p>
+            </div>
+            <button class="wifi-dialog-close" id="wifi-dialog-close" type="button" aria-label="Cancelar conexión">×</button>
+          </div>
+          <label class="wifi-password-field" id="wifi-password-field" for="wifi-password">
+            <span>Contraseña</span>
+            <span class="wifi-password-control">
+              <input id="wifi-password" type="password" maxlength="128" autocomplete="new-password" inputmode="none" spellcheck="false" />
+              <button id="wifi-password-toggle" type="button" aria-label="Mostrar contraseña">Ver</button>
+            </span>
+          </label>
+          <div class="teclao" id="teclao" aria-label="Teclao táctil">
+            <div class="teclao-heading"><strong>TECLAO</strong><span>Entrada local segura</span></div>
+            <div class="teclao-keys" id="teclao-keys"></div>
+          </div>
+          <div class="wifi-dialog-actions">
+            <button class="secondary" id="wifi-cancel" type="button">Cancelar</button>
+            <button class="primary" id="wifi-connect" type="submit">Conectar</button>
+          </div>
+          <output class="wifi-connect-status" id="wifi-connect-status" aria-live="polite"></output>
+        </form>
+      </dialog>
+    </section>
+
     </div>
     <button class="microphone-mute" id="microphone-mute" type="button" aria-pressed="false" aria-label="Silenciar micrófono" disabled>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a4 4 0 0 0 4-4V6a4 4 0 1 0-8 0v5a4 4 0 0 0 4 4Z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v4M8 22h8"/></svg>
@@ -266,7 +320,8 @@
     <script src="/kiosk.js?v=2026-08-28-kiosk-1"></script>
     <script src="/realtime.js?v=2026-09-09-multipart-1"></script>
     <script src="/clap.js?v=2026-09-07-clap-2"></script>
-    <script src="/app.js?v=2026-09-07-clap-2"></script>
+    <script src="/wifi.js?v=2026-09-14-wifi-1"></script>
+    <script src="/app.js?v=2026-09-14-wifi-1"></script>
     <script src="/wakeword.js?v=2026-08-31-wake-enrollment-1"></script>
     <script src="/quota.js?v=2026-08-31-persistent-context-1"></script>
     <script src="/context.js?v=2026-09-01-wake-session-2"></script>

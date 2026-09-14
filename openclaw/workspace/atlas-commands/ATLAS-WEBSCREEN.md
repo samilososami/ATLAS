@@ -83,6 +83,13 @@ save only a private metrics profile, then a calibrated pair while waiting shows
 the local `defiant` face for three seconds. It never records/uploads audio,
 opens a Realtime turn or replaces the wake word. Read
 `/home/atlas/.atlas/webscreen/CLAP.md` before diagnosing or modifying it.
+Both designs also share **WiFi**. The physical A1 kiosk can scan nearby networks,
+select one and enter its password with the integrated **TECLAO**. The backend
+uses NetworkManager locally and never logs or returns the password. LAN browsers
+may view the page but cannot invoke WiFi scan/connect endpoints. The WebScreen
+HTML/CSS/JavaScript and backend start without an Internet connection; Realtime,
+Chrome recognition and provider tools do not become offline merely because the
+recovery interface is visible.
 The ready face blinks for 320 ms at randomized 13–16 second intervals.
 Visual drowsiness changes only on coordinated blinks: a first pose at 50–55
 seconds, a second at 75–80 seconds, and sleep at 100–105 seconds, with deeper

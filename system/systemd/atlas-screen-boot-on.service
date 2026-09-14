@@ -1,7 +1,7 @@
 [Unit]
 Description=Start the selected ATLAS physical screen surface after boot
-After=systemd-user-sessions.service plymouth-quit.service atlas-webscreen.service network-online.target
-Wants=network-online.target
+After=systemd-user-sessions.service plymouth-quit.service NetworkManager.service atlas-webscreen.service
+Wants=NetworkManager.service
 Conflicts=atlas-screen-boot-off.service
 
 [Service]

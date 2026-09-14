@@ -1,4 +1,4 @@
-# ATLAS TOUCH TYPE
+# TECLAO
 
 Your small touchscreen keyboard for the ATLAS root terminal. Dark keys, function
 keys and sticky modifiers, with Enter under Backspace. No pointer sits on top
@@ -11,7 +11,7 @@ of the letters while you tap.
   An EWMH dock reserves the keyboard's exact height while the terminal remains maximized.
 - Two-finger scrolling walks through terminal history without selecting text.
 
-This is the existing keyboard with its new name, not a second implementation.
+TECLAO is the existing ATLAS touch keyboard under its shorter visible name, not a second implementation.
 It is tailored to the reference 1024 by 600 X11 terminal. The native RAFAS console
 uses a physical keyboard and deliberately does not load Tk, X11 or this keyboard.
 
