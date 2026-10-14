@@ -1,0 +1,26 @@
+[Unit]
+Description=ATLAS private website gateway and text chat
+After=network-online.target atlas-webscreen.service tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sami
+Group=sami
+WorkingDirectory=/home/atlas/.atlas/portal
+Environment=ATLAS_HOME=/home/atlas
+Environment=HOME=/home/atlas
+Environment=CODEX_HOME=/home/atlas/.codex
+Environment=PATH=/usr/local/bin:/usr/bin:/bin:/home/atlas/.npm-global/bin
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+UMask=0077
+MemoryAccounting=true
+ExecStart=/home/atlas/.atlas/webscreen/.venv/bin/python /home/atlas/.atlas/portal/portal.py
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=15
+KillMode=control-group
+
+[Install]
+WantedBy=multi-user.target

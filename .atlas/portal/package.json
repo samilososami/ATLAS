@@ -1,0 +1,9 @@
+{
+  "name": "atlas-private-portal",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {"build": "esbuild vendor-entry.js --bundle --minify --format=esm --outfile=static/vendor.js", "check": "node --check static/app.js && node --check static/render.js && node --check static/api.js && node --check static/store.js"},
+  "dependencies": {"dompurify": "3.3.1", "marked": "17.0.1"},
+  "devDependencies": {"esbuild": "0.25.12"}
+}

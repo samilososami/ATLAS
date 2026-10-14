@@ -1,0 +1,21 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="color-scheme" content="dark"><meta name="robots" content="noindex,nofollow"><title>Chat · ATLAS</title><link rel="icon" href="/portal/assets/logo.png"><link rel="stylesheet" href="/portal/assets/styles.css"><script type="module" src="/portal/assets/app.js"></script></head><body>
+<div class="sidebar-backdrop" id="sidebar-backdrop" hidden></div>
+<aside class="sidebar" id="sidebar" aria-label="Conversaciones">
+  <a class="brand" href="/" aria-label="ATLAS, inicio"><img src="/portal/assets/logo.png" alt="" width="33" height="38"><img src="/portal/assets/wordmark.svg" alt="ATLAS" width="103" height="20"></a>
+  <button class="new-chat" id="new-chat"><span data-icon="plus"></span> Nuevo chat</button>
+  <label class="search"><span data-icon="search"></span><input id="search" type="search" placeholder="Buscar chats" aria-label="Buscar chats" autocomplete="off"></label>
+  <div class="history-label">Recientes</div><nav id="chat-list" class="chat-list" aria-label="Historial de chats"></nav>
+  <div class="sidebar-bottom"><a href="/try/"><span data-icon="external"></span> Webscreen</a><button id="logout"><span data-icon="logout"></span> Cerrar sesión</button></div>
+</aside>
+<main class="chat-main" id="chat-main">
+  <header class="chat-header"><div class="header-title"><button class="icon-button" id="sidebar-toggle" aria-label="Mostrar u ocultar conversaciones" aria-expanded="true"><span data-icon="panel"></span></button><span>ATLAS</span><span class="model-name">Realtime</span></div>
+    <button class="metrics" id="metrics" aria-label="Ver cuota y contexto"><span class="metric"><i id="quota-ring"></i><span>Cuota <strong id="quota-value">—</strong></span></span><span class="metric-separator"></span><span class="metric"><i id="context-ring"></i><span>Contexto <strong id="context-value">—</strong></span></span></button>
+  </header>
+  <section class="metrics-panel" id="metrics-panel" hidden><h2>Uso disponible</h2><p id="quota-detail">Consultando la cuota de la cuenta…</p><p id="context-detail">El contexto se calcula al empezar la conversación.</p><small>Cuota compartida con la cuenta de ATLAS. Contexto independiente por chat.</small></section>
+  <div class="message-scroll" id="message-scroll"><div class="messages" id="messages" aria-live="off"></div><section class="empty-state" id="empty-state"><img src="/portal/assets/logo.png" alt="" width="44" height="52"><h1>¿Qué hacemos hoy<span>?</span></h1><p>Una pregunta. Una idea. Lo que tengas en mente.</p></section></div>
+  <button id="scroll-bottom" class="icon-button scroll-bottom" aria-label="Ir al último mensaje" hidden><span data-icon="down"></span></button>
+  <div class="composer-area"><form class="composer" id="composer"><div class="attachments" id="attachments"></div><textarea id="prompt" rows="1" placeholder="Pregunta lo que quieras…" aria-label="Mensaje para ATLAS" maxlength="30000"></textarea><div class="composer-actions"><div><button type="button" class="icon-button" id="attach" aria-label="Adjuntar imágenes"><span data-icon="attach"></span></button><span id="composer-status" role="status"></span></div><button type="submit" class="send-button" id="send" aria-label="Enviar mensaje" disabled><span data-icon="up"></span></button></div><input type="file" accept="image/jpeg,image/png,image/webp" id="image-input" multiple hidden></form><p class="local-note">Los chats se guardan en este navegador.</p></div>
+</main>
+<div class="toast" id="toast" role="status" hidden></div>
+<dialog id="manage-dialog"><form method="dialog"><h2 id="dialog-title">Renombrar chat</h2><p id="dialog-message"></p><input id="dialog-input" maxlength="100" aria-label="Nombre del chat"><div class="dialog-actions"><button value="cancel" class="secondary">Cancelar</button><button id="dialog-confirm" value="confirm" class="primary">Guardar</button></div></form></dialog>
+</body></html>
