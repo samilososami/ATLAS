@@ -49,6 +49,12 @@ credenciales de Wi-Fi, reinicios de historial ni cambios globales de ajustes.
 
 - Historial, nombres, búsqueda e imágenes: IndexedDB del navegador. No se
   sincronizan entre dispositivos. Borrar los datos del sitio elimina ese historial.
+- El indicador de cada respuesta distingue conexión/pensamiento/herramientas,
+  escritura y finalización. Los avisos aparecen dentro de la respuesta, nunca
+  en el formulario del mensaje. Son estados de actividad, no razonamiento interno.
+  No se guardan como texto del chat ni se reenvían al modelo. Cambiar de chat
+  conserva el estado de la respuesta en curso; al recargar no quedan animaciones
+  de tareas antiguas. Se respeta la preferencia de movimiento reducido.
 - El portal no guarda mensajes ni imágenes en archivos propios del A1. Para
   inferencia se transmiten a la Pi y al proveedor del modelo. Las herramientas
   existentes de ATLAS conservan sus propios registros operativos habituales.

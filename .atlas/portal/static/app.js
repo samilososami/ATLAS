@@ -1,6 +1,6 @@
 import {session, post, stream, logout} from './api.js';
 import * as store from './store.js';
-import {icon, mountIcons, markdown, messageView} from './render.js';
+import {icon, mountIcons, markdown, messageView, setMessageActivity, finishMessageView} from './render.js';
 const $=selector=>document.querySelector(selector);
 mountIcons();
 let chats=[], active=null, images=[], running=null, quota=null, renderTimer;
@@ -28,7 +28,7 @@ function renderList() {
 }
 function renderMessages() {
   messages.replaceChildren();const chat=current();$('#empty-state').hidden=!!chat?.messages.length;
-  for(const message of chat?.messages||[]) messages.append(messageView(message).article);
+  for(const message of chat?.messages||[]) messages.append(messageView(message,running?.answer.id===message.id?running.activity:null).article);
   document.title=chat?.title && chat.title!=='Nuevo chat'?`${chat.title} · ATLAS`:'Chat · ATLAS';
   updateMetrics(chat?.usage);requestAnimationFrame(()=>{scroll.scrollTop=scroll.scrollHeight;});
 }
@@ -81,7 +81,19 @@ function historyPayload(chat){
   }
   return selected;
 }
-async function stop(){if(!running)return;const run=running;$('#composer-status').textContent='Deteniendo…';await post('cancel',{id:run.chat.id}).catch(e=>toast(e.message));run.controller.abort();}
+function showActivity(run, state, label='', symbol='spark') {
+  if(run.activity?.state==='stopping' && ['connecting','thinking','tool','writing'].includes(state))return;
+  if(run.activity?.state===state && run.activity.label===label && run.activity.icon===symbol)return;
+  run.activity={state,label,icon:symbol};
+  const article=messages.querySelector(`[data-id="${run.answer.id}"]`);
+  if(article)setMessageActivity(article,run.activity);
+}
+const toolActivity={
+  atlas_shell:['Usando herramientas…','terminal'], atlas_actions:['Realizando acciones…','terminal'],
+  atlas_web_search:['Buscando en la web…','search'], atlas_phone:['Consultando el teléfono…','phone'],
+  atlas_capabilities:['Consultando capacidades…','compass'], atlas_routine:['Ejecutando la rutina…','spark'],
+};
+async function stop(){if(!running)return;const run=running;showActivity(run,'stopping','Deteniendo…','stop');await post('cancel',{id:run.chat.id}).catch(e=>toast(e.message));run.controller.abort();}
 $('#composer').addEventListener('submit',async e=>{
   e.preventDefault();if(running){await stop();return;}
   const text=prompt.value.trim();if(!text&&!images.length)return;
@@ -89,29 +101,37 @@ $('#composer').addEventListener('submit',async e=>{
   if(chat.title==='Nuevo chat')chat.title=(text||'Conversación con imágenes').slice(0,50);
   chat.updated=Date.now();const payload=historyPayload(chat);prompt.value='';prompt.style.height='auto';images=[];renderAttachments();
   const answer={id:crypto.randomUUID(),role:'assistant',text:'',at:Date.now()};chat.messages.push(answer);
-  running={chat,answer,controller:new AbortController()};const run=running;
-  renderList();renderMessages();updateSend();$('#composer-status').textContent='Conectando…';
+  running={chat,answer,controller:new AbortController(),activity:{state:'thinking',label:'Pensando…',icon:'spark'}};const run=running;
+  renderList();renderMessages();updateSend();
   function draw(){if(active!==chat.id)return;const article=messages.querySelector(`[data-id="${answer.id}"]`);if(!article)return;
     const follow=scroll.scrollHeight-scroll.scrollTop-scroll.clientHeight<150;
     markdown(article.querySelector('.message-body'),answer.text);
-    article.classList.toggle('is-streaming',true);
     if(follow)scroll.scrollTop=scroll.scrollHeight;
   }
   try {
     await persist(chat);
     if(run.controller.signal.aborted)throw new DOMException('Respuesta detenida.','AbortError');
     await stream({id:chat.id,messages:payload},(event,data)=>{
-      if(event==='delta'){answer.text+=data.text;$('#composer-status').textContent='';if(!renderTimer)renderTimer=setTimeout(()=>{renderTimer=null;draw();},35);}
-      if(event==='replace'){answer.text=data.text;draw();}
-      if(event==='status')$('#composer-status').textContent=data.message;
-      if(event==='tool')$('#composer-status').textContent=({atlas_shell:'Usando herramientas…',atlas_web_search:'Buscando en la web…',atlas_phone:'Consultando el teléfono…',atlas_capabilities:'Consultando capacidades…'})[data.name]||'Trabajando…';
-      if(event==='meta'){chat.model=data.model;chat.usage={estimated:true,input_tokens:data.context?.combinedInstructionEstimatedTokens||data.context?.offerEstimatedTokens||data.context?.estimatedTokens,contextLimit:data.context?.limitTokens||128000};if(active===chat.id)updateMetrics(chat.usage);}
-      if(event==='done'){answer.text=data.text;chat.usage={...data.usage,contextLimit:data.contextLimit,estimated:false};if(active===chat.id)updateMetrics(chat.usage);}
-      if(event==='error'){answer.error=data.message;toast(data.message);}
-      if(event==='cancelled')answer.error='Respuesta detenida.';
+      if(event==='delta'){answer.text+=data.text;if(data.text)showActivity(run,'writing');if(!renderTimer)renderTimer=setTimeout(()=>{renderTimer=null;draw();},35);}
+      if(event==='replace'){answer.text=data.text;showActivity(run,data.text?'writing':'thinking',data.text?'':'Pensando…');draw();}
+      if(event==='status')showActivity(run,'connecting',String(data.message||'Conectando…').slice(0,160));
+      if(event==='tool'){const [label,symbol]=toolActivity[data.name]||['Trabajando…','spark'];showActivity(run,'tool',label,symbol);}
+      if(event==='meta'){chat.model=data.model;chat.usage={estimated:true,input_tokens:data.context?.combinedInstructionEstimatedTokens||data.context?.offerEstimatedTokens||data.context?.estimatedTokens,contextLimit:data.context?.limitTokens||128000};if(active===chat.id)updateMetrics(chat.usage);showActivity(run,'thinking','Pensando…');}
+      if(event==='done'){answer.text=data.text;chat.usage={...data.usage,contextLimit:data.contextLimit,estimated:false};if(active===chat.id)updateMetrics(chat.usage);showActivity(run,'complete');}
+      if(event==='error'){answer.error=data.message;showActivity(run,'error');toast(data.message);}
+      if(event==='cancelled'){answer.error='Respuesta detenida.';answer.cancelled=true;showActivity(run,'cancelled');}
     },run.controller.signal);
-  } catch(error){answer.error=error.name==='AbortError'?'Respuesta detenida.':error.message;if(error.name!=='AbortError')toast(error.message);}
-  finally {clearTimeout(renderTimer);renderTimer=null;await persist(chat);if(running===run)running=null;$('#composer-status').textContent='';if(active===chat.id)renderMessages();renderList();updateSend();}
+  } catch(error){answer.cancelled=error.name==='AbortError';answer.error=answer.cancelled?'Respuesta detenida.':error.message;showActivity(run,answer.cancelled?'cancelled':'error');if(!answer.cancelled)toast(error.message);}
+  finally {
+    clearTimeout(renderTimer);renderTimer=null;await persist(chat);if(running===run)running=null;
+    // Keep the avatar and message node mounted so finishing does not replay
+    // every message's entrance animation or reset the avatar transition.
+    const article=messages.querySelector(`[data-id="${answer.id}"]`);
+    const follow=scroll.scrollHeight-scroll.scrollTop-scroll.clientHeight<150;
+    if(article)finishMessageView(article,answer);
+    if(article && follow)scroll.scrollTop=scroll.scrollHeight;
+    renderList();updateSend();
+  }
 });
 scroll.addEventListener('scroll',()=>$('#scroll-bottom').hidden=scroll.scrollHeight-scroll.scrollTop-scroll.clientHeight<250);
 $('#scroll-bottom').onclick=()=>scroll.scrollTo({top:scroll.scrollHeight,behavior:'smooth'});
