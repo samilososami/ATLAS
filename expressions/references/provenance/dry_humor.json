@@ -1,0 +1,13 @@
+{
+  "id": "dry_humor",
+  "path": "expressions/references/dry_humor.png",
+  "tool": "image_gen.imagegen",
+  "prompt": "Use case: precise-object-edit.\nAsset type: ONE ATLAS expression concept reference, ID dry_humor.\nInput image 1: exact base ATLAS face; edit target, preserve identity and layout.\nPrimary request: change only the facial expression to \"Humor seco\". Intended context: Remate breve e irónico. Expression family: humor. Intensity: medium. Make it readable but natural and restrained, never exaggerated.\nKeep the same blue oval eye sockets, positions and maximum width/height. Alter only the eyelid mask / eyebrow angle when needed. The mouth remains a single blue round-ended stroke of exactly the original thickness, no teeth, lips, tongue or mouth filling. Keep all face anchors and canvas framing identical. Maintain near-black background and blue #00a8ff palette, no glow or texture. Preserve existing tiny ATLAS header and settings icon, add no titles or labels.\nExpression details: mouth path shape parameters [halfWidth, baselineY, curvature, asymmetry] [46,537,14,0] relative to original [58,527,48,0]; eyebrow paths [\"M -30 -117 Q 0 -117 30 -117\",\"M -30 -117 Q 0 -117 30 -117\"]. Accessory: none; add no props.\nAvoid: big facial deformation, extra eyes, pupils, human features, 3D, illustration outlines, thicker mouth, exaggerated emotions, text captions, decorative scene. Deliver one single expression, not a sheet or grid.\nVisible eyelids required: Eye left: clip its top with a straight horizontal eyelid at 47% down its original oval height; never grow outside its original socket. Eye right: clip its top with a straight horizontal eyelid at 47% down its original oval height; never grow outside its original socket. Draw at most ONE eyebrow per eye, exactly two total if brows requested, not paired double lines.",
+  "elapsedSeconds": 17.872,
+  "role": "concept-reference",
+  "sourceAsset": "exec-fec916c9-5c23-4b3c-85cd-9ef6fffc88e1.png",
+  "sha256": "d99bee67e2fef90b4a12db655cceca255b7a891a710b844fa53ed78f905f854e",
+  "bytes": 1139258,
+  "width": 1591,
+  "height": 989
+}

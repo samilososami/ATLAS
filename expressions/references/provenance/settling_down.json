@@ -1,0 +1,13 @@
+{
+  "id": "settling_down",
+  "path": "expressions/references/settling_down.png",
+  "tool": "image_gen.imagegen",
+  "prompt": "Use case: precise-object-edit.\nAsset type: ONE ATLAS expression concept reference, ID settling_down.\nInput image 1: exact base ATLAS face; edit target, preserve identity and layout.\nPrimary request: change only the facial expression to \"Bajando revoluciones\". Intended context: Cierra una conversación animada. Expression family: energy. Intensity: subtle. Make it readable but natural and restrained, never exaggerated.\nKeep the same blue oval eye sockets, positions and maximum width/height. Alter only the eyelid mask / eyebrow angle when needed. The mouth remains a single blue round-ended stroke of exactly the original thickness, no teeth, lips, tongue or mouth filling. Keep all face anchors and canvas framing identical. Maintain near-black background and blue #00a8ff palette, no glow or texture. Preserve existing tiny ATLAS header and settings icon, add no titles or labels.\nExpression details: mouth path shape parameters [halfWidth, baselineY, curvature, asymmetry] [53,532,25,0] relative to original [58,527,48,0]; eyebrow paths [\"M -29 -117 Q 0 -122 29 -117\",\"M -29 -117 Q 0 -122 29 -117\"]. Accessory: none; add no props.\nAvoid: big facial deformation, extra eyes, pupils, human features, 3D, illustration outlines, thicker mouth, exaggerated emotions, text captions, decorative scene. Deliver one single expression, not a sheet or grid.\nVisible eyelids required: Eye left: clip its top with a straight horizontal eyelid at 31% down its original oval height; never grow outside its original socket. Eye right: keep full original oval; never grow outside its original socket. Draw at most ONE eyebrow per eye, exactly two total if brows requested, not paired double lines.",
+  "elapsedSeconds": 19.627,
+  "role": "concept-reference",
+  "sourceAsset": "exec-39f019e2-7a56-4195-bd7a-b20fd9370400.png",
+  "sha256": "2388ec3b9410355d4ad9ed4594560dbc18bd38171a80695f41476c301a20940e",
+  "bytes": 1226146,
+  "width": 1591,
+  "height": 989
+}

@@ -1,0 +1,13 @@
+{
+  "id": "satisfied",
+  "path": "expressions/references/satisfied.png",
+  "tool": "image_gen.imagegen",
+  "prompt": "Use case: precise-object-edit.\nAsset type: ONE ATLAS expression concept reference, ID satisfied.\nInput image 1: exact base ATLAS face; edit target, preserve identity and layout.\nPrimary request: change only the facial expression to \"Así sí\". Intended context: Resultado correcto y sencillo. Expression family: celebration. Intensity: medium. Make it readable but natural and restrained, never exaggerated.\nKeep the same blue oval eye sockets, positions and maximum width/height. Alter only the eyelid mask / eyebrow angle when needed. The mouth remains a single blue round-ended stroke of exactly the original thickness, no teeth, lips, tongue or mouth filling. Keep all face anchors and canvas framing identical. Maintain near-black background and blue #00a8ff palette, no glow or texture. Preserve existing tiny ATLAS header and settings icon, add no titles or labels.\nExpression details: mouth path shape parameters [halfWidth, baselineY, curvature, asymmetry] [56,531,35,0] relative to original [58,527,48,0]; eyebrow paths []. Accessory: none; add no props.\nAvoid: big facial deformation, extra eyes, pupils, human features, 3D, illustration outlines, thicker mouth, exaggerated emotions, text captions, decorative scene. Deliver one single expression, not a sheet or grid.\nVisible eyelids required: Eye left: clip its top with a straight horizontal eyelid at 47% down its original oval height; never grow outside its original socket. Eye right: keep full original oval; never grow outside its original socket. Draw at most ONE eyebrow per eye, exactly two total if brows requested, not paired double lines.",
+  "elapsedSeconds": 51.864,
+  "role": "concept-reference",
+  "sourceAsset": "exec-efb51dc2-2a05-4c00-8adb-5ec9653c08d6.png",
+  "sha256": "09c285baa471d7733ae7ba697dbe73863fd00e066e9ceae78a88c639db7fbb49",
+  "bytes": 1186544,
+  "width": 1591,
+  "height": 989
+}

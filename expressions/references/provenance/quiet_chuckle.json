@@ -1,0 +1,13 @@
+{
+  "id": "quiet_chuckle",
+  "path": "expressions/references/quiet_chuckle.png",
+  "tool": "image_gen.imagegen",
+  "prompt": "Use case: precise-object-edit.\nAsset type: ONE ATLAS expression concept reference, ID quiet_chuckle.\nInput image 1: exact base ATLAS face; edit target, preserve identity and layout.\nPrimary request: change only the facial expression to \"Una risita\". Intended context: Broma suave que no pide carcajada. Expression family: humor. Intensity: medium. Make it readable but natural and restrained, never exaggerated.\nKeep the same blue oval eye sockets, positions and maximum width/height. Alter only the eyelid mask / eyebrow angle when needed. The mouth remains a single blue round-ended stroke of exactly the original thickness, no teeth, lips, tongue or mouth filling. Keep all face anchors and canvas framing identical. Maintain near-black background and blue #00a8ff palette, no glow or texture. Preserve existing tiny ATLAS header and settings icon, add no titles or labels.\nExpression details: mouth path shape parameters [halfWidth, baselineY, curvature, asymmetry] [58,525,58,0] relative to original [58,527,48,0]; eyebrow paths []. Accessory: none; add no props.\nAvoid: big facial deformation, extra eyes, pupils, human features, 3D, illustration outlines, thicker mouth, exaggerated emotions, text captions, decorative scene. Deliver one single expression, not a sheet or grid.\nVisible eyelids required: Eye left: keep full original oval; never grow outside its original socket. Eye right: clip its top with a straight horizontal eyelid at 58% down its original oval height; never grow outside its original socket. Draw at most ONE eyebrow per eye, exactly two total if brows requested, not paired double lines.",
+  "elapsedSeconds": 72.48,
+  "role": "concept-reference",
+  "sourceAsset": "exec-64409dba-b0a7-4c0a-a15a-b581c9606c5c.png",
+  "sha256": "42c237195a756760f6f74bf0e5264ae5acb6b3ef76c0cd5bcf08c926fa03a4b0",
+  "bytes": 1185007,
+  "width": 1591,
+  "height": 989
+}

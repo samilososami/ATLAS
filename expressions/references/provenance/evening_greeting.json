@@ -1,0 +1,10 @@
+{
+  "id": "evening_greeting",
+  "path": "expressions/references/evening_greeting.png",
+  "tool": "image_gen.imagegen",
+  "sourceAsset": "exec-c27974da-2e6d-4cee-a6a0-a424fafe4d0e.png",
+  "sha256": "cf72614cfa56c116cf0ed49b31d7d0093c4b88a444180c5c74b5f437cf2fcd1d",
+  "bytes": 1218788,
+  "width": 1591,
+  "height": 989
+}

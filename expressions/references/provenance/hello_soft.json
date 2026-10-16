@@ -1,0 +1,10 @@
+{
+  "id": "hello_soft",
+  "path": "expressions/references/hello_soft.png",
+  "tool": "image_gen.imagegen",
+  "sourceAsset": "exec-6f2d5315-70ac-4bc8-9913-5eac1ad11674.png",
+  "sha256": "de9b15ae69b501541bd26a9db1c8f59ae0de2612cce805df2e7b8f69b821b836",
+  "bytes": 1220526,
+  "width": 1591,
+  "height": 989
+}

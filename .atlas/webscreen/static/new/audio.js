@@ -5,8 +5,10 @@
 
   const ZERO = Object.freeze({ rms: 0, peak: 0, db: -100, available: true });
   const OUTPUT_SAMPLE_MS = 1000 / 30;
-  const EXPRESSIONS = new Set(["neutral", "angry", "delighted", "surprised", "curious", "skeptical",
-    "sad", "worried", "sleepy", "wink", "laughing", "focused", "shy"]);
+  const EXPRESSIONS = new Set(["neutral", "angry", "defiant", "delighted", "surprised", "curious", "skeptical",
+    "sad", "worried", "sleepy", "wink", "laughing", "focused", "shy", "ambitious", "confident",
+    "affectionate", "confused", "embarrassed", "relieved", "bored", "excited", "asleep"]);
+  for (const entry of window.AtlasExpressionCatalog?.expressions || []) EXPRESSIONS.add(entry.id);
   let screen = { state: "connecting", phase: "", title: "", detail: "" };
   let lastVisualState = "";
   let microphoneMuted = false;
@@ -18,10 +20,9 @@
   let nativeActive = false;
   let nativeTap = null;
   let nativeWaiting = false;
-  let connectionState = { healthy: false, label: "Conectando con ATLAS A1" };
+  const browserOnline = () => typeof navigator === "undefined" || navigator.onLine !== false;
+  let connectionState = { healthy: false, label: "Conectando con ATLAS A1", networkOnline: browserOnline() };
   let epoch = 0;
-  let lastInputSpeechAt = 0;
-  let inputQuiet = false;
   let currentTranscript = "";
   const external = new Map();
   const utterances = new Map();
@@ -58,7 +59,6 @@
     // wait for a real playout event, not for a generated text delta.
     else if (state === "speaking") state = "working";
     else if (state === "listening" && microphoneMuted) state = "idle";
-    else if (state === "listening" && inputQuiet) state = "working";
     if (state !== lastVisualState) {
       lastVisualState = state;
       face("update", { ...screen, state,
@@ -78,13 +78,10 @@
     }
     screen = next;
     if (screen.state === "listening" && previous !== "listening") {
-      lastInputSpeechAt = performance.now();
-      inputQuiet = false;
       currentTranscript = "";
       face("transcript", "");
     }
     if (["idle", "connecting", "error"].includes(screen.state)) {
-      inputQuiet = false;
       face("inputLevel", ZERO);
     }
     // Preserve new error/connection details even when the state is unchanged.
@@ -98,10 +95,8 @@
     const rms = Math.max(0, Math.min(1, Number(value?.rms) || 0));
     const peak = Math.max(0, Math.min(1, Number(value?.peak) || 0));
     const db = Math.max(-100, 20 * Math.log10(Math.max(0.00001, rms)));
-    if (rms > 0.014 && peak > 0.025) {
-      lastInputSpeechAt = performance.now();
-      inputQuiet = false;
-    } else if (performance.now() - lastInputSpeechAt > 500) inputQuiet = true;
+    // Metering animates the waveform only. A pause, soft syllable or delayed
+    // sample cannot decide that the user has finished an authorized turn.
     face("inputLevel", { rms, peak, db, available: true });
     render();
   }
@@ -204,9 +199,10 @@
       const value = readTap(tap);
       if (value && (!measured || value.rms > measured.rms)) measured = value;
     }
-    // No made-up amplitude if the platform only supplies word boundaries.
+    // Text timing is explicitly approximate, never reported as measured PCM.
     face("outputLevel", measured || { ...ZERO, available: false });
     render();
+    if (!measured) for (const item of utterances.values()) item.approximate?.();
   }
 
   function syncSampling() {
@@ -310,13 +306,37 @@
 
   function watchUtterance(utterance) {
     if (!utterance?.addEventListener || suspended) return () => {};
-    const item = { playing: false };
+    const item = { playing: false, elapsed: 0, startedAt: 0, boundarySeen: false, nextWord: 0 };
+    const text = String(utterance.text || '').slice(0, 12000);
+    const rate = Math.max(.1, Math.min(10, Number(utterance.rate) || 1));
+    let wordAt = 180;
+    const words = [...text.matchAll(/\S+/gu)].map(match => {
+      const word = { at: wordAt, charIndex: match.index, charLength: match[0].length };
+      wordAt += (Math.min(600, Math.max(150, match[0].length * 48)) + (/[.,;:!?]$/u.test(match[0]) ? 150 : 0)) / rate;
+      return word;
+    });
     const currentEpoch = epoch;
     utterances.set(utterance, item);
+    item.approximate = () => {
+      if (!item.playing || item.boundarySeen || item.nextWord >= words.length) return;
+      const elapsed = item.elapsed + performance.now() - item.startedAt;
+      if (words[item.nextWord].at > elapsed) return;
+      let word;
+      while (item.nextWord < words.length && words[item.nextWord].at <= elapsed) word = words[item.nextWord++];
+      if (elapsed - word.at < 220) face('speechBoundary', { type: 'word', charIndex: word.charIndex,
+        charLength: word.charLength, source: 'speechSynthesis.text-timing', approximate: true });
+    };
     const emit = (type, event = {}) => {
       if (currentEpoch !== epoch || utterances.get(utterance) !== item) return;
-      if (["start", "resume"].includes(type)) item.playing = true;
-      if (["pause", "end"].includes(type)) item.playing = false;
+      if (["start", "resume"].includes(type) && !item.playing) {
+        item.startedAt = performance.now();
+        item.playing = true;
+      }
+      if (["pause", "end"].includes(type) && item.playing) {
+        item.elapsed += performance.now() - item.startedAt;
+        item.playing = false;
+      }
+      if (type === 'word') item.boundarySeen = true;
       syncSampling();
       face("speechBoundary", { type, charIndex: Number(event.charIndex) || 0,
         charLength: Number(event.charLength) || 0, source: "speechSynthesis.boundary" });
@@ -352,7 +372,8 @@
     outputStream(null, null);
     face("inputLevel", ZERO);
     face("outputLevel", ZERO);
-    face("expression", { expression: "neutral", source: "model", durationMs: 1000 });
+    if (typeof window.AtlasFace?.clearAutonomous === "function") face("clearAutonomous");
+    else face("expression", { expression: "neutral", source: "model", durationMs: 1000 });
   }
 
   function expressionsAvailable() {
@@ -360,16 +381,20 @@
   }
 
   function expression(value) {
-    if (!expressionsAvailable() || value?.source !== "model" || !EXPRESSIONS.has(value?.expression)
-        || !Number.isInteger(value?.durationMs) || value.durationMs < 1000 || value.durationMs > 30000) return false;
-    try { return window.AtlasFace.expression({ expression: value.expression,
-      source: "model", durationMs: value.durationMs }) === true; } catch { return false; }
+    const name = ({ happy: 'delighted', sleep: 'asleep' })[value?.expression] || value?.expression;
+    const duration = value?.durationMs ?? (name === 'asleep' ? 3600000 : 15000);
+    if (!expressionsAvailable() || !["model", "event"].includes(value?.source) || !EXPRESSIONS.has(name)
+        || !Number.isInteger(duration) || duration < 1000 || duration > (name === 'asleep' ? 3600000 : 30000)) return false;
+    try { return window.AtlasFace.expression({ expression: name,
+      source: value.source, durationMs: duration }) === true; } catch { return false; }
   }
 
   function connection(value) {
-    connectionState = value;
-    face("connection", { ...value, healthy: Boolean(value?.healthy) && !suspended
+    connectionState = { ...connectionState, ...value,
+      networkOnline: typeof value?.networkOnline === "boolean" ? value.networkOnline : browserOnline() };
+    face("connection", { ...connectionState, healthy: Boolean(connectionState.healthy) && !suspended
       && !["connecting", "error"].includes(screen.state),
+      networkOnline: connectionState.networkOnline,
       ...(["connecting", "error"].includes(screen.state) ? { label: screen.title || "Conectando con ATLAS" } : {}) });
   }
 
@@ -381,6 +406,10 @@
       face("transcript", currentTranscript);
     },
     connection,
+    setDisplayMode(mode) {
+      try { return window.AtlasFace?.setDisplayMode?.(mode) || Promise.resolve(false); }
+      catch { return Promise.resolve(false); }
+    },
     expression, expressionsAvailable,
     microphoneMuted(value) {
       microphoneMuted = Boolean(value);
@@ -401,4 +430,6 @@
   document.addEventListener("visibilitychange", syncSampling);
   window.addEventListener("pagehide", () => window.AtlasFaceBridge.suspend());
   window.addEventListener("pageshow", event => { if (event.persisted) window.AtlasFaceBridge.resume(); });
+  window.addEventListener("online", () => connection({ networkOnline: true }));
+  window.addEventListener("offline", () => connection({ networkOnline: false }));
 })();

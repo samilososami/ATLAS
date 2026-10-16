@@ -1,0 +1,13 @@
+{
+  "id": "music_singalong",
+  "path": "expressions/references/music_singalong.png",
+  "tool": "image_gen.imagegen",
+  "prompt": "Use case: precise-object-edit.\nAsset type: ONE ATLAS expression concept reference, ID music_singalong.\nInput image 1: exact base ATLAS face; edit target, preserve identity and layout.\nPrimary request: change only the facial expression to \"Tarareando\". Intended context: Gesto lúdico durante música, sin inventar canto. Expression family: music. Intensity: subtle. Make it readable but natural and restrained, never exaggerated.\nKeep the same blue oval eye sockets, positions and maximum width/height. Alter only the eyelid mask / eyebrow angle when needed. The mouth remains a single blue round-ended stroke of exactly the original thickness, no teeth, lips, tongue or mouth filling. Keep all face anchors and canvas framing identical. Maintain near-black background and blue #00a8ff palette, no glow or texture. Preserve existing tiny ATLAS header and settings icon, add no titles or labels.\nExpression details: mouth path shape parameters [halfWidth, baselineY, curvature, asymmetry] [22,545,0,0] relative to original [58,527,48,0]; eyebrow paths []. Accessory: headphones drawn in thin flat blue lines, no human head/body.\nAvoid: big facial deformation, extra eyes, pupils, human features, 3D, illustration outlines, thicker mouth, exaggerated emotions, text captions, decorative scene. Deliver one single expression, not a sheet or grid.\nVisible eyelids required: Eye left: keep full original oval; never grow outside its original socket. Eye right: keep full original oval; never grow outside its original socket. Draw at most ONE eyebrow per eye, exactly two total if brows requested, not paired double lines.",
+  "elapsedSeconds": 58.975,
+  "role": "concept-reference",
+  "sourceAsset": "exec-a8176981-4ede-4669-81cb-b3da8616b10a.png",
+  "sha256": "eb48c64983e776eeb10e3c85be2e4e82cb48e1f76d0349ecb984570eaf9379ff",
+  "bytes": 1223800,
+  "width": 1591,
+  "height": 989
+}

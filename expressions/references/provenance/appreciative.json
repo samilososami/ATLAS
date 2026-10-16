@@ -1,0 +1,13 @@
+{
+  "id": "appreciative",
+  "path": "expressions/references/appreciative.png",
+  "tool": "image_gen.imagegen",
+  "prompt": "Use case: precise-object-edit.\nAsset type: ONE ATLAS expression concept reference, ID appreciative.\nInput image 1: exact base ATLAS face; edit target, preserve identity and layout.\nPrimary request: change only the facial expression to \"Gracias de verdad\". Intended context: Recibe un agradecimiento sincero. Expression family: warmth. Intensity: subtle. Make it readable but natural and restrained, never exaggerated.\nKeep the same blue oval eye sockets, positions and maximum width/height. Alter only the eyelid mask / eyebrow angle when needed. The mouth remains a single blue round-ended stroke of exactly the original thickness, no teeth, lips, tongue or mouth filling. Keep all face anchors and canvas framing identical. Maintain near-black background and blue #00a8ff palette, no glow or texture. Preserve existing tiny ATLAS header and settings icon, add no titles or labels.\nExpression details: mouth path shape parameters [halfWidth, baselineY, curvature, asymmetry] [58,528,47,0] relative to original [58,527,48,0]; eyebrow paths []. Accessory: none; add no props.\nAvoid: big facial deformation, extra eyes, pupils, human features, 3D, illustration outlines, thicker mouth, exaggerated emotions, text captions, decorative scene. Deliver one single expression, not a sheet or grid.\nVisible eyelids required: Eye left: keep full original oval; never grow outside its original socket. Eye right: clip its top with a straight horizontal eyelid at 17% down its original oval height; never grow outside its original socket. Draw at most ONE eyebrow per eye, exactly two total if brows requested, not paired double lines.",
+  "elapsedSeconds": 86.996,
+  "role": "concept-reference",
+  "sourceAsset": "exec-7e3cbe07-0132-4ef9-896d-8a4860ae0964.png",
+  "sha256": "5d76c21bc009a593a4405e6bdf8e3d3c170b43b638e238c517824e761ea4acfc",
+  "bytes": 1212747,
+  "width": 1591,
+  "height": 989
+}

@@ -1,0 +1,110 @@
+#!/usr/bin/python3
+"""Control only the local ATLAS face; identical entry point for every OS user."""
+import argparse
+import json
+import math
+import os
+import sys
+import urllib.error
+import urllib.request
+
+RESPONSE_MAX_BYTES = 64 * 1024
+
+
+def read_response(response):
+    """Bound local replies without silently truncating the larger catalogue."""
+    raw = response.read(RESPONSE_MAX_BYTES + 1)
+    if len(raw) > RESPONSE_MAX_BYTES:
+        raise ValueError('Face response exceeds 64 KiB')
+    result = json.loads(raw)
+    if not isinstance(result, dict):
+        raise ValueError('Invalid face response')
+    return result
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('expression', nargs='?', default='status', help='expression name, list, status, reset, clock, mode or usb (preview)')
+    parser.add_argument('clock_value', nargs='?', help='clock: on, off or status; usb: attach or detach')
+    parser.add_argument('--duration', type=float, help='seconds: 1..30, sleep 1..3600 (defaults 15 / 3600)')
+    parser.add_argument('--json', action='store_true', help='print machine-readable state')
+    parser.add_argument('--details', action='store_true', help='list: include labels and categories')
+    args = parser.parse_args()
+    if args.details and args.expression != 'list':
+        parser.error('--details requires list')
+    is_clock = args.expression in ('clock', 'mode')
+    is_usb = args.expression == 'usb'
+    if args.clock_value and not (is_clock or is_usb):
+        parser.error('only clock and usb accept a second value')
+    if is_usb and args.clock_value not in (None, 'attach', 'detach'):
+        parser.error('usb accepts attach or detach')
+    if is_clock and args.clock_value not in (None, 'on', 'off', 'status'):
+        parser.error('clock accepts on, off or status')
+    action = args.expression if args.expression in ('list', 'status', 'reset') else 'set'
+    maximum = 3600 if args.expression in ('asleep', 'sleep') else 30
+    if args.duration is not None and (is_clock or is_usb or action != 'set' or not math.isfinite(args.duration) or not 1 <= args.duration <= maximum):
+        parser.error(f'--duration requires an expression and must be between 1 and {maximum} seconds')
+    payload = {'action': action}
+    if action == 'set':
+        payload['expression'] = args.expression
+        if args.duration is not None:
+            payload['duration'] = args.duration
+    try:
+        port = int(os.environ.get('ATLAS_WEBSCREEN_PORT', '5000'))
+        if not 1 <= port <= 65535:
+            raise ValueError('ATLAS_WEBSCREEN_PORT must be 1..65535')
+        def post(path, body):
+            request = urllib.request.Request(f'http://127.0.0.1:{port}{path}',
+                data=json.dumps(body).encode(), headers={'Content-Type': 'application/json'}, method='POST')
+            with opener.open(request, timeout=4) as response:
+                return read_response(response)
+        # Local traffic must never inherit a proxy or follow an external redirect.
+        class NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, *unused):
+                return None
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
+        if is_usb:
+            result = post('/api/internal/display-mode', {'action': 'preview_usb_remove' if args.clock_value == 'detach' else 'preview_usb'})
+        elif is_clock:
+            clock_action = 'status' if args.expression == 'mode' or args.clock_value == 'status' else 'set'
+            clock_mode = 'clock' if args.clock_value != 'off' else 'face'
+            display_payload = {'action': clock_action}
+            if clock_action == 'set': display_payload['mode'] = clock_mode
+            result = post('/api/internal/display-mode', display_payload)
+        else:
+            result = post('/api/internal/face', payload)
+            if action == 'status':
+                display = post('/api/internal/display-mode', {'action': 'status'})
+                result['displayMode'] = display['mode']
+        if not result.get('ok'):
+            raise ValueError(result.get('error', 'Invalid face response'))
+    except (OSError, ValueError, urllib.error.URLError) as error:
+        if isinstance(error, urllib.error.HTTPError):
+            try:
+                message = json.loads(error.read(2048)).get('error', str(error))
+            except (ValueError, OSError):
+                message = str(error)
+        else:
+            message = str(error)
+        print(f'atlas-face: {message}', file=sys.stderr)
+        return 1
+    if args.json:
+        print(json.dumps(result, ensure_ascii=False))
+    elif action == 'list':
+        details = {item['id']: item for item in result.get('expressionDetails', [])}
+        for name in result['expressions']:
+            item = details.get(name)
+            print(f"{name} · {item['label']} [{item['category']}]" if args.details and item else name)
+        print('Aliases: ' + ', '.join(f'{a} → {b}' for a, b in result['aliases'].items()))
+    elif is_usb:
+        print(f"Vista previa USB {'desconectado' if args.clock_value == 'detach' else 'conectado'} (2,4 s; vuelve al modo actual)")
+    elif is_clock:
+        print(f"modo reloj {'activo' if result['mode'] == 'clock' else 'desactivado'}")
+    else:
+        suffix = f" · modo reloj: {result['displayMode']}" if action == 'status' else ''
+        print(f"{result['expression']} (remaining {result['remainingMs'] / 1000:g}s; sequence {result['sequence']}){suffix}")
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

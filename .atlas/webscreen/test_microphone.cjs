@@ -9,6 +9,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
 function page({ hostname = 'localhost', search = '?kiosk=1', permission = 'granted',
                 secure = true, getUserMedia, realtime = false, settingsFetch } = {}) {
   let owner = false, adapter, requests = 0, starts = 0;
+  let now = 100;
   const nodes = new Map(), timers = new Map(), recognizers = [], windowEvents = new Map();
   let timerId = 0;
   const element = () => ({ children: [], dataset: {}, hidden: false, disabled: false,
@@ -78,7 +79,7 @@ function page({ hostname = 'localhost', search = '?kiosk=1', permission = 'grant
   };
   const context = vm.createContext({ window, location: { hostname, search }, URLSearchParams, AbortController,
     crypto: { randomUUID: () => 'test-interaction-id' },
-    performance: { now: () => 100 }, localStorage: { getItem: () => null },
+    performance: { now: () => now }, localStorage: { getItem: () => null },
     navigator: {
       permissions: { query: async () => ({ state: permission }) },
       mediaDevices: { getUserMedia: async constraints => {
@@ -93,6 +94,18 @@ function page({ hostname = 'localhost', search = '?kiosk=1', permission = 'grant
   });
   vm.runInContext(source, context);
   return { node, streams, recognizers, stream, realtimeMock, wakeCalls, wakeRequests,
+    sample(rms, peak = rms * 3, elapsed = 25) {
+      now += elapsed;
+      context.__samples = new Float32Array(512).fill(rms);
+      context.__samples[0] = peak;
+      vm.runInContext(`voiceGateReady = true; voiceAudioContext = { state: 'running' };
+        voiceSamples = new Float32Array(512);
+        voiceAnalyser = { getFloatTimeDomainData(data) { data.set(__samples); } };
+        sampleVoiceActivity();`, context);
+    },
+    admission: () => context.getInputAdmission(),
+    speechSegments: text => JSON.parse(JSON.stringify(context.browserSpeechSegments(text))),
+    advance(ms) { now += ms; },
     get requests() { return requests; }, get starts() { return starts; },
     acquire() { owner = true; adapter.acquired(); },
     followUp() {
@@ -135,6 +148,56 @@ function page({ hostname = 'localhost', search = '?kiosk=1', permission = 'grant
     },
   };
 }
+
+test('shared microphone gate rejects sustained quiet input and isolated clicks', () => {
+  const p = page();
+  for (let i = 0; i < 80; i++) p.sample(0.005, 0.015);
+  assert.equal(p.admission().available, true);
+  assert.equal(p.admission().allowed, false);
+  p.sample(0.15, 0.6);
+  for (let i = 0; i < 8; i++) p.sample(0.005, 0.015);
+  assert.equal(p.admission().allowed, false);
+});
+
+test('A1 speaks its own name in one utterance while remote clients retain wake protection', () => {
+  const text = 'Soy Atlas y puedo ayudarte.';
+  assert.deepEqual(page().speechSegments(text), [{ text, protected: false }]);
+  assert.deepEqual(page({ search: '' }).speechSegments(text), [
+    { text: 'Soy ', protected: false }, { text: 'Atlas', protected: true },
+    { text: ' y puedo ayudarte.', protected: false },
+  ]);
+  assert.deepEqual(page().speechSegments(''), []);
+});
+
+test('normal microphone level survives syllable dips and a four hundred ms pause', () => {
+  const p = page();
+  for (let i = 0; i < 8; i++) p.sample(0.03, 0.09);
+  assert.equal(p.admission().allowed, true);
+  assert.equal(p.admission().active, true);
+  for (let i = 0; i < 16; i++) p.sample(0.005, 0.015);
+  assert.equal(p.admission().active, true);
+  for (let i = 0; i < 8; i++) p.sample(0.03, 0.09);
+  assert.equal(p.admission().active, true);
+  for (let i = 0; i < 60; i++) p.sample(0.005, 0.015);
+  assert.equal(p.admission().allowed, false);
+  p.advance(300);
+  assert.equal(p.admission().available, false);
+  assert.equal(p.admission().allowed, true, 'stale metering cannot veto voice');
+});
+
+test('Chrome wake and new whispered fragments use the same sustained microphone evidence', async () => {
+  const p = page({ realtime: true }); p.acquire(); await p.initialize(); await tick(); p.flushTimers();
+  for (let i = 0; i < 30; i++) p.sample(0.005, 0.015);
+  p.recognize('Atlas dime algo');
+  assert.equal(p.wakeCalls.length, 0);
+  for (let i = 0; i < 8; i++) p.sample(0.03, 0.09);
+  p.recognize('Atlas qué hora es');
+  assert.equal(p.wakeCalls.length, 1);
+  const before = p.wakeRequests.length;
+  for (let i = 0; i < 60; i++) p.sample(0.005, 0.015);
+  p.recognize('Atlas qué hora es conversación privada', true);
+  assert.equal(p.wakeRequests.length, before, 'sub-threshold fragment is not queued');
+});
 
 const healthyReply = (voice = 'ash') => ({ ok: true, json: async () => ({
   ready: true, realtime: { ready: true, model: 'test-realtime', voice },

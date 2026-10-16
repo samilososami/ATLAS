@@ -23,7 +23,7 @@
   const worriedEye = eye("M -55 15 C -57 -5 -55 -28 -46 -43 Q -18 -79 26 -97 Q 42 -103 48 -83 C 53 -62 56 -27 56 0 C 56 57 31 101 0 101 C -31 101 -55 60 -55 15 Z");
   // Geometry is local to fixed eye sockets. Eyelid/blink transforms are on a
   // separate parent, so changes of shape cannot move the blink's pivot.
-  const expressions = Object.freeze({
+  const legacyExpressions = Object.freeze({
     neutral: { eyes: null, mouth: smile, stroke: 26, speech: "smile" },
     angry: { eyes: [angryEye, { ...angryEye, mirrored: true }], mouth: "M 740 555 Q 795.5 502 851 555", stroke: 24, speech: "frown" },
     // Same restrained eyes as angry. Only the curve is inverted, retaining the
@@ -43,8 +43,28 @@
     // horizontal path has zero objectBoundingBox height and vanishes in Chrome.
     focused: { eyes: [eye("M -56 -4 H 56 C 56 52 31 87 0 87 C -31 87 -56 52 -56 -4 Z"), eye("M -56 -4 H 56 C 56 52 31 87 0 87 C -31 87 -56 52 -56 -4 Z")], mouth: "M 766 535 H 825 A 9 9 0 0 1 825 553 H 766 A 9 9 0 0 1 766 535 Z", stroke: 0, fill: blue, speech: "flat" },
     shy: { eyes: [eye(oval(47, 88)), eye(oval(47, 88))], mouth: "M 768 532 Q 795.5 552 823 532", stroke: 18, speech: "small" },
+    ambitious: { eyes: [eye("M -55 -56 Q 0 -82 55 -12 L 55 8 C 55 67 29 104 0 104 C -31 104 -55 60 -55 0 Z"), eye("M -55 -56 Q 0 -82 55 -12 L 55 8 C 55 67 29 104 0 104 C -31 104 -55 60 -55 0 Z", 0, true)], mouth: "M 744 538 Q 795.5 581 847 526", stroke: 23, speech: "curious" },
+    confident: { eyes: [eye("M -55 -30 Q 0 -54 55 -30 L 55 0 C 55 62 30 100 0 100 C -30 100 -55 62 -55 0 Z"), eye("M -55 -30 Q 0 -54 55 -30 L 55 0 C 55 62 30 100 0 100 C -30 100 -55 62 -55 0 Z")], mouth: "M 742 534 Q 795.5 574 849 534", stroke: 23, speech: "smile" },
+    affectionate: { eyes: [eye("M -47 17 Q 0 -39 47 17", 22), eye("M -47 17 Q 0 -39 47 17", 22)], mouth: "M 755 531 Q 795.5 562 836 531", stroke: 22, speech: "small" },
+    confused: { eyes: [eye(oval(50, 106)), eye("M -53 -20 Q 0 -58 53 -20 L 53 0 C 53 52 28 88 0 88 C -28 88 -53 52 -53 0 Z")], mouth: "M 765 546 Q 780 528 796 541 Q 811 553 827 536", stroke: 19, speech: "worried" },
+    embarrassed: { eyes: [eye(oval(43, 68)), eye(oval(43, 68))], mouth: "M 770 538 Q 795.5 561 821 533", stroke: 18, speech: "small" },
+    relieved: { eyes: [eye("M -50 18 Q 0 -35 50 18", 20), eye("M -50 18 Q 0 -35 50 18", 20)], mouth: "M 748 531 Q 795.5 579 843 531", stroke: 23, speech: "smile" },
+    bored: { eyes: [eye("M -54 24 H 54 C 54 73 30 103 0 103 C -30 103 -54 73 -54 24 Z"), eye("M -54 24 H 54 C 54 73 30 103 0 103 C -30 103 -54 73 -54 24 Z")], mouth: "M 767 536 H 824 A 8 8 0 0 1 824 552 H 767 A 8 8 0 0 1 767 536 Z", stroke: 0, fill: blue, speech: "flat" },
+    excited: { eyes: [eye(oval(58, 113)), eye(oval(58, 113))], mouth: "M 738 522 Q 795.5 548 853 522 Q 845 594 795.5 594 Q 746 594 738 522 Z", stroke: 0, fill: blue, speech: "happy" },
+    asleep: { eyes: [eye("M -49 3 Q 0 52 49 3", 17), eye("M -49 3 Q 0 52 49 3", 17)], mouth: "M 779 540 Q 795.5 550 812 540", stroke: 14, speech: "small" },
   });
+  const expressionCatalog = window.AtlasExpressionCatalog;
+  const catalogEntries = new Map((expressionCatalog?.expressions || []).map(entry => [entry.id, entry]));
+  const expressions = Object.freeze({ ...legacyExpressions, ...Object.fromEntries(
+    [...catalogEntries.values()].filter(entry => !entry.legacy).map(entry => [entry.id, entry.pose])) });
   const expressionNames = Object.keys(expressions);
+  // A stale/offline page missing the versioned catalogue retains the historical
+  // renderer contract instead of breaking its existing 23 expressions.
+  const expressionPolicy = expressionCatalog?.policy || { maxChangesPerResponse: 2, minHoldMs: 1000, cooldownMs: 2500, defaultDurationMs: 15000 };
+  let responseExpressionCount = 0;
+  let responseExpressionId = null;
+  let lastAutonomousExpressionAt = -Infinity;
+  let lastExpressionChangedAt = -Infinity;
   let modelExpression = null;
   let pettingExpression = null;
   let clapExpression = null;
@@ -78,14 +98,26 @@
   let idleWasEligible = false;
   let lastInteractionAt = performance.now();
   let outputAvailable = true;
+  let networkOnline = typeof navigator === "undefined" || navigator.onLine !== false;
+  let displayMode = "face";
+  let displayCursor = "";
+  let displayRequest = null;
+  let displayRetryTimer = 0;
+  let clockTimer = 0;
+  let usbEventId = null;
+  let usbTimer = 0;
+  let usbActive = false;
+  let whatsappMode = "idle";
+  let whatsappSequence = 0;
+  let whatsappTimer = 0;
+  let whatsappRequest = null;
   let suspended = document.hidden;
   const levels = Array(61).fill(0);
 
   const header = document.createElement("header");
   header.className = "face-header";
-  header.innerHTML = `<div class="face-brand" aria-label="ATLAS"><img class="face-brand-mark" src="/new/logo.png" alt="" width="25" height="27"><img class="face-brand-word" src="/new/atlas-wordmark.svg" alt="ATLAS" width="74" height="12"></div><span class="face-connection" role="status" aria-label="Comprobando conexión con ATLAS A1" title="Comprobando conexión con ATLAS A1" data-healthy="false"></span>`;
+  header.innerHTML = `<div class="face-brand" aria-label="ATLAS"><img class="face-brand-mark" src="/new/logo.png" alt="" width="25" height="27"><img class="face-brand-word" src="/new/atlas-wordmark.svg" alt="ATLAS" width="74" height="12"></div>`;
   content.prepend(header);
-  const connectionDot = header.querySelector(".face-connection");
   const menu = $("#menu-toggle");
   if (menu) {
     menu.setAttribute("aria-label", "Abrir ajustes y herramientas");
@@ -125,8 +157,12 @@
   stage.dataset.expression = activeExpression;
   stage.dataset.expressionSource = activeExpressionSource;
   stage.dataset.sleep = sleepPhase;
+  stage.dataset.presentation = "connecting";
+  stage.dataset.displayMode = displayMode;
+  stage.dataset.whatsapp = whatsappMode;
+  stage.dataset.network = networkOnline ? "online" : "offline";
   stage.setAttribute("aria-label", "ATLAS");
-  const expressiveEyes = (side, cx) => expressionNames.filter(name => expressions[name].eyes && name !== "delighted").map(name => {
+  const expressiveEyes = (side, cx) => Object.keys(legacyExpressions).filter(name => expressions[name].eyes && name !== "delighted").map(name => {
     const shape = expressions[name].eyes[side];
     return `<g class="face-eye-variant face-eye-${name}"><path d="${shape.d}" transform="translate(${cx} 425)${shape.mirrored ? " scale(-1 1)" : ""}" fill="${shape.stroke ? "none" : blue}" stroke="${shape.stroke ? blue : "none"}" stroke-width="${shape.stroke}" stroke-linecap="round" stroke-linejoin="round"/></g>`;
   }).join("");
@@ -134,6 +170,9 @@
     <defs>
       <linearGradient id="atlas-face-blue" x1="0" y1="0" x2=".8" y2="1"><stop offset="0" stop-color="#00a8ff"/><stop offset=".52" stop-color="#009bff"/><stop offset="1" stop-color="#008cee"/></linearGradient>
       <radialGradient id="atlas-face-light"><stop stop-color="#008fff" stop-opacity=".45"/><stop offset=".42" stop-color="#008fff" stop-opacity=".14"/><stop offset="1" stop-color="#008fff" stop-opacity="0"/></radialGradient>
+      <linearGradient id="atlas-motion-blue" x1="0" y1="0" x2="1" y2=".7"><stop stop-color="#0096ff"/><stop offset="1" stop-color="#08bcf5"/></linearGradient>
+      <mask id="atlas-wifi-cut" maskUnits="userSpaceOnUse" x="530" y="220" width="530" height="480"><rect x="530" y="220" width="530" height="480" fill="white"/><path d="M 602 283 L 962 623" stroke="black" stroke-width="75" stroke-linecap="round"/></mask>
+      <clipPath id="atlas-usb-port-clip"><rect x="620" y="390" width="350" height="500"/></clipPath>
       <mask id="atlas-happy-left" maskUnits="userSpaceOnUse" x="569.6525" y="300" width="140" height="260"><rect x="569.6525" y="300" width="140" height="260" fill="white"/><g transform="translate(639.6525 425)"><path class="face-happy-cutout" d="M -75 56 Q 0 -45 75 56 L 75 230 H -75 Z" fill="black"/></g></mask>
       <mask id="atlas-happy-right" maskUnits="userSpaceOnUse" x="881.3475" y="300" width="140" height="260"><rect x="881.3475" y="300" width="140" height="260" fill="white"/><g transform="translate(951.3475 425)"><path class="face-happy-cutout" d="M -75 56 Q 0 -45 75 56 L 75 230 H -75 Z" fill="black"/></g></mask>
     </defs>
@@ -149,14 +188,121 @@
       </g></g>
       <g class="face-sleep-z" fill="url(#atlas-face-blue)" aria-hidden="true"><path class="face-z face-z-one" d="M 0 0 H 22 V 6 L 8 26 H 22 V 33 H 0 V 27 L 14 7 H 0 Z"/><path class="face-z face-z-two" d="M 0 0 H 22 V 6 L 8 26 H 22 V 33 H 0 V 27 L 14 7 H 0 Z"/><path class="face-z face-z-three" d="M 0 0 H 22 V 6 L 8 26 H 22 V 33 H 0 V 27 L 14 7 H 0 Z"/></g>
     </g>
+    <g class="face-connection-visual" aria-hidden="true">
+      <ellipse cx="795.5" cy="465" rx="285" ry="280" fill="url(#atlas-face-light)" opacity=".16"/>
+      <g class="face-connect-orbit">
+        <circle cx="795.5" cy="465" r="185" transform="rotate(-30 795.5 465)" fill="none" stroke="url(#atlas-motion-blue)" stroke-width="39" stroke-linecap="round" stroke-dasharray="985 178"/>
+        <circle class="face-connect-bead" cx="895" cy="309" r="23" fill="#39d6ff"/>
+      </g>
+    </g>
+    <g class="face-offline-visual" aria-hidden="true">
+      <ellipse cx="795.5" cy="465" rx="280" ry="250" fill="url(#atlas-face-light)" opacity=".16"/>
+      <g class="face-wifi-signal" fill="none" stroke="url(#atlas-motion-blue)" stroke-width="39" stroke-linecap="round" mask="url(#atlas-wifi-cut)">
+        <path d="M 588 380 Q 795.5 181 1003 380"/>
+        <path d="M 650 446 Q 795.5 306 941 446"/>
+        <path d="M 711 507 Q 795.5 426 880 507"/>
+        <circle cx="795.5" cy="579" r="33" fill="url(#atlas-motion-blue)" stroke="none"/>
+      </g>
+      <path class="face-offline-slash" d="M 602 283 L 962 623" fill="none" stroke="url(#atlas-motion-blue)" stroke-width="34" stroke-linecap="round" pathLength="1"/>
+    </g>
+    <g class="face-clock-visual" aria-hidden="true">
+      <ellipse cx="795.5" cy="465" rx="530" ry="220" fill="url(#atlas-face-light)" opacity=".12"/>
+      <g transform="translate(319.5 321) scale(1.92)" fill="none" stroke="url(#atlas-motion-blue)" stroke-width="18" stroke-linecap="round" stroke-linejoin="round">
+        <path class="face-clock-digit-0" d="M 10 75 H 70"/>
+        <path class="face-clock-digit-1" transform="translate(112 0)" d="M 10 75 H 70"/>
+        <g class="face-clock-separator" fill="#03aaff" stroke="none"><circle cx="242" cy="49" r="8.5"/><circle cx="242" cy="103" r="8.5"/></g>
+        <path class="face-clock-digit-2" transform="translate(292 0)" d="M 10 75 H 70"/>
+        <path class="face-clock-digit-3" transform="translate(404 0)" d="M 10 75 H 70"/>
+      </g>
+    </g>
+    <g class="face-usb-visual" aria-hidden="true">
+      <g class="face-usb-art" transform="translate(795.5 465) scale(1.2) translate(-795.5 -465)">
+      <ellipse class="face-usb-halo" cx="795.5" cy="440" rx="230" ry="250" fill="url(#atlas-face-light)" opacity=".16"/>
+      <rect x="680" y="310" width="231" height="80" rx="32" fill="url(#atlas-motion-blue)"/>
+      <rect x="701" y="331" width="189" height="38" rx="13" fill="#030910"/>
+      <g clip-path="url(#atlas-usb-port-clip)"><g class="face-usb-plug">
+        <path d="M 795.5 663 V 742" stroke="#009bff" stroke-width="24" stroke-linecap="round"/>
+        <rect x="766" y="609" width="59" height="70" rx="17" fill="#009bff"/>
+        <rect x="727" y="421" width="137" height="122" rx="8" fill="url(#atlas-motion-blue)"/>
+        <rect x="751" y="453" width="22" height="25" rx="3" fill="#030910"/>
+        <rect x="818" y="453" width="22" height="25" rx="3" fill="#030910"/>
+        <path d="M 724 519 H 867 Q 881 519 881 536 V 604 Q 881 651 834 651 H 757 Q 710 651 710 604 V 536 Q 710 519 724 519 Z" fill="url(#atlas-motion-blue)"/>
+      </g></g>
+      <path class="face-usb-spark" d="M 650 333 L 629 319 M 940 333 L 961 319" fill="none" stroke="#35caff" stroke-width="9" stroke-linecap="round"/>
+      </g>
+    </g>
     <g class="face-wave" fill="url(#atlas-face-blue)"></g>
-  </svg><div class="face-copy"><p class="face-transcript" aria-live="off"></p><p class="face-caption" role="status" aria-live="polite"></p></div>`;
+  </svg>
+  <div class="face-whatsapp-visual" aria-live="polite">
+    <div class="face-whatsapp-spinner" aria-hidden="true"><i></i><i></i><i></i></div>
+    <canvas class="face-whatsapp-qr" width="512" height="512" aria-label="Código QR de WhatsApp"></canvas>
+    <div class="face-whatsapp-check" aria-hidden="true"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="48"/><path d="m34 61 17 17 36-39"/></svg></div>
+    <div class="face-whatsapp-error" aria-hidden="true">!</div>
+    <p class="face-whatsapp-title"></p><p class="face-whatsapp-detail"></p>
+  </div>
+  <div class="face-copy"><p class="face-transcript" aria-live="off"></p><p class="face-caption" role="status" aria-live="polite"></p></div>`;
   view.append(stage);
   const caption = stage.querySelector(".face-caption");
   const transcript = stage.querySelector(".face-transcript");
   const mouth = stage.querySelector(".face-mouth");
   const previousMouth = stage.querySelector(".face-mouth-previous");
+  // Only four dynamic eye paths for the 150 new poses. The original 23 keep
+  // their exact SVG geometry; the catalogue does not add hundreds of idle nodes.
+  const catalogEyeNodes = ["left", "right"].map((side, index) => {
+    const parent = stage.querySelector(`.face-eye-doze.face-eye-${side}`);
+    const nodes = {};
+    for (const layer of ["previous", "current"]) {
+      const node = document.createElementNS(svgNS, "path");
+      node.setAttribute("class", `face-catalog-eye face-catalog-eye-${layer}`);
+      node.setAttribute("transform", `translate(${index ? 951.3475 : 639.6525} 425)`);
+      node.setAttribute("stroke-linecap", "round");
+      node.setAttribute("stroke-linejoin", "round");
+      parent.append(node);
+      nodes[layer] = node;
+    }
+    return nodes;
+  });
+  const decorations = {};
+  for (const layer of ["previous", "current"]) {
+    const node = document.createElementNS(svgNS, "g");
+    node.setAttribute("class", `face-catalog-decoration face-catalog-decoration-${layer}`);
+    stage.querySelector(".face-affect-bounce").append(node);
+    decorations[layer] = node;
+  }
+  const accessoryPaths = Object.freeze({
+    none: "",
+    headphones: '<path d="M 557 420 V 387 C 557 242 1034 242 1034 387 V 420"/><rect x="546" y="391" width="24" height="75" rx="11"/><rect x="1021" y="391" width="24" height="75" rx="11"/>',
+    headphone_one: '<path d="M 557 419 V 387 C 557 242 1034 242 1034 387"/><rect x="546" y="391" width="24" height="75" rx="11"/><path d="M 1034 387 L 1042 421"/>',
+    note: '<path d="M 1058 353 V 310 L 1080 304 V 343"/><ellipse cx="1049" cy="355" rx="9" ry="6"/><ellipse cx="1071" cy="345" rx="9" ry="6"/>',
+    tv: '<rect x="773" y="626" width="45" height="30" rx="4"/><path d="M 788 662 H 803 M 795.5 656 V 662"/>',
+    cast: '<rect x="775" y="626" width="43" height="30" rx="4"/><path d="M 768 639 Q 786 639 786 657 M 768 648 Q 777 648 777 657"/><circle cx="768" cy="657" r="1"/>',
+    speaker: '<path d="M 778 638 H 786 L 799 629 V 658 L 786 649 H 778 Z M 807 634 Q 816 644 807 654 M 815 628 Q 831 644 815 660"/>',
+    bluetooth: '<path d="M 793 622 V 666 L 811 651 L 778 633 M 778 655 L 811 636 L 793 622"/>',
+    phone: '<rect x="783" y="624" width="25" height="40" rx="5"/><path d="M 792 658 H 799"/>',
+    link: '<path d="M 790 635 L 796 629 Q 808 621 815 631 Q 821 640 810 647 L 805 651 M 800 651 L 794 657 Q 782 665 775 655 Q 769 646 780 639 L 785 635 M 785 651 L 805 635"/>',
+    link_off: '<path d="M 795 631 Q 808 621 815 631 Q 821 640 811 647 M 794 657 Q 782 665 775 655 Q 769 646 779 639 M 776 625 L 817 664"/>',
+    check: '<path d="M 778 642 L 791 654 L 815 629"/>',
+    search: '<circle cx="790" cy="639" r="14"/><path d="M 801 650 L 815 664"/>',
+  });
   const wave = stage.querySelector(".face-wave");
+  const whatsappQr = stage.querySelector(".face-whatsapp-qr");
+  const whatsappTitle = stage.querySelector(".face-whatsapp-title");
+  const whatsappDetail = stage.querySelector(".face-whatsapp-detail");
+  const clockDigits = Array.from({ length: 4 }, (_, i) => stage.querySelector(`.face-clock-digit-${i}`));
+  // Rounded native outlines keep the intended type identical on the Pi and
+  // phones, without loading a font or relying on the platform's monospace face.
+  const digitPaths = [
+    "M 40 5 C 14 5 4 28 4 75 C 4 122 14 145 40 145 C 66 145 76 122 76 75 C 76 28 66 5 40 5 Z",
+    "M 10 30 L 40 5 V 145",
+    "M 4 33 C 7 -4 73 -7 76 32 C 80 61 4 110 4 145 H 78",
+    "M 5 24 C 16 -1 74 -5 76 33 C 78 57 58 72 34 72 M 34 72 C 94 63 98 145 43 145 C 21 145 8 136 3 123",
+    "M 61 145 V 5 L 0 100 H 81",
+    "M 75 5 H 8 V 65 C 94 36 99 147 42 145 C 21 145 8 136 3 125",
+    "M 69 5 C 22 13 3 45 4 99 C 5 161 82 159 79 101 C 77 59 8 56 4 99",
+    "M 1 5 H 80 L 24 145",
+    "M 40 71 C -4 69 -6 5 40 5 C 86 5 84 69 40 71 C -10 73 -10 145 40 145 C 90 145 90 73 40 71 Z",
+    "M 11 145 C 59 137 77 104 76 51 C 75 -11 -2 -9 1 49 C 3 91 72 94 76 51",
+  ];
   const bars = levels.map((_, i) => {
     const bar = document.createElementNS(svgNS, "rect");
     bar.setAttribute("x", String(475.5 + i * 10.6));
@@ -173,6 +319,188 @@
   const setAttribute = (node, name, value) => {
     if (node.getAttribute(name) !== value) node.setAttribute(name, value);
   };
+  function visiblePresentation() {
+    if (["connecting", "qr", "success", "error"].includes(whatsappMode)) return "whatsapp";
+    // A microphone can reconnect while Realtime is rebuilding its audio source.
+    // Hardware feedback must remain visible during that recovery as well.
+    if (usbActive && ["idle", "connecting", "error"].includes(state)) return "usb";
+    // Connection and offline feedback replace the face, not the reliable voice
+    // controller. A generic Realtime retry uses the linking animation; only a
+    // browser-known offline network uses the crossed Wi-Fi glyph.
+    if (!networkOnline) return "offline";
+    if (["connecting", "error"].includes(state) || !connectionHealthy) return "connecting";
+    if (state === "listening") return "listening";
+    if (displayMode === "clock" && state === "idle") return "clock";
+    return "face";
+  }
+  function paintClock() {
+    const value = new Date();
+    const formatter = new Intl.DateTimeFormat("es-ES", {
+      hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+    });
+    const pieces = Object.fromEntries(formatter.formatToParts(value)
+      .filter(piece => piece.type === "hour" || piece.type === "minute")
+      .map(piece => [piece.type, piece.value]));
+    const digits = `${pieces.hour || "00"}${pieces.minute || "00"}`;
+    clockDigits.forEach((node, i) => setAttribute(node, "d", digitPaths[Number(digits[i])]));
+  }
+  function syncClock() {
+    clearTimeout(clockTimer);
+    clockTimer = 0;
+    if (suspended || stage.dataset.presentation !== "clock") return;
+    paintClock();
+    clockTimer = setTimeout(syncClock, Math.max(50, 1005 - (Date.now() % 1000)));
+  }
+  function syncPresentation() {
+    if (usbActive && (!["idle", "connecting", "error"].includes(state) || suspended)) clearUsb();
+    const presentation = visiblePresentation();
+    if (stage.dataset.presentation !== presentation) stage.dataset.presentation = presentation;
+    stage.dataset.displayMode = displayMode;
+    stage.dataset.whatsapp = whatsappMode;
+    stage.dataset.network = networkOnline ? "online" : "offline";
+    syncClock();
+  }
+  function renderWhatsAppQr(matrix) {
+    if (!whatsappQr || !Array.isArray(matrix) || !matrix.length) return;
+    const size = matrix.length;
+    const unit = 9;
+    whatsappQr.width = size * unit;
+    whatsappQr.height = size * unit;
+    const context = whatsappQr.getContext("2d", { alpha: false });
+    if (!context) return;
+    context.imageSmoothingEnabled = false;
+    context.fillStyle = "#f3f9ff";
+    context.fillRect(0, 0, whatsappQr.width, whatsappQr.height);
+    context.fillStyle = "#008ff4";
+    matrix.forEach((row, y) => [...row].forEach((cell, x) => {
+      if (cell === "1") context.fillRect(x * unit, y * unit, unit, unit);
+    }));
+  }
+  function applyWhatsAppState(payload = {}) {
+    const mode = ["idle", "connecting", "qr", "success", "error"].includes(payload.mode)
+      ? payload.mode : "idle";
+    whatsappMode = mode;
+    whatsappSequence = Number(payload.sequence) || 0;
+    if (mode === "qr") renderWhatsAppQr(payload.matrix);
+    const copy = {
+      idle: ["", ""],
+      connecting: ["Preparando WhatsApp", "Un momento…"],
+      qr: ["Vincula WhatsApp", "Escanea el código desde Dispositivos vinculados"],
+      success: ["WhatsApp conectado", payload.phone ? `Cuenta +${payload.phone}` : "Vinculación completada"],
+      error: ["No se pudo vincular", payload.message || "Vuelve a intentarlo"],
+    }[mode];
+    setText(whatsappTitle, copy[0]);
+    setText(whatsappDetail, copy[1]);
+    syncPresentation();
+  }
+  function stopWhatsAppPolling() {
+    clearTimeout(whatsappTimer);
+    whatsappTimer = 0;
+    whatsappRequest?.abort();
+    whatsappRequest = null;
+  }
+  async function pollWhatsApp() {
+    if (whatsappRequest || suspended || !window.atlasAccess?.hasControl?.()) return;
+    const controller = new AbortController();
+    whatsappRequest = controller;
+    let delay = whatsappMode === "idle" ? 1500 : 450;
+    try {
+      const response = await window.atlasAccess.fetch("/api/whatsapp/display", {
+        cache: "no-store", signal: controller.signal,
+      });
+      if (!response.ok) throw new Error(`whatsapp display ${response.status}`);
+      const payload = await response.json();
+      if (!controller.signal.aborted
+          && (Number(payload.sequence) !== whatsappSequence || payload.mode !== whatsappMode)) {
+        applyWhatsAppState(payload);
+      }
+    } catch { delay = controller.signal.aborted ? 1200 : 2500; }
+    finally {
+      if (whatsappRequest === controller) whatsappRequest = null;
+      if (!suspended) whatsappTimer = setTimeout(pollWhatsApp, delay);
+    }
+  }
+  function resumeWhatsAppPolling() {
+    clearTimeout(whatsappTimer);
+    whatsappTimer = 0;
+    if (!suspended && window.atlasAccess?.hasControl?.()) void pollWhatsApp();
+  }
+  function applyDisplayMode(payload) {
+    const mode = payload?.mode;
+    if (!["face", "clock"].includes(mode)) return false;
+    displayMode = mode;
+    if (typeof payload.cursor === "string") displayCursor = payload.cursor;
+    const event = payload.usb;
+    if (event && typeof event.id === "string") {
+      const [epoch, sequence] = event.id.split(":");
+      const [previousEpoch, previousSequence] = (usbEventId || "").split(":");
+      if (epoch !== previousEpoch) usbEventId = event.id;
+      else if (Number(sequence) > Number(previousSequence)) {
+        usbEventId = event.id;
+        if (Number.isFinite(event.ageMs) && event.ageMs < 4000) showUsb(event.kind);
+      }
+    }
+    syncPresentation();
+    return true;
+  }
+  function clearUsb() {
+    clearTimeout(usbTimer);
+    usbTimer = 0;
+    usbActive = false;
+  }
+  function showUsb(kind) {
+    if (suspended || !["idle", "connecting", "error"].includes(state)) return;
+    const action = kind === "detached" ? "detached" : "attached";
+    if (usbActive && stage.dataset.usbAction === action) return;
+    clearTimeout(usbTimer);
+    stage.dataset.usbAction = action;
+    usbActive = true;
+    usbTimer = setTimeout(() => { clearUsb(); syncPresentation(); }, 2400);
+  }
+  function stopDisplayEvents() {
+    clearTimeout(displayRetryTimer);
+    displayRetryTimer = 0;
+    displayRequest?.abort();
+    displayRequest = null;
+  }
+  async function listenDisplayEvents() {
+    if (displayRequest || suspended || !window.atlasAccess?.hasControl?.()) return;
+    const controller = new AbortController();
+    displayRequest = controller;
+    let retry = 0;
+    try {
+      const response = await window.atlasAccess.fetch(`/api/display-mode/events?after=${encodeURIComponent(displayCursor)}`,
+        { cache: "no-store", signal: controller.signal });
+      if (!response.ok) throw new Error(`display mode ${response.status}`);
+      const snapshot = await response.json();
+      if (!controller.signal.aborted && applyDisplayMode(snapshot)) retry = 0;
+    } catch {
+      retry = controller.signal.aborted ? 0 : 700;
+    } finally {
+      if (displayRequest === controller) displayRequest = null;
+      if (!suspended && window.atlasAccess?.hasControl?.()) {
+        displayRetryTimer = setTimeout(listenDisplayEvents, retry);
+      }
+    }
+  }
+  function resumeDisplayEvents() {
+    if (suspended || !window.atlasAccess?.hasControl?.()) return;
+    clearTimeout(displayRetryTimer);
+    displayRetryTimer = 0;
+    void listenDisplayEvents();
+  }
+  async function setDisplayMode(mode) {
+    if (!["face", "clock"].includes(mode) || suspended || !window.atlasAccess?.hasControl?.()) return false;
+    try {
+      const response = await window.atlasAccess.fetch("/api/display-mode", {
+        method: "POST", cache: "no-store", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode }),
+      });
+      if (!response.ok || !applyDisplayMode(await response.json())) return false;
+      resumeDisplayEvents();
+      return true;
+    } catch { return false; }
+  }
   function clearExpressionTransition() {
     clearTimeout(expressionTransitionTimer);
     expressionTransitionTimer = 0;
@@ -182,6 +510,45 @@
     clearTimeout(clapPulseTimer);
     clapPulseTimer = 0;
     if (stage.hasAttribute("data-clap-activated")) stage.removeAttribute("data-clap-activated");
+    stage.removeAttribute("data-catalog-previous");
+    stage.removeAttribute("data-catalog-morph");
+  }
+  function paintCatalogExpression(name, previousName) {
+    const current = catalogEntries.get(name);
+    const previous = catalogEntries.get(previousName);
+    const isNew = current && !current.legacy;
+    const wasNew = previous && !previous.legacy;
+    stage.dataset.catalogExpression = String(Boolean(isNew));
+    stage.dataset.catalogPrevious = String(Boolean(wasNew));
+    stage.dataset.expressionCategory = current?.category || "legacy";
+    stage.dataset.expressionIntensity = current?.intensity || "original";
+    const duration = name === "neutral" ? previous?.motion?.exitMs : current?.motion?.entryMs;
+    stage.style.setProperty("--face-expression-duration", `${duration || 180}ms`);
+    stage.dataset.expressionMotion = name === "neutral" ? previous?.motion?.exit || "settle" : current?.motion?.entry || "morph";
+    let morphCompatible = Boolean(isNew && wasNew);
+    catalogEyeNodes.forEach((nodes, index) => {
+      for (const [layer, entry] of [["previous", previous], ["current", current]]) {
+        if (!entry || entry.legacy) continue;
+        const shape = entry.pose.eyes[index];
+        setAttribute(nodes[layer], "d", shape.d);
+        setAttribute(nodes[layer], "fill", shape.stroke ? "none" : blue);
+        setAttribute(nodes[layer], "stroke", shape.stroke ? "#009dff" : "none");
+        setAttribute(nodes[layer], "stroke-width", String(shape.stroke || 0));
+      }
+      if (isNew && wasNew && current.pose.eyes[index].stroke !== previous.pose.eyes[index].stroke) morphCompatible = false;
+    });
+    stage.dataset.catalogMorph = String(morphCompatible);
+    decorations.previous.innerHTML = decorations.current.innerHTML;
+    const pose = isNew ? current.pose : null;
+    decorations.current.innerHTML = pose ? pose.brows.map((d, index) => d
+      ? `<path d="${d}" transform="translate(${index ? 951.3475 : 639.6525} 425)" fill="none" stroke="#009dff" stroke-width="8" stroke-linecap="round"/>` : "").join("")
+      + `<g class="face-catalog-accessory" data-accessory="${pose.accessory}" fill="none" stroke="#009dff" stroke-width="${pose.accessory.startsWith("headphone") ? 7 : 4}" stroke-linecap="round" stroke-linejoin="round">${accessoryPaths[pose.accessory] || ""}</g>` : "";
+  }
+  function beginResponse(id) {
+    if (id != null && id === responseExpressionId) return false;
+    responseExpressionId = id ?? null;
+    responseExpressionCount = 0;
+    return true;
   }
   function restMouth() {
     const profile = expressions[activeExpression];
@@ -192,13 +559,22 @@
   }
   function speechMouth(level) {
     if (level < .035) { restMouth(); return; }
-    const style = expressions[activeExpression].speech;
+    const profile = expressions[activeExpression];
+    const style = profile.speech;
     let opening = 12 + level * 57;
     let width = 52 - level * 10;
     let d;
     // The neutral articulation is intentionally unchanged. Other expressions
     // retain their affect in the upper lip and their own resting mouth at PCM 0.
-    if (style === "round") {
+    if (catalogEntries.get(activeExpression)?.legacy === false && profile.mouthShape && style !== "round") {
+      // Preserve each new pose's corner tilt and emotional upper lip while
+      // articulating. Loudness opens the mouth; it never replaces the emotion
+      // with an unrelated generic smile.
+      const [half, y, bend, tilt] = profile.mouthShape;
+      width = half * (1 - level * .12);
+      const lower = y + Math.max(12, bend * .45) + level * 47;
+      d = `M ${795.5-width} ${y} Q 795.5 ${y+bend*.55} ${795.5+width} ${y+tilt} Q ${795.5+width} ${lower} 795.5 ${lower} Q ${795.5-width} ${lower} ${795.5-width} ${y} Z`;
+    } else if (style === "round") {
       const rx = 21 + level * 7, ry = 30 + level * 22;
       d = `M 795.5 ${551 - ry} A ${rx} ${ry} 0 1 1 795.5 ${551 + ry} A ${rx} ${ry} 0 1 1 795.5 ${551 - ry} Z`;
     } else if (style === "laugh") {
@@ -231,13 +607,18 @@
     if (stage.dataset.expression !== name) stage.dataset.expression = name;
     if (stage.dataset.expressionSource !== source) stage.dataset.expressionSource = source;
     if (!changed) return;
+    lastExpressionChangedAt = performance.now();
+    paintCatalogExpression(name, previousExpression);
     if (state === "speaking") speechMouth(mouthLevel); else restMouth();
     if (animate && !suspended && !reducedMotion.matches) {
       stage.setAttribute("data-expression-transition", "true");
       if (name === "delighted") stage.setAttribute("data-happy-bounce", "true");
       if (previousExpression === "defiant" && name === "neutral") stage.setAttribute("data-clap-returning", "true");
       expressionTransitionTimer = setTimeout(clearExpressionTransition,
-        previousExpression === "defiant" && name === "neutral" ? 340 : name === "defiant" ? 160 : 280);
+        name === "neutral" ? catalogEntries.get(previousExpression)?.motion?.exitMs || 180 : catalogEntries.get(name)?.motion?.entryMs || 180);
+    } else {
+      stage.removeAttribute("data-catalog-previous");
+      stage.removeAttribute("data-catalog-morph");
     }
   }
   function syncExpression() {
@@ -248,29 +629,45 @@
     if (pettingExpression && pettingExpression.expiresAt <= now) pettingExpression = null;
     if (clapExpression && clapExpression.expiresAt <= now) clapExpression = null;
     const selected = clapExpression || pettingExpression || modelExpression;
-    renderExpression(selected?.expression || "neutral", clapExpression ? "clap" : pettingExpression ? "petting" : modelExpression ? "model" : "neutral");
+    renderExpression(selected?.expression || "neutral", clapExpression ? "clap" : pettingExpression ? "petting" : modelExpression ? (modelExpression.source || "model") : "neutral");
     const deadlines = [modelExpression, pettingExpression, clapExpression].filter(Boolean).map(item => item.expiresAt);
     if (deadlines.length && !suspended) expressionTimer = setTimeout(syncExpression, Math.max(1, Math.min(...deadlines) - now));
+    syncSleepClock();
   }
   function resetExpression() {
     clearTimeout(expressionTimer);
     expressionTimer = 0;
     modelExpression = pettingExpression = clapExpression = null;
+    responseExpressionCount = 0;
+    responseExpressionId = null;
+    lastAutonomousExpressionAt = -Infinity;
     clearExpressionTransition();
     renderExpression("neutral", "neutral", false);
   }
   function expression(payload = {}) {
     if (!payload || typeof payload !== "object" || suspended || document.hidden || view.hidden || content.hidden || pageSuspended) return false;
-    const { expression: name, source = "model", durationMs = 15000 } = payload;
-    // Defiant is deliberately local: Realtime cannot pick it opportunistically.
-    if (!expressionNames.includes(name) || !["model", "petting"].includes(source) || name === "defiant") return false;
+    const { source = "model" } = payload;
+    const name = ({ happy: "delighted", sleep: "asleep" })[payload.expression] || payload.expression;
+    const durationMs = payload.durationMs ?? catalogEntries.get(name)?.recommendedDurationMs ?? (name === "asleep" ? 3600000 : expressionPolicy.defaultDurationMs);
+    if (!expressionNames.includes(name) || !["model", "command", "petting", "event"].includes(source)) return false;
+    if (expressionCatalog && (source === "model" || source === "event")) {
+      if (payload.responseId != null) beginResponse(payload.responseId);
+      // Repeated tool chunks do not restart a pose or extend its lifetime.
+      if (name === activeExpression) return true;
+      const now = performance.now();
+      if (responseExpressionCount >= expressionPolicy.maxChangesPerResponse
+          || now-lastAutonomousExpressionAt < expressionPolicy.cooldownMs
+          || (["model", "event"].includes(activeExpressionSource) && now-lastExpressionChangedAt < expressionPolicy.minHoldMs)) return false;
+      responseExpressionCount += 1;
+      lastAutonomousExpressionAt = now;
+    }
     if (source === "petting") {
       if (name !== "delighted") return false;
       interact({ source: "petting" });
       pettingExpression = { expression: name, expiresAt: performance.now() + 6000 };
     } else {
-      const duration = Number.isFinite(Number(durationMs)) ? clamp(durationMs, 1000, 30000) : 15000;
-      modelExpression = name === "neutral" ? null : { expression: name, expiresAt: performance.now() + duration };
+      const duration = Number.isFinite(Number(durationMs)) ? clamp(durationMs, source === "command" ? 1 : expressionPolicy.minHoldMs, name === "asleep" ? 3600000 : 30000) : expressionPolicy.defaultDurationMs;
+      modelExpression = name === "neutral" ? null : { expression: name, source, expiresAt: performance.now() + duration };
     }
     syncExpression();
     return true;
@@ -363,6 +760,13 @@
   // This is decorative inactivity only. It neither pauses the recognizer nor
   // changes the assistant's real state, microphone, audio or response timing.
   function syncSleepClock() {
+    if (activeExpression === "asleep" && !suspended) {
+      clearSleepDeadline();
+      sleepPlan = null;
+      idleWasEligible = false;
+      setSleepPhase("asleep");
+      return;
+    }
     if (!canDoze()) {
       clearSleepDeadline();
       idleWasEligible = false;
@@ -397,6 +801,10 @@
   function interact({ source = "controls" } = {}) {
     if (!["wake", "petting", "controls", "clap"].includes(source) || suspended || document.hidden || view.hidden || content.hidden || pageSuspended) return false;
     const wasAsleep = sleepPhase === "asleep";
+    if (modelExpression?.expression === "asleep") {
+      modelExpression = null;
+      syncExpression();
+    }
     clearSleepDeadline();
     clearWake();
     lastInteractionAt = performance.now();
@@ -464,7 +872,8 @@
     if (!["idle", "listening", "working", "speaking", "connecting", "error"].includes(nextState)) nextState = "working";
     if (nextState !== state) {
       const previousState = state;
-      if (nextState === "listening" || nextState === "speaking") interact({ source: nextState === "listening" ? "wake" : "controls" });
+      if (nextState === "listening" && previousState !== "listening") beginResponse();
+      if (nextState === "listening" || (nextState === "speaking" && activeExpression !== "asleep")) interact({ source: nextState === "listening" ? "wake" : "controls" });
       state = nextState;
       stage.dataset.state = state;
       clearTimeout(boundaryTimer);
@@ -479,6 +888,7 @@
     // status and actionable errors remain in the original debug drawer and dot.
     setText(caption, "");
     setText(transcript, "");
+    syncPresentation();
     syncSleepClock();
     syncBlink();
     scheduleDraw();
@@ -487,21 +897,39 @@
     suspended = pageSuspended || document.hidden || view.hidden || content.hidden;
     setAttribute(document.body, "data-face-paused", String(suspended));
     if (suspended) {
+      clearUsb();
+      usbEventId = null; // Hidden/reloaded pages never replay an old attachment.
       cancelAnimationFrame(frame);
       frame = 0;
       clearTimeout(boundaryTimer);
       clearWake();
       resetExpression();
       resetMouth();
-    } else scheduleDraw();
+      stopDisplayEvents();
+      stopWhatsAppPolling();
+      syncClock();
+    } else {
+      scheduleDraw();
+      syncPresentation();
+      resumeDisplayEvents();
+      resumeWhatsAppPolling();
+    }
     syncSleepClock();
     syncBlink();
   }
   new MutationObserver(onVisibility).observe(view, { attributes: true, attributeFilter: ["hidden"] });
   new MutationObserver(onVisibility).observe(content, { attributes: true, attributeFilter: ["hidden"] });
   document.addEventListener("visibilitychange", onVisibility);
-  window.addEventListener("pagehide", () => { pageSuspended = true; onVisibility(); });
+  document.addEventListener("pointerdown", event => { if (event.isTrusted !== false) interact({ source: "controls" }); });
+  document.addEventListener("keydown", event => { if (event.isTrusted !== false) interact({ source: "controls" }); });
+  window.addEventListener("pagehide", () => { pageSuspended = true; stopDisplayEvents(); onVisibility(); });
   window.addEventListener("pageshow", () => { pageSuspended = false; onVisibility(); });
+  window.addEventListener("atlas-access-acquired", () => {
+    resumeDisplayEvents();
+    resumeWhatsAppPolling();
+  });
+  window.addEventListener("online", () => { networkOnline = true; syncPresentation(); });
+  window.addEventListener("offline", () => { networkOnline = false; syncPresentation(); });
   reducedMotion.addEventListener?.("change", () => { clearExpressionTransition(); if (reducedMotion.matches) clearWake(); syncBlink(); scheduleDraw(); });
   // The original drawer handles open/close; add keyboard focus containment to it.
   let drawerWasOpen = false;
@@ -534,6 +962,30 @@
     interact,
     clap,
     expression,
+    beginResponse,
+    clearAutonomous() {
+      // Cancellation is a lifecycle action, not another emotional tool call.
+      // It cannot be rejected by a consumed budget, and must not cancel an
+      // explicitly commanded nap/pose or a local petting/clap gesture.
+      const cleared = ["model", "event"].includes(modelExpression?.source);
+      if (cleared) { modelExpression = null; syncExpression(); }
+      responseExpressionCount = 0;
+      responseExpressionId = null;
+      lastAutonomousExpressionAt = -Infinity;
+      return cleared;
+    },
+    listExpressions() { return expressionNames.slice(); },
+    snapshot() {
+      const metadata = catalogEntries.get(activeExpression);
+      return Object.freeze({ expression: activeExpression, source: activeExpressionSource,
+        category: metadata?.category || "legacy", intensity: metadata?.intensity || "original",
+        accessory: metadata?.pose?.accessory || "none", state, sleepPhase,
+        presentation: stage.dataset.presentation, responseExpressionCount, responseId: responseExpressionId,
+        catalogVersion: expressionCatalog?.schemaVersion || 0 });
+    },
+    clearCommand() {
+      if (modelExpression?.source === "command") { modelExpression = null; syncExpression(); }
+    },
     reset() { resetExpression(); clearWake(); clearSleepDeadline(); sleepPlan = null; idleWasEligible = false; setSleepPhase("awake"); syncSleepClock(); },
     transcript() { setText(transcript, ""); },
     inputLevel(sample) {
@@ -550,19 +1002,21 @@
       targetMouth = reducedMotion.matches ? (amplitude(sample) > .08 ? .35 : 0) : amplitude(sample);
       scheduleDraw();
     },
-    connection({ healthy = false, label = "" } = {}) {
+    connection({ healthy = false, label = "", networkOnline: nextNetworkOnline } = {}) {
       connectionHealthy = Boolean(healthy);
+      networkOnline = typeof nextNetworkOnline === "boolean" ? nextNetworkOnline
+        : (typeof navigator === "undefined" || navigator.onLine !== false);
       if (!connectionHealthy) clearWake();
-      setAttribute(connectionDot, "data-healthy", String(Boolean(healthy)));
-      const description = label || (healthy ? "ATLAS A1 conectado" : "Sin conexión con ATLAS A1");
-      setAttribute(connectionDot, "aria-label", description);
-      setAttribute(connectionDot, "title", description);
+      setAttribute(stage, "aria-label", label || (networkOnline ? "ATLAS" : "ATLAS sin Wi-Fi"));
+      syncPresentation();
       syncSleepClock();
     },
+    setDisplayMode,
+    displayMode() { return displayMode; },
     speechBoundary({ type, charLength = 4 } = {}) {
       if (state !== "speaking" || suspended) return;
-      // SpeechSynthesis exposes word boundaries, not PCM. In that fallback only,
-      // mouth articulation follows actual boundary events and closes afterwards.
+      // SpeechSynthesis exposes no PCM: use real word events, or explicitly
+      // approximate text-timing pulses, and restore the mouth after each pulse.
       if (["end", "pause"].includes(type)) { clearTimeout(boundaryTimer); resetMouth(); return; }
       if (type !== "word" || outputAvailable) return;
       targetMouth = reducedMotion.matches ? .35 : .52;

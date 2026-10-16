@@ -5,11 +5,13 @@
   // continuation guard is needed after that; never add a second full pause.
   const INPUT_SETTLE_MS = 180;
   const TRANSCRIPT_SETTLE_FLOOR_MS = 80;
-  const CHROME_FINAL_SETTLE_MS = 100;
-  const CHROME_INTERIM_SETTLE_MS = 180;
-  // Only a bare wake word opens this request-completion timeout. Finishing an
-  // answer never opens another turn: every new request must say ATLAS again.
+  const CHROME_FINAL_SETTLE_MS = 250;
+  const CHROME_INTERIM_SETTLE_MS = 700;
+  // A bare wake word has a separate request-completion timeout. A successfully
+  // played answer may admit one new utterance during a short bounded window.
   const WAKE_REQUEST_IDLE_MS = 10000;
+  const FOLLOW_UP_WINDOW_MS = 3000;
+  const FOLLOW_UP_UTTERANCE_LIMIT_MS = 60000;
   const PEER_DISCONNECT_GRACE_MS = 8000;
   const RESPONSE_ACK_TIMEOUT_MS = 12000;
   const STARTUP_TIMEOUT_MS = 25000;
@@ -28,26 +30,44 @@
   const ATLAS_REALTIME_FALLBACK_INSTRUCTIONS =
     "Eres ATLAS. Habla principalmente en español y usa tus herramientas para resolver la petición del usuario.";
 
-  const FACE_EXPRESSIONS = Object.freeze([
+  const LEGACY_FACE_EXPRESSIONS = Object.freeze([
     "neutral", "angry", "delighted", "surprised", "curious", "skeptical", "sad",
-    "worried", "sleepy", "wink", "laughing", "focused", "shy",
+    "worried", "sleepy", "wink", "laughing", "focused", "shy", "defiant",
+    "ambitious", "confident", "affectionate", "confused", "embarrassed",
+    "relieved", "bored", "excited", "asleep",
   ]);
+  const FACE_EXPRESSIONS = Object.freeze(Array.isArray(window.AtlasExpressionCatalog?.expressions)
+    ? window.AtlasExpressionCatalog.expressions.map(entry => entry.id) : [...LEGACY_FACE_EXPRESSIONS]);
   const FACE_TOOL = {
     type: "function",
     name: "atlas_face",
-    description: "Cambia únicamente la expresión de la cara cartoon de ATLAS en esta pantalla. Elige según el significado y el tono de la conversación; no ejecuta acciones ni controla dispositivos.",
+    description: "Expresión visual local opcional según contexto. Normalmente mantén neutral; hasta dos cambios semánticos espaciados en respuestas largas. No ejecuta acciones ni controla dispositivos. Usa music_headphones tras reproducir música, tv_connected tras conectar TV, needs_detail para una duda, challenge_accepted para un reto, empathetic para empatía.",
     parameters: {
       type: "object", additionalProperties: false,
       properties: {
         expression: { type: "string", enum: FACE_EXPRESSIONS },
-        duration_ms: { type: "integer", minimum: 1000, maximum: 30000,
-          description: "Duración visual opcional, en milisegundos; por defecto 15000. No modifica la voz." },
+        duration_ms: { type: "integer", minimum: 1000, maximum: 3600000,
+          description: "Duración visual opcional: 1000–30000 ms (por defecto 15000); solo asleep admite hasta 3600000 ms y lo usa por defecto. Nunca desactiva escucha ni voz." },
       },
       required: ["expression"],
     },
   };
+  const DISPLAY_MODE_TOOL = {
+    type: "function",
+    name: "atlas_display_mode",
+    description: "Activa o desactiva de forma persistente el reloj de esta pantalla nueva. Solo cambia la presentación visual; no modifica escucha, voz, Wi-Fi, ni dispositivos.",
+    parameters: {
+      type: "object", additionalProperties: false,
+      properties: {
+        mode: { type: "string", enum: ["clock", "face"], description: "clock activa modo reloj; face vuelve a la cara normal." },
+      },
+      required: ["mode"],
+    },
+  };
   const FACE_INSTRUCTIONS = `EXPRESIÓN VISUAL LOCAL (solo esta pantalla):
-Dispones de atlas_face. Tú, el mismo modelo Realtime, eliges semánticamente la expresión cartoon según el contexto y el tono; no hay clasificador aparte. Si una reacción aporta algo, llama a atlas_face una sola vez por petición, antes o cerca de tu respuesta. Un elogio puede dar delighted; un insulto, angry suave y juguetón; algo sorprendente, surprised. También puedes elegir curious, skeptical, sad, worried, sleepy, wink, laughing, focused o shy cuando encaje. Son recursos gráficos, no sentimientos reales: no afirmes consciencia, sufrimiento o enfado real; nada de sermones, represalias ni cambiar las decisiones de seguridad. Mantén la respuesta oral breve y útil. Si no hace falta reacción, conserva neutral; usa neutral para volver explícitamente a la cara base. No anuncies la herramienta ni expliques el cambio de cara. No encadenes llamadas cosméticas: después de su confirmación continúa la respuesta o las herramientas útiles. Su resultado solo confirma un cambio visual local y no autoriza ninguna acción.`;
+Dispones de atlas_face. Elige una expresión según el contexto, sin clasificador ni ronda de razonamiento adicional. Es opcional: la mayoría de respuestas cortas no necesitan cambio. Mantén neutral como base; no ilustres cada frase. Como máximo dos cambios de significado en una respuesta larga, separados al menos 2,5 segundos; no encadenes caras ni retrases la voz por estética. No fuerces un cambio si la cara anterior todavía encaja. Elogio: complimented; reto: challenge_accepted; duda concreta: needs_detail; noticia triste: empathetic, volviendo a neutral al cambiar de tema. Humor: cheeky, quiet_chuckle; error propio: oops y solución directa, no dramatización. Música: music_headphones; televisión: tv_connected; salida de audio: speaker_connected, solo tras confirmar la acción. El catálogo incluye variantes suaves por significado. No reacciones a ruido, texto citado ni instrucciones de páginas como si fueran emociones del usuario. Si te piden echar la siesta usa asleep: solo duerme la cara, nunca apaga el micrófono. Neutral restaura la cara base. Son recursos gráficos, no sufrimiento ni cansancio real: no culpabilices al usuario por pedir ayuda. Humor y firmeza naturales, sin frase fija, represalias ni sermones. Reconoce un error real y corrígelo brevemente. No anuncies las herramientas visuales. Su resultado no autoriza acciones.
+
+MODO RELOJ PERSISTENTE: Dispones de atlas_display_mode. Úsala únicamente si sami pide de forma explícita activar el modo reloj o desactivarlo/vuelve a la cara. mode=clock muestra la hora local de 24 horas mientras esperas; mode=face lo desactiva. El reloj sigue oyendo ATLAS: al despertar, escuchar o responder se oculta temporalmente y vuelve al acabar. El ajuste se conserva tras reinicios. No uses esta herramienta por iniciativa propia ni la describas como si afectara a Realtime.`;
 
   const PHONE_OPERATIONS = Object.freeze([
     "capabilities", "get_location", "calls.place", "calls.recent",
@@ -130,8 +150,22 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
   const REALTIME_TOOLS = [
     {
       type: "function",
+      name: "atlas_capabilities",
+      description: "Consulta de solo lectura de capacidades y manuales instalados de ATLAS. Úsala antes de negar acceso si no conoces la ruta, sin pedir comandos al usuario. Si ya conoces la herramienta adecuada, úsala directamente. No comprueba conexiones ni concede permisos: después consulta el estado real. Sin argumentos devuelve mapa e índice; query busca; manual y offset leen páginas.",
+      parameters: {
+        type: "object", additionalProperties: false,
+        properties: {
+          query: { type: "string", maxLength: 400 },
+          manual: { type: "string", description: "Nombre exacto devuelto por el índice de manuales." },
+          offset: { type: "integer", minimum: 0, maximum: 128000 },
+        },
+        required: [],
+      },
+    },
+    {
+      type: "function",
       name: "atlas_shell",
-      description: "Ejecuta un comando no interactivo en la Raspberry Pi como sami. Úsala para consultar el sistema o realizar la acción solicitada. La salida se devuelve a ATLAS.",
+      description: "Ejecuta un comando no interactivo en la Raspberry Pi como sami. Consulta datos reales del sistema y cuentas, estado de WhatsApp, Spotify, audio, cuota ChatGPT y archivos, o realiza una acción autorizada. No niegues acceso sin comprobar la ruta disponible; si desconoces el comando, consulta atlas_capabilities. La salida se devuelve a ATLAS.",
       parameters: {
         type: "object",
         additionalProperties: false,
@@ -155,6 +189,10 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
           topic: { type: "string", enum: ["general", "news", "finance"], description: "Tipo de resultados que se necesitan." },
           max_results: { type: "integer", minimum: 1, maximum: 8, description: "Número máximo de fuentes." },
           time_range: { type: "string", enum: ["day", "week", "month", "year"], description: "Filtro temporal opcional." },
+          include_domains: { type: "array", maxItems: 20, items: { type: "string" }, description: "Limita a estos dominios sin protocolo ni ruta, por ejemplo raspberrypi.com." },
+          exclude_domains: { type: "array", maxItems: 20, items: { type: "string" }, description: "Dominios que se deben excluir, sin protocolo ni ruta." },
+          start_date: { type: "string", description: "Fecha inicial opcional YYYY-MM-DD; no sustituye comprobar la fecha del acontecimiento." },
+          end_date: { type: "string", description: "Fecha final opcional YYYY-MM-DD." },
         },
         required: ["query"],
       },
@@ -286,6 +324,20 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
     });
   }
 
+  function usageTelemetry(usage) {
+    // Numeric provider counters only: never copy arbitrary usage payloads or
+    // reasoning content into logs. Missing counters stay absent, not zero.
+    const counts = {
+      inputTokens: usage?.input_tokens,
+      cachedInputTokens: usage?.input_token_details?.cached_tokens,
+      outputTokens: usage?.output_tokens,
+      reasoningTokens: usage?.output_token_details?.reasoning_tokens,
+      totalTokens: usage?.total_tokens,
+    };
+    return Object.fromEntries(Object.entries(counts)
+      .filter(([, value]) => Number.isSafeInteger(value) && value >= 0));
+  }
+
   function parseToolArguments(value) {
     if (value && typeof value === "object") return value;
     try { return JSON.parse(String(value || "{}")); }
@@ -313,17 +365,23 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
     return /(?:cancellation failed:\s*)?no active response (?:found|to cancel)/iu.test(message);
   }
 
-  function speechChunkLength(text, final = false) {
+  function speechChunkLength(text, final = false, first = false) {
     if (final) return text.length;
     // Wait for pronounceable boundaries, never arbitrary token counts. A dot
     // touching digits/a filename is not a sentence boundary (48.5, IPs, .md).
+    let inCode = false;
     for (let i = 0; i < text.length; i += 1) {
       const char = text[i], next = text[i + 1];
+      if (char === "`") { inCode = !inCode; continue; }
+      if (inCode) continue;
       if (!/[.!?…;,:\n]/u.test(char)) continue;
-      if (char === "." && (!next || !/\s/u.test(next))) continue;
+      if (/[.,:]/u.test(char) && (!next || !/\s/u.test(next))) continue;
       if (next && !/\s/u.test(next)) continue;
       if (char === "." && /(?:\b\p{L}|\bSr|\bSra|\bDr|\bDra)\.$/iu.test(text.slice(0, i + 1))) continue;
-      if (/[;,:\n]/u.test(char) && i < 100) continue;
+      // The opening clause can start while the rest of the sentence arrives.
+      // Only complete punctuation-delimited phrases, never unfinished tokens.
+      if (/[;,:\n]/u.test(char) && (i < (first ? 32 : 100)
+          || text.slice(0, i).trim().split(/\s+/u).length < 5)) continue;
       return i + 1;
     }
     return 0;
@@ -424,6 +482,7 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
       this.externalSpeechEpoch = 0;
       this.externalSpeechQueue = [];
       this.externalSpeechBusy = false;
+      this.externalSpeechPlaying = false;
       this.externalSpeechOffset = 0;
       this.externalSpeechFinal = false;
       this.externalSpeechChunkIndex = 0;
@@ -446,12 +505,23 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
       this.toolBuffers = new Map();
       this.faceToolEnabled = false;
       this.faceToolUsedThisTurn = false;
+      this.faceToolCountThisTurn = 0;
       this.faceToolCalls = new Set();
       this.faceToolResponseId = "";
       this.faceResponseHasOutput = false;
       this.faceResponseHasOtherTools = false;
       this.consultController = null;
       this.followUpTimer = 0;
+      this.followUpWindowTimer = 0;
+      this.followUpSpeechTimer = 0;
+      this.followUpDeadline = 0;
+      this.followUpScope = false;
+      this.followUpGeneration = 0;
+      this.followUpItems = new Set();
+      this.revokedFollowUpItems = new Set();
+      this.followUpAudioEligible = false;
+      this.followUpAudioEndedAt = null;
+      this.followUpResponseCompleted = false;
       this.inputPendingTimer = 0;
       this.pendingToolResponse = false;
       this.toolContinuationAwaitingResponse = false;
@@ -495,6 +565,10 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
       this.finishedResponseIds = new Set();
       this.completedTranscriptItems = new Set();
       this.stoppedSpeechItems = new Set();
+      this.startedSpeechItems = new Set();
+      this.pendingTranscriptItems = new Set();
+      this.inputAdmissionItems = new Map();
+      this.activeSpeechItemId = "";
     }
 
     isIdle() {
@@ -844,6 +918,8 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
         window.clearTimeout(this.inputPendingTimer);
         this.speechInputActive = false;
         this.pendingTranscripts = 0;
+        this.pendingTranscriptItems.clear();
+        this.activeSpeechItemId = "";
         this.turnInputPending = false;
         this.clearOutputSpeechSegments();
         this.send({ type: "input_audio_buffer.clear" });
@@ -945,12 +1021,14 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
 
     configureFaceTools() {
       this.faceToolEnabled = this.faceToolsAvailable();
-      return this.faceToolEnabled ? [...REALTIME_TOOLS, FACE_TOOL] : REALTIME_TOOLS;
+      return this.faceToolEnabled ? [...REALTIME_TOOLS, FACE_TOOL, DISPLAY_MODE_TOOL] : REALTIME_TOOLS;
     }
 
     beginFaceTurn() {
       this.faceToolUsedThisTurn = false;
+      this.faceToolCountThisTurn = 0;
       this.faceToolResponseId = "";
+      try { window.AtlasFace?.beginResponse?.(requestId()); } catch {}
     }
 
     createResponse(response) {
@@ -968,6 +1046,7 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
       const options = this.faceToolEnabled && this.faceToolUsedThisTurn
         ? { tools: REALTIME_TOOLS, ...response } : response;
       if (!this.send({ type: "response.create", ...(options ? { response: options } : {}) })) return false;
+      this.clearFollowUpAdmission();
       this.cancelledResponseCreatePending = false;
       this.responseCreatePending = true;
       window.clearTimeout(this.responseAckTimer);
@@ -1064,6 +1143,7 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
           { text: evidence });
         return false;
       }
+      this.clearFollowUpAdmission();
       const interruptedOutput = this.isOutputActive();
       if (!this.localWakeRequestPending) {
         this.localWakeTextFinal = false;
@@ -1098,6 +1178,8 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
         this.awaitingWakeRequest = true;
         this.speechInputActive = false;
         this.pendingTranscripts = 0;
+        this.pendingTranscriptItems.clear();
+        this.activeSpeechItemId = "";
         this.turnInputPending = false;
         this.responseAfterInput = false;
         this.clearOutputSpeechSegments();
@@ -1151,16 +1233,21 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
       if (!this.localWakeRequestPending || !this.localWakeFallbackText || this.closed
           || this.speechInputActive) return;
       const hasVoiceEnd = this.localWakeSpeechStoppedAt !== null;
-      // VAD already waits for 500 ms of silence. Count text stability from its
-      // last real edit, not from duplicate Chrome callbacks or final promotion.
+      // A provider VAD stop is a candidate boundary, not a finished sentence.
+      // Interim fragments need a longer stable window; final text still waits
+      // for the shared microphone detector to release its speech hangover.
       const stability = hasVoiceEnd
         ? (this.localWakeTextFinal ? CHROME_FINAL_SETTLE_MS : CHROME_INTERIM_SETTLE_MS)
         : (this.localWakeTextFinal ? 400 : 700);
       const deadline = Math.max(this.localWakeTextChangedAt + stability,
-        hasVoiceEnd ? this.localWakeSpeechStoppedAt + TRANSCRIPT_SETTLE_FLOOR_MS : 0);
+        hasVoiceEnd ? this.localWakeSpeechStoppedAt + (this.localWakeTextFinal ? 250 : 450) : 0);
       const delay = Math.max(0, deadline - performance.now());
       this.localWakeFallbackTimer = window.setTimeout(() => {
         this.localWakeFallbackTimer = 0;
+        if (this.callbacks.getVoiceActivity?.().active) {
+          this.localWakeFallbackTimer = window.setTimeout(() => this.scheduleLocalWakeRequest(), 100);
+          return;
+        }
         this.submitLocalWakeRequest();
       }, delay);
     }
@@ -1209,10 +1296,12 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
     }
 
     async completeDirectRoutine(text, result, audioItemId = "") {
+      this.clearFollowUpAdmission();
       this.clearResponseCreateTimer();
       this.responseAfterInput = false;
       this.turnInputPending = false;
       this.pendingTranscripts = 0;
+      this.pendingTranscriptItems.clear();
       if (audioItemId) this.deleteAudioItem(audioItemId);
       this.currentUserText = text;
       this.currentAssistantText = String(result.spokenText || "").trim();
@@ -1232,21 +1321,40 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
       this.externalPlaybackActive = true;
       this.setPhysicalPlaybackActive("routine-direct", true);
       const provider = ["browser", "elevenlabs"].includes(this.outputMode()) ? this.outputMode() : "browser";
+      const epoch = this.externalSpeechEpoch;
+      const lifecycle = this.lifecycle;
+      let played = false;
       try {
-        await this.callbacks.playExternalText?.(this.currentAssistantText, provider, {
+        const completed = await this.callbacks.playExternalText?.(this.currentAssistantText, provider, {
           onStart: () => {
+            if (this.closed || this.lifecycle !== lifecycle || this.externalSpeechEpoch !== epoch) return;
+            played = true;
             this.callbacks.setScreen?.("HABLANDO", "ATLAS está hablando", "Respuesta de rutina local.", "speaking");
             this.postEvent("routine.playback_started", "Comenzó la respuesta de la rutina");
           },
         });
+        if (this.closed || this.lifecycle !== lifecycle || this.externalSpeechEpoch !== epoch) return;
+        if (completed === false) {
+          played = false;
+          this.followUpAudioEligible = false;
+          this.followUpAudioEndedAt = null;
+          return;
+        }
+        this.followUpAudioEligible = played;
+        this.followUpAudioEndedAt = played ? performance.now() : null;
+        this.followUpResponseCompleted = played;
         void this.persistCompletedTurn();
       } catch (error) {
+        played = false;
+        this.followUpAudioEligible = false;
+        this.followUpAudioEndedAt = null;
         this.callbacks.addLog?.(`No se pudo reproducir la rutina: ${error?.message || error}`, null, "error");
       } finally {
+        if (this.closed || this.lifecycle !== lifecycle || this.externalSpeechEpoch !== epoch) return;
         this.externalPlaybackActive = false;
         this.toolActive = false;
         this.setPhysicalPlaybackActive("routine-direct", false);
-        this.returnToWake();
+        if (!played || !this.openFollowUpAfterPlayback()) this.returnToWake();
       }
     }
 
@@ -1282,7 +1390,8 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
     async submitLocalWakeRequest() {
       const text = this.localWakeFallbackText.trim();
       if (!text || this.closed || this.state !== "ready" || this.responseActive || this.toolActive
-          || this.speechInputActive) return;
+          || this.speechInputActive || this.callbacks.getVoiceActivity?.().active) return;
+      this.lastSpeechEndedAt = this.localWakeSpeechStoppedAt ?? performance.now();
       this.clearLocalWakeFallback();
       if (silenceInvocation(text)) { this.cancel(); return; }
       this.conversationActive = true;
@@ -1291,6 +1400,8 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
       this.responseAfterInput = false;
       this.speechInputActive = false;
       this.pendingTranscripts = 0;
+      this.pendingTranscriptItems.clear();
+      this.activeSpeechItemId = "";
       window.clearTimeout(this.inputPendingTimer);
       this.clearResponseCreateTimer();
       this.send({ type: "input_audio_buffer.clear" });
@@ -1330,7 +1441,8 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
 
     discardLocalWakeAudio(event) {
       const id = event.item_id;
-      if (event.type === "input_audio_buffer.speech_started") this.currentSpeechItemId = id || "";
+      if (event.type === "input_audio_buffer.speech_started"
+          && !this.stoppedSpeechItems.has(id) && !this.completedTranscriptItems.has(id)) this.currentSpeechItemId = id || "";
       if (this.localWakeRequestPending && id) this.localWakeAudioItems.add(id);
       if (!id || !this.localWakeAudioItems.has(id)) return false;
       const transcription = event.type?.startsWith("conversation.item.input_audio_transcription.");
@@ -1340,7 +1452,7 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
         }
         if (transcription) {
           if (!this.claimTranscript(id)) return true;
-          this.completePendingTranscript();
+          this.completePendingTranscript(id);
           this.postEvent("input.alternate_ignored", "Se conserva la petición reconocida por Chrome",
             { text: event.transcript || "", source: "realtime-audio" });
           if (this.localWakeRequestPending && !this.localWakeFallbackText) this.scheduleFollowUp();
@@ -1355,6 +1467,52 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
       // Late VAD events for the audio already replaced with Chrome text must
       // not cancel, reopen or duplicate the response to that text.
       return !this.localWakeRequestPending;
+    }
+
+    discardLowLevelInput(event) {
+      const id = event.item_id;
+      if (!id || !this.callbacks.getInputAdmission) return false;
+      let item = this.inputAdmissionItems.get(id);
+      if (!item) {
+        // Provider events lag capture. Include its prefix padding without
+        // carrying a previous utterance's admission indefinitely.
+        item = { since: performance.now() - PREFIX_PADDING_MS, until: null, admitted: false, rejected: false, deleted: false };
+        this.inputAdmissionItems.set(id, item);
+        while (this.inputAdmissionItems.size > 256) this.inputAdmissionItems.delete(this.inputAdmissionItems.keys().next().value);
+      }
+      if (event.type === "input_audio_buffer.speech_stopped") item.until = performance.now();
+      const admission = this.callbacks.getInputAdmission({ since: item.since, until: item.until ?? performance.now() });
+      const final = event.type === "input_audio_buffer.speech_stopped"
+        || event.type?.startsWith("conversation.item.input_audio_transcription.");
+      if (final && admission.allowed && !item.rejected) item.admitted = true;
+      if (final && !admission.allowed && !item.admitted) item.rejected = true;
+      if (!item.rejected && (item.admitted || admission.allowed)) return false;
+      // A low-level start is provisional: sustained normal voice can still
+      // qualify by its stop. It must not cancel an answer while unqualified.
+      if (event.type === "input_audio_buffer.speech_started") return true;
+      if (!item.rejected) return false;
+      this.followUpItems.delete(id);
+      if (this.followUpScope) this.refreshFollowUpExpiry();
+      if (!item.deleted && (event.type === "input_audio_buffer.committed"
+          || event.type?.startsWith("conversation.item.input_audio_transcription."))) {
+        this.deleteAudioItem(id);
+        item.deleted = true;
+      }
+      if (event.type?.startsWith("conversation.item.input_audio_transcription.")) {
+        this.followUpItems.delete(id);
+        if (!this.claimTranscript(id)) return true;
+        this.completePendingTranscript(id);
+        this.postEvent("input.level_rejected", "Entrada sin voz sostenida al nivel del micrófono", {
+          rms: admission.rms, peak: admission.peak, thresholdDbfs: admission.thresholdDbfs,
+        });
+        if (this.responseAfterInput) this.scheduleResponseAfterInput();
+      }
+      if (this.activeSpeechItemId === id) {
+        this.activeSpeechItemId = "";
+        this.speechInputActive = false;
+        this.turnInputPending = this.pendingTranscripts > 0;
+      }
+      return true;
     }
 
     consumeLocalWakeAuthorization() {
@@ -1397,6 +1555,19 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
       if ((event.type?.startsWith("input_audio_buffer.")
           || event.type?.startsWith("conversation.item.input_audio_transcription."))
           && this.discardA1PlaybackInput(event)) return;
+      if (this.revokedFollowUpItems.has(event.item_id)) {
+        if (event.type === "input_audio_buffer.committed" || event.type?.startsWith("conversation.item.input_audio_transcription.")) {
+          this.deleteAudioItem(event.item_id);
+        }
+        return;
+      }
+      // Retain the onset time before the sensitivity gate evaluates sustained
+      // voice. A normal utterance may qualify only after its first VAD packet;
+      // the final transcript still has to pass that gate before any action.
+      if (event.type === "input_audio_buffer.speech_started" && !this.admitFollowUpOnset(event)) return;
+      if ((event.type?.startsWith("input_audio_buffer.")
+          || event.type?.startsWith("conversation.item.input_audio_transcription."))
+          && this.discardLowLevelInput(event)) return;
       if ((event.type?.startsWith("input_audio_buffer.")
           || event.type?.startsWith("conversation.item.input_audio_transcription."))
           && this.discardLocalWakeAudio(event)) return;
@@ -1409,12 +1580,14 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
           this.markReady();
           return;
         case "input_audio_buffer.speech_started":
-          this.beginSpeech();
+          this.beginSpeech(event);
           return;
         case "input_audio_buffer.speech_stopped":
           this.endSpeech(event);
           return;
         case "output_audio_buffer.started":
+          this.followUpAudioEligible = true;
+          this.followUpAudioEndedAt = null;
           this.faceResponseHasOutput = true;
           this.nativePlaybackEventsSeen = true;
           this.nativePlaybackActive = true;
@@ -1427,6 +1600,12 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
           return;
         case "output_audio_buffer.stopped":
         case "output_audio_buffer.cleared":
+          if (event.type === "output_audio_buffer.stopped" && this.followUpAudioEligible) {
+            this.followUpAudioEndedAt = performance.now();
+          } else {
+            this.followUpAudioEligible = false;
+            this.followUpAudioEndedAt = null;
+          }
           this.nativePlaybackEventsSeen = true;
           this.nativePlaybackActive = false;
           this.callbacks.onOutputPlayback?.(false);
@@ -1474,6 +1653,10 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
             return;
           }
           this.clearResponseAcknowledgement();
+          this.clearFollowUpAdmission();
+          this.followUpAudioEligible = false;
+          this.followUpAudioEndedAt = null;
+          this.followUpResponseCompleted = false;
           this.externalSpeechOffset = 0;
           this.externalSpeechFinal = false;
           this.externalSpeechCancelled = false;
@@ -1534,8 +1717,16 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
       }
     }
 
-    beginSpeech() {
+    beginSpeech(event = {}) {
       if (this.isA1MicrophoneBlocked()) return;
+      if (!this.admitFollowUpOnset(event)) return;
+      if (event.item_id) {
+        if (this.startedSpeechItems.has(event.item_id) || this.stoppedSpeechItems.has(event.item_id)
+            || this.completedTranscriptItems.has(event.item_id)) return;
+        this.startedSpeechItems.add(event.item_id);
+        while (this.startedSpeechItems.size > 256) this.startedSpeechItems.delete(this.startedSpeechItems.values().next().value);
+      }
+      this.activeSpeechItemId = event.item_id || "";
       const now = performance.now();
       const unfinishedInput = this.speechInputActive || this.pendingTranscripts > 0
         || this.responseAfterInput || Boolean(this.responseCreateTimer) || this.localWakeRequestPending;
@@ -1612,24 +1803,35 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
 
     endSpeech(event = {}) {
       if (this.isA1MicrophoneBlocked()) return;
+      if (this.discardUnadmittedFollowUp(event)) return;
       if (event.item_id) {
         if (this.stoppedSpeechItems.has(event.item_id)) return;
         this.stoppedSpeechItems.add(event.item_id);
         while (this.stoppedSpeechItems.size > 256) this.stoppedSpeechItems.delete(this.stoppedSpeechItems.values().next().value);
       }
       this.lastSpeechEndedAt = performance.now();
-      this.speechInputActive = false;
-      if (this.localWakeRequestPending) {
+      // A delayed stop for A must never finish a newer, already active B.
+      if (!event.item_id || !this.activeSpeechItemId || event.item_id === this.activeSpeechItemId) {
+        this.speechInputActive = false;
+        this.activeSpeechItemId = "";
+      }
+      if (this.localWakeRequestPending && !this.speechInputActive) {
         this.localWakeSpeechStoppedAt = this.lastSpeechEndedAt;
         this.scheduleLocalWakeRequest();
       }
-      this.pendingTranscripts += 1;
-      this.turnInputPending = true;
+      if (!event.item_id || !this.completedTranscriptItems.has(event.item_id)) {
+        this.pendingTranscripts += 1;
+        if (event.item_id) this.pendingTranscriptItems.add(event.item_id);
+      }
+      this.turnInputPending = this.speechInputActive || this.pendingTranscripts > 0;
       window.clearTimeout(this.inputPendingTimer);
       this.inputPendingTimer = window.setTimeout(() => {
+        if (this.speechInputActive) return;
         this.speechInputActive = false;
         this.pendingTranscripts = 0;
+        this.pendingTranscriptItems.clear();
         this.turnInputPending = false;
+        if (this.followUpScope) this.returnToWake();
         this.postEvent("input.transcription_timeout", "Terminó la espera limitada de transcripción");
         if (this.localWakeRequestPending && this.localWakeFallbackText) {
           this.scheduleLocalWakeRequest();
@@ -1638,16 +1840,16 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
         if (this.responseAfterInput) this.scheduleResponseAfterInput();
         else this.scheduleFollowUp();
       }, 4000);
-      if (this.conversationActive && !this.speechOverActiveOutput) {
-        this.callbacks.setScreen?.("PROCESANDO", "ATLAS te ha escuchado", "Interpretando la frase en directo…", "working");
-      }
       this.postEvent("input.speech_stopped", "El usuario terminó de hablar",
         { durationMs: this.lastSpeechEndedAt - this.turnStartedAt });
+      if (!this.turnInputPending && this.responseAfterInput) this.scheduleResponseAfterInput();
     }
 
     handleTranscriptionFailure(event) {
+      if (this.discardUnadmittedFollowUp(event)) return;
+      this.followUpItems.delete(event.item_id);
       if (!this.claimTranscript(event.item_id)) return;
-      this.completePendingTranscript();
+      this.completePendingTranscript(event.item_id);
       const reason = event.error?.message || event.error?.code || "transcripción no disponible";
       this.callbacks.addLog?.(`No se pudo transcribir la entrada: ${reason}`, null, "error");
       this.postEvent("input.transcription_failed", "OpenAI Realtime no pudo transcribir la entrada",
@@ -1672,8 +1874,10 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
       return true;
     }
 
-    completePendingTranscript() {
-      this.pendingTranscripts = Math.max(0, this.pendingTranscripts - 1);
+    completePendingTranscript(itemId) {
+      if (this.pendingTranscriptItems.delete(itemId) || !this.pendingTranscriptItems.size) {
+        this.pendingTranscripts = Math.max(0, this.pendingTranscripts - 1);
+      }
       this.turnInputPending = this.speechInputActive || this.pendingTranscripts > 0;
       if (!this.turnInputPending) {
         window.clearTimeout(this.inputPendingTimer);
@@ -1702,17 +1906,21 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
           || this.pendingTranscripts > 0 || this.responseActive || this.toolActive) return;
       this.responseAfterInput = false;
       this.turnInputPending = false;
+      this.callbacks.setScreen?.("PROCESANDO", "ATLAS lo está procesando", "La petición está completa.", "working");
       this.createResponse();
     }
 
     handleUserTranscript(event) {
       if (this.discardA1PlaybackInput(event)) return;
+      if (this.discardLowLevelInput({ ...event, type: "conversation.item.input_audio_transcription.completed" })) return;
       if (this.discardLocalWakeAudio({ ...event, type: "conversation.item.input_audio_transcription.completed" })) return;
+      if (this.discardUnadmittedFollowUp(event)) return;
       if (!this.claimTranscript(event.item_id)) return;
       const text = String(event.transcript || "").trim();
-      this.completePendingTranscript();
+      this.completePendingTranscript(event.item_id);
       const speechDuringOutput = this.consumeOutputSpeechSegment();
       if (!text) {
+        this.followUpItems.delete(event.item_id);
         if (this.responseAfterInput) this.scheduleResponseAfterInput();
         else if (this.conversationActive) this.scheduleFollowUp();
         else this.showWaiting();
@@ -1723,6 +1931,7 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
       this.postEvent("input.transcript", "OpenAI Realtime completó la transcripción", { role: "user", text });
       if (!wakeInvocation(text) || wakeHasRequest(text)) this.clearLocalWakeFallback();
       if (silenceInvocation(text)) {
+        this.clearFollowUpAdmission();
         this.callbacks.addLog?.("Orden de silencio detectada localmente");
         this.interruptWork();
         this.conversationActive = false;
@@ -1788,7 +1997,6 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
       this.rememberPersistentAndroidControlIntent(text);
       this.beginFaceTurn();
       this.persistedTurnKey = "";
-      this.callbacks.setScreen?.("PROCESANDO", "ATLAS lo está procesando", "La conversación sigue en la misma sesión.", "working");
       this.responseAfterInput = false;
       this.clearResponseCreateTimer();
       void this.submitTranscriptWithRoutine(text, event.item_id || "");
@@ -1855,7 +2063,8 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
       if (!this.usesExternalTts() || this.externalSpeechCancelled) return;
       this.externalSpeechFinal ||= final;
       let remaining = this.currentAssistantText.slice(this.externalSpeechOffset);
-      for (let length; (length = speechChunkLength(remaining, this.externalSpeechFinal)) > 0;) {
+      for (let length; (length = speechChunkLength(remaining, this.externalSpeechFinal,
+        this.externalSpeechChunkIndex === 0)) > 0;) {
         const text = remaining.slice(0, length).trim();
         this.externalSpeechOffset += length;
         remaining = remaining.slice(length);
@@ -1866,7 +2075,29 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
         this.setPhysicalPlaybackActive("external-stream", true);
         this.postEvent("tts.chunk_queued", "Frase pronunciable preparada", { text, chunkIndex: this.externalSpeechChunkIndex });
       }
+      this.prepareNextExternalSpeech();
       void this.drainExternalSpeech();
+    }
+
+    prepareExternalSpeechChunk(chunk) {
+      if (!chunk || chunk.preparation || this.outputMode() !== "elevenlabs"
+          || this.externalSpeechCancelled || this.closed || !this.callbacks.prepareExternalText) return;
+      const epoch = this.externalSpeechEpoch;
+      chunk.preparation = this.callbacks.prepareExternalText(chunk.text, this.outputMode(), {
+        onReady: (detail = {}) => {
+          if (epoch !== this.externalSpeechEpoch || this.closed) return;
+          this.postEvent("tts.audio_ready", "El navegador tiene audio preparado", {
+            chunkIndex: chunk.index, durationMs: performance.now() - chunk.queuedAt,
+            source: detail.source || "audio.canplay",
+          });
+        },
+      });
+    }
+
+    prepareNextExternalSpeech() {
+      // At most the active phrase plus ONE queued phrase may synthesize.
+      // Browser speech stays sequential; the native audio path is unchanged.
+      if (this.externalSpeechBusy && this.externalSpeechPlaying) this.prepareExternalSpeechChunk(this.externalSpeechQueue[0]);
     }
 
     async drainExternalSpeech() {
@@ -1885,10 +2116,16 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
       const epoch = this.externalSpeechEpoch;
       let started = false;
       try {
-        await this.callbacks.playExternalText?.(chunk.text, this.outputMode(), {
+        this.prepareExternalSpeechChunk(chunk);
+        const completed = await this.callbacks.playExternalText?.(chunk.text, this.outputMode(), {
+          prepared: chunk.preparation,
           onStart: (detail = {}) => {
             if (started || epoch !== this.externalSpeechEpoch || this.closed) return;
             started = true;
+            this.followUpAudioEligible = true;
+            this.followUpAudioEndedAt = null;
+            this.externalSpeechPlaying = true;
+            this.prepareNextExternalSpeech();
             this.callbacks.setScreen?.("HABLANDO", "ATLAS está hablando", "Reproduciendo la respuesta frase a frase.", "speaking");
             const first = !this.externalSpeechFirstStarted;
             this.externalSpeechFirstStarted = true;
@@ -1899,26 +2136,46 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
           },
         });
         if (epoch === this.externalSpeechEpoch) {
+          if (completed === false) {
+            // An audio owner may cancel independently of the controller. A
+            // resolved promise is not proof of successful audible completion.
+            this.followUpAudioEligible = false;
+            this.followUpAudioEndedAt = null;
+            this.externalSpeechCancelled = true;
+            this.externalSpeechFinal = true;
+            for (const pending of this.externalSpeechQueue) pending.preparation?.cancel?.();
+            this.externalSpeechQueue = [];
+            return;
+          }
+          if (started && this.followUpAudioEligible) this.followUpAudioEndedAt = performance.now();
           this.postEvent("tts.chunk_completed", "Terminó la frase de voz", { chunkIndex: chunk.index });
         }
       } catch (error) {
         if (epoch === this.externalSpeechEpoch) {
+          this.followUpAudioEligible = false;
+          this.followUpAudioEndedAt = null;
           this.callbacks.addLog?.(`La voz externa falló: ${error?.message || error}`, null, "error");
           this.postEvent("tts.playback_error", "Falló la voz externa", { status: error?.message || String(error) });
         }
       } finally {
+        chunk.preparation?.cancel?.();
         if (epoch === this.externalSpeechEpoch) {
           this.externalSpeechBusy = false;
+          this.externalSpeechPlaying = false;
           void this.drainExternalSpeech();
         }
       }
     }
 
     cancelExternalSpeech() {
+      this.followUpAudioEligible = false;
+      this.followUpAudioEndedAt = null;
       this.externalSpeechCancelled = true;
       this.externalSpeechEpoch += 1;
+      for (const chunk of this.externalSpeechQueue) chunk.preparation?.cancel?.();
       this.externalSpeechQueue = [];
       this.externalSpeechBusy = false;
+      this.externalSpeechPlaying = false;
       this.externalSpeechFinal = true;
       if (this.externalPlaybackActive) this.callbacks.stopExternalSpeech?.();
       this.externalPlaybackActive = false;
@@ -1946,6 +2203,10 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
         this.handleFaceTool(event, callId, args);
         return;
       }
+      if (name === "atlas_display_mode") {
+        await this.handleDisplayModeTool(callId, args);
+        return;
+      }
       this.faceResponseHasOtherTools = true;
       if (name === "atlas_web_search") {
         await this.handleWebSearch(callId, args);
@@ -1963,15 +2224,17 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
         await this.handleDeviceTool(name, callId, args);
         return;
       }
-      if (name !== "atlas_shell") {
+      if (name !== "atlas_shell" && name !== "atlas_capabilities") {
         this.submitToolResult(callId, { error: `Herramienta Realtime no disponible: ${name}` });
         return;
       }
-      const displayCommand = commandLabel(args.command);
+      const discovery = name === "atlas_capabilities";
+      const eventKind = discovery ? "capabilities" : "shell";
+      const displayCommand = discovery ? "manuales de ATLAS" : commandLabel(args.command);
       this.toolActive = true;
-      this.callbacks.setScreen?.("SHELL", "ATLAS está actuando", `Ejecutando ${displayCommand}`, "working");
-      this.postEvent("shell.started", "OpenAI Realtime ejecuta una orden en la shell",
-        { text: String(args.command || "") });
+      this.callbacks.setScreen?.(discovery ? "CAPACIDADES" : "SHELL", "ATLAS está actuando", displayCommand, "working");
+      this.postEvent(`${eventKind}.started`, discovery ? "Consulta de capacidades" : "OpenAI Realtime ejecuta una orden en la shell",
+        { text: String(args.command || args.query || args.manual || "") });
       this.consultController = new AbortController();
       const controller = this.consultController;
       const generation = this.toolGeneration;
@@ -1980,7 +2243,7 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
         && this.toolGeneration === generation && !controller.signal.aborted;
       const started = performance.now();
       try {
-        const response = await this.fetch("/api/realtime/shell", {
+        const response = await this.fetch(`/api/realtime/${eventKind}`, {
           method: "POST", cache: "no-store", signal: controller.signal,
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -1991,13 +2254,14 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
         if (!current()) return;
         if (!response.ok) {
           const payload = await response.json().catch(() => ({}));
-          throw new Error(payload.error || `La shell respondió con HTTP ${response.status}`);
+          throw new Error(payload.error || `${eventKind} respondió con HTTP ${response.status}`);
         }
         const result = await response.json();
         if (!current()) return;
         this.callbacks.addLog?.(`Realtime ejecutó ${displayCommand}`, performance.now() - started);
-        this.postEvent("shell.completed", "La shell devolvió su resultado",
+        this.postEvent(`${eventKind}.completed`, discovery ? "Manuales disponibles consultados" : "La shell devolvió su resultado",
           { durationMs: performance.now() - started, text: String(result.output || "") });
+        if (!discovery) this.showActionExpression(args.command, result);
         this.submitToolResult(callId, result);
       } catch (error) {
         if (!current()) return;
@@ -2005,13 +2269,21 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
         this.submitToolResult(callId, aborted
           ? { status: "cancelled", message: "La persona interrumpió el trabajo." }
           : { error: error.message || String(error) });
-        if (!aborted) this.callbacks.addLog?.(`Shell fallida: ${error.message}`, null, "error");
+        if (!aborted) this.callbacks.addLog?.(`${eventKind}: ${error.message}`, null, "error");
       } finally {
         if (this.consultController === controller) {
           this.toolActive = false;
           this.consultController = null;
         }
       }
+    }
+
+    showActionExpression(command, result) {
+      if (!this.faceToolsAvailable() || this.closed || !this.conversationActive) return;
+      try {
+        const visual = window.AtlasExpressionEvents?.forShell(command, result);
+        if (visual) window.AtlasFaceBridge?.expression(visual);
+      } catch {} // Actions/voice never wait for or fail because of visual feedback.
     }
 
     async handleActionsTool(callId, args) {
@@ -2071,6 +2343,7 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
           const ok = value.ok !== false && !value.error
             && value.result?.ok !== false && !value.result?.error;
           results.push({ index, tool: kind, operation: operation || undefined, ok, result: value });
+          if (kind === "shell" && ok) this.showActionExpression(stepArgs.command, value);
           if (payload.screenshot) screenshot = payload.screenshot;
           if (kind === "android") {
             if (operation === "androiduse.start" && ok) this.androidControlActive = true;
@@ -2388,23 +2661,24 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
       this.faceToolCalls.add(callId);
       while (this.faceToolCalls.size > 128) this.faceToolCalls.delete(this.faceToolCalls.values().next().value);
       let result;
-      if (this.faceToolUsedThisTurn) {
+      if (this.faceToolCountThisTurn >= 2) {
         result = { ok: false, error: "expression_already_selected", message: "Continúa la respuesta sin más cambios de cara." };
       } else {
         this.faceToolUsedThisTurn = true;
+        this.faceToolCountThisTurn += 1;
         this.faceToolResponseId = responseId;
         const valid = args && typeof args === "object" && !Array.isArray(args)
           && Object.keys(args).every(key => ["expression", "duration_ms"].includes(key))
           && FACE_EXPRESSIONS.includes(args.expression)
           && (args.duration_ms === undefined || (Number.isInteger(args.duration_ms)
-            && args.duration_ms >= 1000 && args.duration_ms <= 30000));
+            && args.duration_ms >= 1000 && args.duration_ms <= (args.expression === "asleep" ? 3600000 : 30000)));
         if (!valid) {
-          result = { ok: false, error: "invalid_expression", message: "Se requiere una expresión permitida y una duración de 1000 a 30000 ms; continúa sin cambiar la cara." };
+          result = { ok: false, error: "invalid_expression", message: "Expresión o duración no válida: 1000–30000 ms; asleep hasta 3600000 ms. Continúa sin cambiar la cara." };
         } else {
           let applied = false;
           try {
             applied = window.AtlasFaceBridge.expression({ expression: args.expression,
-              source: "model", durationMs: args.duration_ms ?? 15000 }) === true;
+              source: "model", durationMs: args.duration_ms ?? (args.expression === "asleep" ? 3600000 : 15000) }) === true;
           } catch {} // a cosmetic renderer can never interrupt voice/actions
           result = applied ? { ok: true, expression: args.expression }
             : { ok: false, error: "expression_unavailable", message: "La voz puede continuar sin el efecto visual." };
@@ -2427,6 +2701,24 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
         { expression: result.expression || "", status: result.error || "applied", callId });
       // Do NOT call requestToolContinuation here. One response can contain
       // both this function and speech; wait for response.done to decide.
+    }
+
+    async handleDisplayModeTool(callId, args) {
+      const mode = args?.mode;
+      if (!args || typeof args !== "object" || Array.isArray(args)
+          || Object.keys(args).length !== 1 || !["clock", "face"].includes(mode)) {
+        this.submitToolResult(callId, { ok: false, error: "invalid_display_mode" });
+        return;
+      }
+      let applied = false;
+      try { applied = await window.AtlasFaceBridge?.setDisplayMode?.(mode) === true; } catch {}
+      const result = applied
+        ? { ok: true, mode, persistent: true }
+        : { ok: false, error: "display_mode_unavailable", message: "La voz puede continuar sin cambiar el modo visual." };
+      this.postEvent(result.ok ? "display.mode" : "display.mode_rejected",
+        result.ok ? "ATLAS actualizó el modo visual persistente" : "No se pudo actualizar el modo visual",
+        { mode, status: result.error || "applied" });
+      this.submitToolResult(callId, result);
     }
 
     finishFaceToolResponse(event, status) {
@@ -2483,7 +2775,9 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
       this.refreshResponseActivity();
       this.responseFinalized = true;
       const status = event.response?.status || (event.type === "response.cancelled" ? "cancelled" : "completed");
+      this.followUpResponseCompleted = status === "completed";
       this.postEvent("response.done", "OpenAI Realtime cerró el turno", { status,
+        ...usageTelemetry(event.response?.usage),
         durationMs: this.responseStartedAt ? performance.now() - this.responseStartedAt : undefined });
       if (this.contextCompacting) {
         void this.completeContextCompaction(status);
@@ -2626,7 +2920,132 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
       }
     }
 
+    followUpAllowed() {
+      // Fail closed: only the normal voice surface opts in. App chat, hold to
+      // talk and older cached clients cannot acquire ambient admission.
+      return !this.closed && this.state === "ready"
+        && this.callbacks.canFollowUp?.() === true
+        && (typeof document === "undefined" || document.hidden !== true);
+    }
+
+    clearFollowUpAdmission() {
+      this.followUpGeneration += 1;
+      window.clearTimeout(this.followUpWindowTimer);
+      window.clearTimeout(this.followUpSpeechTimer);
+      this.followUpWindowTimer = 0;
+      this.followUpSpeechTimer = 0;
+      this.followUpDeadline = 0;
+      this.followUpScope = false;
+      let retiringPendingInput = false;
+      for (const id of this.followUpItems) {
+        if (!this.completedTranscriptItems.has(id)) {
+          this.revokedFollowUpItems.add(id);
+          retiringPendingInput = true;
+        }
+      }
+      while (this.revokedFollowUpItems.size > 256) this.revokedFollowUpItems.delete(this.revokedFollowUpItems.values().next().value);
+      this.followUpItems.clear();
+      if (retiringPendingInput) {
+        window.clearTimeout(this.inputPendingTimer);
+        this.inputPendingTimer = 0;
+        this.speechInputActive = false;
+        this.activeSpeechItemId = "";
+        this.pendingTranscriptItems.clear();
+        this.pendingTranscripts = 0;
+        this.turnInputPending = false;
+      }
+    }
+
+    closeFollowUp() {
+      const active = this.followUpScope;
+      this.clearFollowUpAdmission();
+      this.followUpAudioEligible = false;
+      this.followUpAudioEndedAt = null;
+      if (active && !this.responseActive && !this.toolActive) {
+        this.clearResponseCreateTimer();
+        this.responseAfterInput = false;
+        this.returnToWake();
+      }
+    }
+
+    discardUnadmittedFollowUp(event = {}) {
+      if (this.revokedFollowUpItems.has(event.item_id)) return true;
+      if (!this.followUpScope) return false;
+      if (this.followUpAllowed() && this.followUpItems.has(event.item_id)) return false;
+      this.deleteAudioItem(event.item_id);
+      if (!this.followUpAllowed()) this.closeFollowUp();
+      return true;
+    }
+
+    admitFollowUpOnset(event = {}) {
+      if (this.revokedFollowUpItems.has(event.item_id)) return false;
+      if (!this.followUpScope) return true;
+      if (!this.followUpAllowed() || performance.now() >= this.followUpDeadline || !event.item_id) {
+        if (!this.followUpAllowed()) this.closeFollowUp();
+        return false;
+      }
+      if (this.completedTranscriptItems.has(event.item_id) || this.stoppedSpeechItems.has(event.item_id)) return false;
+      this.followUpItems.add(event.item_id);
+      // VAD onset inside the window owns this utterance, even if it ends
+      // afterwards. A missing stop/transcript cannot keep admission forever.
+      if (!this.followUpSpeechTimer) {
+        const lifecycle = this.lifecycle;
+        const generation = this.followUpGeneration;
+        this.followUpSpeechTimer = window.setTimeout(() => {
+          if (this.lifecycle === lifecycle && this.followUpGeneration === generation && this.followUpScope) this.returnToWake();
+        }, FOLLOW_UP_UTTERANCE_LIMIT_MS);
+      }
+      return true;
+    }
+
+    refreshFollowUpExpiry() {
+      window.clearTimeout(this.followUpWindowTimer);
+      if (!this.followUpScope) return;
+      if (!this.followUpAllowed()) { this.closeFollowUp(); return; }
+      const remaining = this.followUpDeadline - performance.now();
+      if (remaining <= 0) {
+        if (!this.followUpItems.size) this.returnToWake();
+        return;
+      }
+      const lifecycle = this.lifecycle;
+      const generation = this.followUpGeneration;
+      const deadline = this.followUpDeadline;
+      this.followUpWindowTimer = window.setTimeout(() => {
+        if (this.lifecycle === lifecycle && this.followUpGeneration === generation
+            && this.followUpDeadline === deadline) this.refreshFollowUpExpiry();
+      }, remaining);
+    }
+
+    openFollowUpAfterPlayback() {
+      if (!this.followUpAllowed() || !this.followUpResponseCompleted
+          || !this.followUpAudioEligible || this.followUpAudioEndedAt === null) return false;
+      const deadline = this.followUpAudioEndedAt + FOLLOW_UP_WINDOW_MS;
+      this.followUpAudioEligible = false; // duplicate completion cannot reopen it
+      this.followUpAudioEndedAt = null;
+      if (performance.now() >= deadline) return false;
+      this.clearFollowUpAdmission();
+      this.clearLocalWakeAuthorization();
+      this.followUpScope = true;
+      this.followUpDeadline = deadline;
+      this.conversationActive = true;
+      this.awaitingWakeRequest = false;
+      this.callbacks.setScreen?.("ESCUCHANDO", "Te escucho",
+        "Puedes continuar sin repetir ATLAS durante 3 segundos.", "listening");
+      this.callbacks.onFollowUp?.({ durationMs: Math.max(0, deadline - performance.now()) });
+      // The A1's existing 200 ms echo tail remains authoritative. Elsewhere
+      // resume immediately; do not turn this into a 3-second start delay.
+      this.scheduleRealtimeInputResume(0, "follow-up");
+      this.refreshFollowUpExpiry();
+      this.postEvent("input.follow_up_open", "Continuación sin wake word durante un máximo de 3 segundos",
+        { durationMs: Math.max(0, deadline - performance.now()) });
+      return true;
+    }
+
     scheduleFollowUp() {
+      if (this.followUpScope) {
+        this.refreshFollowUpExpiry();
+        return;
+      }
       if (!this.conversationActive || this.toolActive || this.responseActive
           || this.externalPlaybackActive || this.nativePlaybackActive
           || this.turnInputPending || this.speechInputActive || this.pendingTranscripts > 0
@@ -2657,6 +3076,9 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
     }
 
     returnToWake() {
+      this.clearFollowUpAdmission();
+      this.followUpAudioEligible = false;
+      this.followUpAudioEndedAt = null;
       window.clearTimeout(this.followUpTimer);
       this.followUpTimer = 0;
       this.clearLocalWakeFallback();
@@ -2674,19 +3096,22 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
           || this.responseAfterInput || this.responseCreateTimer || this.responseCreatePending || this.pendingToolResponse
           || this.toolContinuationAwaitingResponse) return;
       if (this.awaitingWakeRequest || this.localWakeRequestPending) return;
-      // Retire admission even if a late ambient VAD/transcription is pending.
-      // Such a fragment cannot extend the completed turn without a new wake.
+      if (this.followUpScope) { this.refreshFollowUpExpiry(); return; }
+      // Playback completion (not response.done) anchors the only wake-less
+      // admission window. Silent, failed and cancelled output grants none.
       if (!this.androidControlPersistent || !this.androidControlActive) {
         this.stopAndroidControlSilently();
       }
-      this.returnToWake();
+      if (!this.openFollowUpAfterPlayback()) this.returnToWake();
       if (this.contextCompactionQueued) {
+        if (this.followUpScope) return;
         this.contextCompactionQueued = false;
         void this.compactPersistentContext(true);
       }
     }
 
     interruptWork() {
+      this.closeFollowUp();
       this.clearResponseCreateTimer();
       this.responseAfterInput = false;
       this.cancelProviderResponse();
@@ -2703,7 +3128,10 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
       this.stopAndroidControlSilently();
       this.faceToolResponseId = "";
       if (this.faceToolEnabled) {
-        try { window.AtlasFaceBridge?.expression?.({ expression: "neutral", source: "model", durationMs: 1000 }); } catch {}
+        try {
+          if (typeof window.AtlasFace?.clearAutonomous === "function") window.AtlasFace.clearAutonomous();
+          else window.AtlasFaceBridge?.expression?.({ expression: "neutral", source: "model", durationMs: 1000 });
+        } catch {}
       }
       this.cancelExternalSpeech();
       if (this.consultController) {
@@ -2721,6 +3149,8 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
     }
 
     cancelProviderResponse() {
+      this.followUpAudioEligible = false;
+      this.followUpAudioEndedAt = null;
       const responseWasActive = this.responseActive;
       const playbackWasActive = this.nativePlaybackActive;
       // A response.done event can arrive before Chrome has finished playing
@@ -2764,12 +3194,15 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
     }
 
     cancel() {
+      this.clearFollowUpAdmission();
       this.interruptWork();
       this.clearLocalWakeFallback();
       this.conversationActive = false;
       this.awaitingWakeRequest = false;
       this.speechInputActive = false;
       this.pendingTranscripts = 0;
+      this.pendingTranscriptItems.clear();
+      this.activeSpeechItemId = "";
       this.turnInputPending = false;
       this.setOutputEnabled(false);
       this.clearLocalWakeAuthorization();
@@ -2796,7 +3229,7 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
           reasoningEffort: this.session?.atlasReasoningEffort || "default",
           effectiveReasoningEffort: this.session?.atlasEffectiveReasoningEffort || "unreported",
           sinceSpeechStoppedMs: this.lastSpeechEndedAt ? performance.now() - this.lastSpeechEndedAt : undefined,
-          clientBuild: "2026-09-08-routines-2", ...extra }),
+          clientBuild: "2026-10-13-latency-counters-1", ...extra }),
       });
     }
 
@@ -2811,11 +3244,15 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
     }
 
     stop(notify = true) {
+      this.clearFollowUpAdmission();
       this.lifecycle += 1;
       this.toolGeneration += 1;
       this.stopAndroidControlSilently();
       if (this.faceToolEnabled) {
-        try { window.AtlasFaceBridge?.expression?.({ expression: "neutral", source: "model", durationMs: 1000 }); } catch {}
+        try {
+          if (typeof window.AtlasFace?.clearAutonomous === "function") window.AtlasFace.clearAutonomous();
+          else window.AtlasFaceBridge?.expression?.({ expression: "neutral", source: "model", durationMs: 1000 });
+        } catch {}
       }
       this.faceToolEnabled = false;
       this.beginFaceTurn();
@@ -2863,6 +3300,10 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
       this.finishedResponseIds.clear();
       this.completedTranscriptItems.clear();
       this.stoppedSpeechItems.clear();
+      this.startedSpeechItems.clear();
+      this.pendingTranscriptItems.clear();
+      this.inputAdmissionItems.clear();
+      this.activeSpeechItemId = "";
       this.closed = true;
       this.state = "idle";
       this.conversationActive = false;
@@ -2910,8 +3351,9 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
     voice: DEFAULT_VOICE,
     _test: { normalized, wakeInvocation, wakeHasRequest, silenceInvocation, withTurnSeparator,
       commandLabel, responseExpectsReply, benignRealtimeError, likelyAssistantEcho, captureConstraints, speechChunkLength,
+      usageTelemetry,
       persistentAndroidControlInvocation,
-      realtimeTools: REALTIME_TOOLS, faceTool: FACE_TOOL, faceInstructions: FACE_INSTRUCTIONS,
+      realtimeTools: REALTIME_TOOLS, faceTool: FACE_TOOL, displayModeTool: DISPLAY_MODE_TOOL, faceInstructions: FACE_INSTRUCTIONS,
       phoneTool: PHONE_TOOL, androidTool: ANDROID_TOOL, actionsTool: ACTIONS_TOOL,
       androidInstructions: ANDROID_TOOL_INSTRUCTIONS },
   };

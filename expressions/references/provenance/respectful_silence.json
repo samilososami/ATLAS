@@ -1,0 +1,13 @@
+{
+  "id": "respectful_silence",
+  "path": "expressions/references/respectful_silence.png",
+  "tool": "image_gen.imagegen",
+  "prompt": "Use case: precise-object-edit.\nAsset type: ONE ATLAS expression concept reference, ID respectful_silence.\nInput image 1: exact base ATLAS face; edit target, preserve identity and layout.\nPrimary request: change only the facial expression to \"Sin palabras de más\". Intended context: Pausa o cierre breve de un tema sensible. Expression family: care. Intensity: subtle. Make it readable but natural and restrained, never exaggerated.\nKeep the same blue oval eye sockets, positions and maximum width/height. Alter only the eyelid mask / eyebrow angle when needed. The mouth remains a single blue round-ended stroke of exactly the original thickness, no teeth, lips, tongue or mouth filling. Keep all face anchors and canvas framing identical. Maintain near-black background and blue #00a8ff palette, no glow or texture. Preserve existing tiny ATLAS header and settings icon, add no titles or labels.\nExpression details: mouth path shape parameters [halfWidth, baselineY, curvature, asymmetry] [48,542,0.3,0] relative to original [58,527,48,0]; eyebrow paths [\"M -30 -111 Q 0 -123 30 -126\",\"M -30 -126 Q 0 -123 30 -111\"]. Accessory: none; add no props.\nAvoid: big facial deformation, extra eyes, pupils, human features, 3D, illustration outlines, thicker mouth, exaggerated emotions, text captions, decorative scene. Deliver one single expression, not a sheet or grid.\nVisible eyelids required: Eye left: clip its top with a straight horizontal eyelid at 17% down its original oval height; never grow outside its original socket. Eye right: clip its top with a straight horizontal eyelid at 17% down its original oval height; never grow outside its original socket. Draw at most ONE eyebrow per eye, exactly two total if brows requested, not paired double lines.",
+  "elapsedSeconds": 34.016,
+  "role": "concept-reference",
+  "sourceAsset": "exec-3df98c38-1c72-40f6-bcd6-bd59beae91ae.png",
+  "sha256": "cb4da5d8386929e1a1dcbc19e005f1337a6f619574f8b2a3ae7bdf72755a9bbc",
+  "bytes": 1217099,
+  "width": 1591,
+  "height": 989
+}

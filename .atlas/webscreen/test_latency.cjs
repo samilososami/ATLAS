@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 
-function setup({ a1 = true, output = 'browser' } = {}) {
+function setup({ a1 = true, output = 'browser', prepare } = {}) {
   let now = 10000, id = 0, uuid = 0;
   const timers = new Map(), sent = [], logs = [], plays = [], gates = [], screens = [];
   let stops = 0;
@@ -24,6 +24,7 @@ function setup({ a1 = true, output = 'browser' } = {}) {
       setA1MicrophoneSuppressed: blocked => gates.push({ blocked, at: now }),
       playExternalText: (text, mode, hooks) => new Promise((resolve, reject) => plays.push({ text, mode, hooks, resolve, reject })),
       stopExternalSpeech: () => { stops++; },
+      prepareExternalText: prepare,
     },
   });
   c.closed = false; c.state = 'ready'; c.conversationActive = true;
@@ -49,6 +50,45 @@ function setup({ a1 = true, output = 'browser' } = {}) {
   };
 }
 
+test('provider usage keeps only present, safe numeric counters', () => {
+  const { usageTelemetry } = setup().helpers;
+  assert.equal(JSON.stringify(usageTelemetry(undefined)), '{}');
+  assert.equal(JSON.stringify(usageTelemetry({})), '{}');
+  assert.deepEqual(JSON.parse(JSON.stringify(usageTelemetry({
+    input_tokens: 20000, output_tokens: 80, total_tokens: 20080,
+    input_token_details: { cached_tokens: 19712 },
+    output_token_details: { reasoning_tokens: 0 },
+    unknown: 'do not log',
+  }))), { inputTokens: 20000, cachedInputTokens: 19712, outputTokens: 80,
+    reasoningTokens: 0, totalTokens: 20080 });
+  for (const value of [null, true, false, '20', -1, 0.5, Infinity, NaN, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.equal(JSON.stringify(usageTelemetry({ input_tokens: value,
+      input_token_details: { cached_tokens: value }, output_tokens: value,
+      output_token_details: { reasoning_tokens: value }, total_tokens: value })), '{}');
+  }
+});
+
+test('usage joins one existing response.done event without another model request', () => {
+  const p = setup();
+  p.event('response.created', { response: { id: 'usage-test' } });
+  const before = p.sent.length;
+  const response = { id: 'usage-test', status: 'completed', usage: {
+    input_tokens: 20000, output_tokens: 80, total_tokens: 20080,
+    input_token_details: { cached_tokens: 19712 },
+    output_token_details: { reasoning_tokens: 10, text: 'never log this' },
+  } };
+  p.event('response.done', { response });
+  p.event('response.done', { response });
+  const events = p.logs.filter(e => e.stage === 'response.done');
+  assert.equal(events.length, 1, 'duplicate provider completion is not counted twice');
+  assert.equal(events[0].responseId, 'usage-test');
+  assert.equal(events[0].inputTokens, 20000);
+  assert.equal(events[0].cachedInputTokens, 19712);
+  assert.equal(events[0].reasoningTokens, 10);
+  assert.equal(JSON.stringify(events[0]).includes('never log this'), false);
+  assert.equal(p.sent.length, before, 'telemetry cannot cause a new model/tool round');
+});
+
 test('unchanged Chrome interim results cannot extend the 700 ms no-VAD deadline', async () => {
   const p = setup(); p.c.authorizeLocalWake('ATLAS');
   p.c.queueLocalWakeRequest('qué hora es', false);
@@ -66,12 +106,12 @@ test('Chrome final promotion shortens, never restarts, the text stability deadli
   await p.advance(1); assert.equal(p.responses().length, 1);
 });
 
-test('A1 reuses VAD silence and waits only 80 ms for already stable text', async () => {
+test('A1 keeps a continuation guard even for an already stable interim fragment', async () => {
   const p = setup(); p.c.authorizeLocalWake('ATLAS'); p.c.beginSpeech();
   const interaction = p.c.currentInteractionId;
   p.c.queueLocalWakeRequest('cuánta RAM queda', false); await p.advance(500);
   assert.equal(p.responses().length, 0, 'never send while voice is active');
-  p.c.endSpeech(); await p.advance(79); assert.equal(p.responses().length, 0);
+  p.c.endSpeech(); await p.advance(449); assert.equal(p.responses().length, 0);
   await p.advance(1); assert.equal(p.responses().length, 1);
   assert.equal(p.c.currentInteractionId, interaction);
 });
@@ -82,7 +122,7 @@ test('new voice cancels the A1 deadline and preserves the whole command', async 
   await p.advance(50); p.c.beginSpeech();
   p.c.queueLocalWakeRequest('enciende la televisión y comparte pantalla', true);
   await p.advance(1000); assert.equal(p.responses().length, 0);
-  p.c.endSpeech(); await p.advance(80);
+  p.c.endSpeech(); await p.advance(250);
   assert.deepEqual(p.requests(), ['enciende la televisión y comparte pantalla']);
 });
 
@@ -90,8 +130,93 @@ test('a correction near VAD end gets its own short stability window', async () =
   const p = setup(); p.c.authorizeLocalWake('ATLAS'); p.c.beginSpeech();
   p.c.queueLocalWakeRequest('cuánta me', false); await p.advance(400); p.c.endSpeech();
   await p.advance(60); p.c.queueLocalWakeRequest('cuánta memoria RAM queda libre', false);
-  await p.advance(179); assert.equal(p.responses().length, 0);
+  await p.advance(699); assert.equal(p.responses().length, 0);
   await p.advance(1); assert.deepEqual(p.requests(), ['cuánta memoria RAM queda libre']);
+});
+
+test('recorded fragmented question cannot submit hay algún while later words are arriving', async () => {
+  const p = setup(); p.c.authorizeLocalWake('ATLAS'); p.c.beginSpeech();
+  await p.advance(232); p.c.endSpeech();
+  await p.advance(464); p.c.beginSpeech();
+  await p.advance(488); p.c.queueLocalWakeRequest('hay algún', false);
+  await p.advance(149); p.c.endSpeech();
+  await p.advance(58); p.c.queueLocalWakeRequest('hay algún horario', false);
+  await p.advance(244);
+  assert.equal(p.responses().length, 0);
+  assert.equal(p.screens.at(-1)[3], 'listening');
+  p.c.beginSpeech(); p.c.queueLocalWakeRequest('hay algún horario de clase mañana', true);
+  await p.advance(400); p.c.endSpeech();
+  await p.advance(249); assert.equal(p.responses().length, 0);
+  await p.advance(1);
+  assert.deepEqual(p.requests(), ['hay algún horario de clase mañana']);
+  assert.equal(p.screens.at(-1)[3], 'working');
+  assert.equal(p.c.lastSpeechEndedAt, 12035);
+});
+
+test('local speech hangover holds even final Chrome text until normal speech releases', async () => {
+  const p = setup(); let active = true;
+  p.c.callbacks.getVoiceActivity = () => ({ active });
+  p.c.authorizeLocalWake('ATLAS'); p.c.queueLocalWakeRequest('consulta la hora', true);
+  await p.advance(900); assert.equal(p.responses().length, 0);
+  active = false; await p.advance(100);
+  assert.equal(p.responses().length, 1);
+});
+
+test('late stop or transcript for an earlier item cannot finish newer speech or flicker the face', async () => {
+  const p = setup();
+  p.event('input_audio_buffer.speech_started', { item_id: 'a' });
+  p.event('input_audio_buffer.speech_started', { item_id: 'b' });
+  p.event('input_audio_buffer.speech_stopped', { item_id: 'a' });
+  p.event('conversation.item.input_audio_transcription.completed', { item_id: 'a', transcript: 'enciende la televisión' });
+  await p.advance(500);
+  assert.equal(p.c.speechInputActive, true);
+  assert.equal(p.responses().length, 0);
+  assert.equal(p.screens.at(-1)[3], 'listening');
+  p.event('input_audio_buffer.speech_stopped', { item_id: 'b' });
+  p.event('conversation.item.input_audio_transcription.completed', { item_id: 'b', transcript: 'y comparte pantalla' });
+  await p.advance(180); assert.equal(p.responses().length, 1);
+  p.event('input_audio_buffer.speech_started', { item_id: 'a' });
+  assert.equal(p.c.speechInputActive, false, 'a delayed duplicate start is retired');
+});
+
+test('transcript-before-stop does not manufacture another pending transcript', async () => {
+  const p = setup();
+  p.event('input_audio_buffer.speech_started', { item_id: 'early-final' });
+  p.event('conversation.item.input_audio_transcription.completed', { item_id: 'early-final', transcript: 'qué hora es' });
+  p.event('input_audio_buffer.speech_stopped', { item_id: 'early-final' });
+  await p.advance(180);
+  assert.equal(p.c.pendingTranscripts, 0);
+  assert.equal(p.responses().length, 1);
+});
+
+test('quiet provider segments are deleted once before text admission and cannot cancel an active answer', async () => {
+  const p = setup(); p.c.responseActive = true; p.c.currentResponseId = 'answer';
+  p.c.callbacks.getInputAdmission = () => ({ available: true, allowed: false, rms: 0.005, peak: 0.012, thresholdDbfs: -35 });
+  p.event('input_audio_buffer.speech_started', { item_id: 'quiet' });
+  p.event('input_audio_buffer.speech_stopped', { item_id: 'quiet' });
+  p.event('input_audio_buffer.committed', { item_id: 'quiet' });
+  const transcript = { item_id: 'quiet', transcript: 'private quiet text' };
+  p.event('conversation.item.input_audio_transcription.completed', transcript);
+  p.event('conversation.item.input_audio_transcription.completed', transcript);
+  await p.advance(1000);
+  assert.equal(p.c.responseActive, true);
+  assert.equal(p.c.pendingTranscripts, 0);
+  assert.equal(p.sent.filter(e => e.type === 'conversation.item.delete' && e.item_id === 'quiet').length, 1);
+  assert.equal(p.sent.some(e => e.type === 'response.cancel'), false);
+  assert.equal(p.logs.some(e => e.text?.includes('private quiet')), false);
+  assert.equal(p.logs.filter(e => e.stage === 'input.level_rejected').length, 1);
+});
+
+test('normal onset may qualify after the first VAD packet and late transcripts retain that evidence', async () => {
+  const p = setup(); let allowed = false;
+  p.c.callbacks.getInputAdmission = () => ({ available: true, allowed });
+  p.event('input_audio_buffer.speech_started', { item_id: 'normal' });
+  allowed = true;
+  p.event('input_audio_buffer.speech_stopped', { item_id: 'normal' });
+  allowed = false;
+  p.event('conversation.item.input_audio_transcription.completed', { item_id: 'normal', transcript: 'qué hora es' });
+  await p.advance(180); assert.equal(p.responses().length, 1);
+  assert.equal(p.sent.some(e => e.type === 'conversation.item.delete'), false);
 });
 
 test('bare ATLAS does not submit or cancel the same-request completion timer', async () => {
@@ -196,4 +321,45 @@ test('ElevenLabs shares incremental queue; native voices never use it', () => {
   assert.equal(p.plays[0].mode, 'elevenlabs');
   const native = setup({ output: 'native' }); native.event('response.created'); native.c.handleAssistantText('Primera frase. ', false);
   assert.equal(native.plays.length, 0); assert.deepEqual(native.gates, []);
+});
+
+test('first complete clause streams early without cutting code, decimals or URLs', () => {
+  const cut = setup().helpers.speechChunkLength;
+  const clause = 'El sistema funciona con normalidad,';
+  assert.equal(cut(`${clause} mientras compruebo el resto`, false, true), clause.length);
+  assert.equal(cut(`${clause} mientras compruebo el resto`, false, false), 0);
+  for (const text of ['El valor de esta medida es 3,14', 'Consulta https://atlas.local:5000',
+    'La temperatura registrada actualmente es de 48,', 'Ahora mismo son exactamente las 11:',
+    '`este es un bloque de código bastante largo, que sigue', '```sh\necho hola; todavía sigue']) {
+    assert.equal(cut(text, false, true), 0);
+  }
+});
+
+test('ElevenLabs preloads only one following phrase, after first audible start', async () => {
+  const preparations = [];
+  const p = setup({ output: 'elevenlabs', prepare: (text, mode, hooks) => {
+    const item = { text, mode, hooks, cancelCount: 0, cancel() { this.cancelCount++; } };
+    preparations.push(item); return item;
+  } });
+  p.event('response.created');
+  p.c.handleAssistantText('Primera frase. Segunda frase. Tercera frase. ', false);
+  assert.deepEqual(preparations.map(x => x.text), ['Primera frase.']);
+  assert.equal(p.plays[0].hooks.prepared, preparations[0]);
+  p.plays[0].hooks.onStart();
+  assert.deepEqual(preparations.map(x => x.text), ['Primera frase.', 'Segunda frase.']);
+  await p.advance(300);
+  preparations[1].hooks.onReady();
+  assert.equal(p.logs.find(x => x.stage === 'tts.audio_ready').chunkIndex, 2);
+  assert.equal(p.plays.length, 1, 'preloading never plays overlapping audio');
+  p.plays[0].resolve(); await p.flush();
+  assert.equal(p.plays[1].hooks.prepared, preparations[1]);
+  p.plays[1].hooks.onStart();
+  assert.equal(preparations.length, 3);
+  p.c.cancelExternalSpeech();
+  const logCount = p.logs.length;
+  preparations[2].hooks.onReady();
+  assert.equal(p.logs.length, logCount, 'late readiness after cancel is ignored');
+  assert.equal(preparations[2].cancelCount, 1);
+  p.plays[1].resolve(); await p.flush();
+  assert.equal(p.plays.length, 2, 'cancelled third phrase is never played');
 });

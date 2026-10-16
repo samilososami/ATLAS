@@ -1,0 +1,10 @@
+{
+  "id": "welcome_back",
+  "path": "expressions/references/welcome_back.png",
+  "tool": "image_gen.imagegen",
+  "sourceAsset": "exec-75882417-106c-4de5-9685-66b4e87df7b5.png",
+  "sha256": "6290d48e9bc27be06f7ffcc43d7fef089e56b133193a5a08e577f2ab0fda76d9",
+  "bytes": 1206093,
+  "width": 1591,
+  "height": 989
+}

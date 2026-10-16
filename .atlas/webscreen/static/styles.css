@@ -294,6 +294,8 @@ body:not([data-design="new"]) .tool-header { padding-left: 52px; }
 
 .tool-form input,
 .tool-form select { min-height: 44px; padding: 10px 12px; }
+.tool-form .voice-naturalness-option { display: flex; align-items: center; gap: 10px; }
+.tool-form #voice-naturalness { width: 18px; height: 18px; min-height: 18px; padding: 0; accent-color: #009dff; }
 .tool-form textarea:focus,
 .tool-form input:focus,
 .tool-form select:focus {

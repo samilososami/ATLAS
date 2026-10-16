@@ -1,0 +1,13 @@
+{
+  "id": "checking_on_you",
+  "path": "expressions/references/checking_on_you.png",
+  "tool": "image_gen.imagegen",
+  "prompt": "Use case: precise-object-edit.\nAsset type: ONE ATLAS expression concept reference, ID checking_on_you.\nInput image 1: exact base ATLAS face; edit target, preserve identity and layout.\nPrimary request: change only the facial expression to \"¿Todo bien?\". Intended context: Pregunta por el usuario con tacto. Expression family: care. Intensity: subtle. Make it readable but natural and restrained, never exaggerated.\nKeep the same blue oval eye sockets, positions and maximum width/height. Alter only the eyelid mask / eyebrow angle when needed. The mouth remains a single blue round-ended stroke of exactly the original thickness, no teeth, lips, tongue or mouth filling. Keep all face anchors and canvas framing identical. Maintain near-black background and blue #00a8ff palette, no glow or texture. Preserve existing tiny ATLAS header and settings icon, add no titles or labels.\nExpression details: mouth path shape parameters [halfWidth, baselineY, curvature, asymmetry] [40,535,26,0] relative to original [58,527,48,0]; eyebrow paths [\"M -30 -111 Q 0 -123 30 -126\",\"M -30 -126 Q 0 -123 30 -111\"]. Accessory: none; add no props.\nAvoid: big facial deformation, extra eyes, pupils, human features, 3D, illustration outlines, thicker mouth, exaggerated emotions, text captions, decorative scene. Deliver one single expression, not a sheet or grid.\nVisible eyelids required: Eye left: clip its top with a straight horizontal eyelid at 19% down its original oval height; never grow outside its original socket. Eye right: keep full original oval; never grow outside its original socket. Draw at most ONE eyebrow per eye, exactly two total if brows requested, not paired double lines.",
+  "elapsedSeconds": 69.086,
+  "role": "concept-reference",
+  "sourceAsset": "exec-18e317ef-fd3c-491a-9f6b-b79d12d9b2f3.png",
+  "sha256": "b520232f07b6dfb29f5fe249584b98e62e219f3a376a6fc3447d348fe30cd10e",
+  "bytes": 1214842,
+  "width": 1591,
+  "height": 989
+}

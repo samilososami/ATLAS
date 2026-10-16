@@ -1,0 +1,13 @@
+{
+  "id": "playful",
+  "path": "expressions/references/playful.png",
+  "tool": "image_gen.imagegen",
+  "prompt": "Use case: precise-object-edit.\nAsset type: ONE ATLAS expression concept reference, ID playful.\nInput image 1: exact base ATLAS face; edit target, preserve identity and layout.\nPrimary request: change only the facial expression to \"Travieso\". Intended context: Responde a una broma evidente. Expression family: humor. Intensity: medium. Make it readable but natural and restrained, never exaggerated.\nKeep the same blue oval eye sockets, positions and maximum width/height. Alter only the eyelid mask / eyebrow angle when needed. The mouth remains a single blue round-ended stroke of exactly the original thickness, no teeth, lips, tongue or mouth filling. Keep all face anchors and canvas framing identical. Maintain near-black background and blue #00a8ff palette, no glow or texture. Preserve existing tiny ATLAS header and settings icon, add no titles or labels.\nExpression details: mouth path shape parameters [halfWidth, baselineY, curvature, asymmetry] [56,536,36,-19] relative to original [58,527,48,0]; eyebrow paths [\"M -32 -134 Q 0 -144 32 -134\",\"M -30 -115 Q 0 -115 30 -110\"]. Accessory: none; add no props.\nAvoid: big facial deformation, extra eyes, pupils, human features, 3D, illustration outlines, thicker mouth, exaggerated emotions, text captions, decorative scene. Deliver one single expression, not a sheet or grid.\nVisible eyelids required: Eye left: keep full original oval; never grow outside its original socket. Eye right: clip its top with a straight horizontal eyelid at 58% down its original oval height; never grow outside its original socket. Draw at most ONE eyebrow per eye, exactly two total if brows requested, not paired double lines.",
+  "elapsedSeconds": 69.601,
+  "role": "concept-reference",
+  "sourceAsset": "exec-c9d12fca-effa-473e-892d-cb1daf51588e.png",
+  "sha256": "b7515c0f03b33e2babf8b3353f3064c8ad43c3a9d21957bd378be35e6028e990",
+  "bytes": 1190711,
+  "width": 1591,
+  "height": 989
+}

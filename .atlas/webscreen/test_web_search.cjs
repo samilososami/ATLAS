@@ -26,7 +26,7 @@ test('Realtime exposes direct system and phone tools without an agent proxy tool
   const realtime = loadRealtime();
   const names = Array.from(realtime._test.realtimeTools, tool => tool.name);
   assert.deepEqual(names,
-    ['atlas_shell', 'atlas_web_search', 'atlas_routine', 'atlas_phone', 'atlas_android', 'atlas_actions']);
+    ['atlas_capabilities', 'atlas_shell', 'atlas_web_search', 'atlas_routine', 'atlas_phone', 'atlas_android', 'atlas_actions']);
 });
 
 test('Tavily tool calls the dedicated backend and returns evidence to Realtime', async () => {

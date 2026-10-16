@@ -1,0 +1,13 @@
+{
+  "id": "searching_web",
+  "path": "expressions/references/searching_web.png",
+  "tool": "image_gen.imagegen",
+  "prompt": "Use case: precise-object-edit.\nAsset type: ONE ATLAS expression concept reference, ID searching_web.\nInput image 1: exact base ATLAS face; edit target, preserve identity and layout.\nPrimary request: change only the facial expression to \"Buscando\". Intended context: Búsqueda web realmente iniciada. Expression family: assistance. Intensity: subtle. Make it readable but natural and restrained, never exaggerated.\nKeep the same blue oval eye sockets, positions and maximum width/height. Alter only the eyelid mask / eyebrow angle when needed. The mouth remains a single blue round-ended stroke of exactly the original thickness, no teeth, lips, tongue or mouth filling. Keep all face anchors and canvas framing identical. Maintain near-black background and blue #00a8ff palette, no glow or texture. Preserve existing tiny ATLAS header and settings icon, add no titles or labels.\nExpression details: mouth path shape parameters [halfWidth, baselineY, curvature, asymmetry] [39,541,-8,-4] relative to original [58,527,48,0]; eyebrow paths []. Accessory: search drawn in thin flat blue lines, no human head/body.\nAvoid: big facial deformation, extra eyes, pupils, human features, 3D, illustration outlines, thicker mouth, exaggerated emotions, text captions, decorative scene. Deliver one single expression, not a sheet or grid.\nVisible eyelids required: Eye left: clip its top with a straight horizontal eyelid at 8% down its original oval height; never grow outside its original socket. Eye right: clip its top with a straight horizontal eyelid at 47% down its original oval height; never grow outside its original socket. Draw at most ONE eyebrow per eye, exactly two total if brows requested, not paired double lines.",
+  "elapsedSeconds": 68.532,
+  "role": "concept-reference",
+  "sourceAsset": "exec-e9cdf6d5-9fc2-49d6-bb0d-4caf6bd6b043.png",
+  "sha256": "de2128dd1b0d565802ae9affd6b53c33b1b6672902ba0187fac893087f2dbe7a",
+  "bytes": 1213307,
+  "width": 1591,
+  "height": 989
+}

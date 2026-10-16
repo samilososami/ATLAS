@@ -27,6 +27,65 @@ DOC_INSTALLER = ROOT / "system/install-chat-docs.py"
 
 
 class AtlasChatTests(unittest.TestCase):
+    def reply_fixture(self, events):
+        module = self.load_client()
+        chat = object.__new__(module.AtlasChat)
+        chat.console = Console(file=io.StringIO(), color_system=None)
+        chat.verbose = chat.persist = False
+        chat.ws = Mock()
+        chat.tool_buffers, chat.tool_details = {}, []
+        chat._last_tool_image = None
+        chat.webscreen = SimpleNamespace()
+        chat.log = Mock()
+        chat._send = Mock()
+        chat._recv = Mock(side_effect=events)
+        chat._run_tool = Mock(return_value={"ok": True, "matches": 3})
+        chat._send_tool_result = Mock()
+        chat._stop_android_control = Mock()
+        return chat
+
+    def test_guardian_final_only_discards_each_tool_response_not_the_final_answer(self):
+        events = []
+        for preamble in ["Voy a revisar el chat.", "Ahora comprobaré el autor."]:
+            events.extend([
+                {"type": "response.output_text.delta", "delta": preamble},
+                {"type": "response.output_text.done", "text": preamble},
+                {"type": "response.function_call_arguments.done", "name": "atlas_shell", "call_id": "lookup", "arguments": "{}"},
+                {"type": "response.done", "response": {"status": "completed"}},
+            ])
+        events.extend([
+            # No item_id: dedup from the previous response must have been reset.
+            {"type": "response.output_text.done", "text": "Hay 3 mensajes de Marcos."},
+            {"type": "response.done", "response": {"status": "completed"}},
+        ])
+        chat = self.reply_fixture(events)
+        self.assertEqual(chat.ask("analiza a Marcos", final_response_only=True), "Hay 3 mensajes de Marcos.")
+        self.assertEqual(chat._run_tool.call_count, 2)
+        self.assertEqual(chat._send_tool_result.call_count, 2)
+
+    def test_guardian_final_only_keeps_direct_answers_and_default_collection_unchanged(self):
+        events = [
+            {"type": "response.output_text.delta", "item_id": "a", "delta": "Consultando."},
+            {"type": "response.function_call_arguments.done", "name": "atlas_shell", "call_id": "lookup", "arguments": "{}"},
+            {"type": "response.done", "response": {"status": "completed"}},
+            {"type": "response.output_text.delta", "item_id": "b", "delta": "Resultado."},
+            {"type": "response.output_text.done", "item_id": "b", "text": "Resultado."},
+            {"type": "response.done", "response": {"status": "completed"}},
+        ]
+        self.assertEqual(self.reply_fixture(events).ask("consulta"), "Consultando.Resultado.")
+        self.assertEqual(self.reply_fixture(events).ask("consulta", final_response_only=True), "Resultado.")
+        self.assertEqual(self.reply_fixture(events[-3:]).ask("hola", final_response_only=True), "Resultado.")
+
+    def test_guardian_cancelled_turn_never_sends_partial_text_or_continues_tools(self):
+        events = [
+            {"type": "response.output_text.delta", "delta": "Voy a revisar"},
+            {"type": "response.function_call_arguments.done", "name": "atlas_shell", "call_id": "lookup", "arguments": "{}"},
+            {"type": "response.done", "response": {"status": "cancelled"}},
+        ]
+        chat = self.reply_fixture(events)
+        self.assertEqual(chat.ask("consulta", final_response_only=True), "")
+        self.assertEqual(chat._send.call_count, 2)
+
     def load_client(self):
         spec = importlib.util.spec_from_file_location("atlas_chat", CLIENT)
         module = importlib.util.module_from_spec(spec)
@@ -44,6 +103,7 @@ class AtlasChatTests(unittest.TestCase):
         module = self.load_client()
         tools = {entry["name"]: entry for entry in module.REALTIME_TOOLS}
         self.assertEqual(set(tools), {
+            "atlas_capabilities",
             "atlas_shell", "atlas_web_search", "atlas_routine",
             "atlas_phone", "atlas_android", "atlas_actions",
         })

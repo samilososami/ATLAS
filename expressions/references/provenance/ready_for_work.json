@@ -1,0 +1,13 @@
+{
+  "id": "ready_for_work",
+  "path": "expressions/references/ready_for_work.png",
+  "tool": "image_gen.imagegen",
+  "prompt": "Use case: precise-object-edit.\nAsset type: ONE ATLAS expression concept reference, ID ready_for_work.\nInput image 1: exact base ATLAS face; edit target, preserve identity and layout.\nPrimary request: change only the facial expression to \"Manos a la obra\". Intended context: Arranque de un trabajo solicitado. Expression family: confidence. Intensity: subtle. Make it readable but natural and restrained, never exaggerated.\nKeep the same blue oval eye sockets, positions and maximum width/height. Alter only the eyelid mask / eyebrow angle when needed. The mouth remains a single blue round-ended stroke of exactly the original thickness, no teeth, lips, tongue or mouth filling. Keep all face anchors and canvas framing identical. Maintain near-black background and blue #00a8ff palette, no glow or texture. Preserve existing tiny ATLAS header and settings icon, add no titles or labels.\nExpression details: mouth path shape parameters [halfWidth, baselineY, curvature, asymmetry] [56,530,32,0] relative to original [58,527,48,0]; eyebrow paths [\"M -30 -124 Q 0 -120 30 -108\",\"M -30 -108 Q 0 -120 30 -124\"]. Accessory: none; add no props.\nAvoid: big facial deformation, extra eyes, pupils, human features, 3D, illustration outlines, thicker mouth, exaggerated emotions, text captions, decorative scene. Deliver one single expression, not a sheet or grid.\nVisible eyelids required: Eye left: clip its top with a straight horizontal eyelid at 20% down its original oval height; never grow outside its original socket. Eye right: clip its top with a straight horizontal eyelid at 8% down its original oval height; never grow outside its original socket. Draw at most ONE eyebrow per eye, exactly two total if brows requested, not paired double lines.",
+  "elapsedSeconds": 55.606,
+  "role": "concept-reference",
+  "sourceAsset": "exec-233f3173-660c-4aa9-bc25-1ec5e9bd31b3.png",
+  "sha256": "569e2224f876c97eceb54765d132661f1c6d220937ee87dd077d94f602da5fdb",
+  "bytes": 1189169,
+  "width": 1591,
+  "height": 989
+}

@@ -18,7 +18,7 @@ function setup(design = 'new') {
   let now = 1000, timerId = 0, amplitude = 0;
   const timers = new Map(), contexts = [], calls = [];
   const window = new Events();
-  window.AtlasFace = Object.fromEntries(['update', 'transcript', 'inputLevel', 'outputLevel', 'connection', 'speechBoundary', 'expression']
+  window.AtlasFace = Object.fromEntries(['update', 'transcript', 'inputLevel', 'outputLevel', 'connection', 'speechBoundary', 'expression', 'setDisplayMode']
     .map(method => [method, value => calls.push({ method, value, at: now })]));
   window.AtlasFace.expression = value => { calls.push({ method: 'expression', value, at: now }); return true; };
   window.setInterval = (fn, ms) => { timers.set(++timerId, { fn, ms, at: now + ms }); return timerId; };
@@ -87,6 +87,15 @@ test('model expressions are narrow local visual data, with no audio sampling sid
   assert.equal(p.calls.length, before);
 });
 
+test('clock mode forwards only a small presentation request and cannot create audio work', async () => {
+  const p = setup();
+  p.window.AtlasFace.setDisplayMode = mode => { p.calls.push({ method: 'setDisplayMode', value: mode }); return Promise.resolve(true); };
+  assert.equal(await p.bridge.setDisplayMode('clock'), true);
+  assert.equal(p.last('setDisplayMode'), 'clock');
+  assert.equal(p.contexts.length, 0);
+  assert.equal(p.timers.size, 0);
+});
+
 test('suspended/missing/failed face renderer cannot accept expressions or affect audio', () => {
   const p = setup();
   p.bridge.suspend();
@@ -116,16 +125,20 @@ test('only wake-approved listening phases show waveform, not connecting or ambie
   assert.equal(p.last('inputLevel').db, -20);
 });
 
-test('authorized input silence becomes thinking and resumed real speech becomes waveform', () => {
+test('quiet syllables and pauses never change the controller-owned listening state', () => {
   const p = setup();
   p.bridge.update({ state: 'listening', phase: 'ESCUCHANDO' });
   p.bridge.inputLevel({ rms: 0.1, peak: 0.3 });
   p.advance(499); p.bridge.inputLevel({ rms: 0, peak: 0 });
   assert.equal(p.last('update').state, 'listening');
   p.advance(2); p.bridge.inputLevel({ rms: 0, peak: 0 });
-  assert.equal(p.last('update').state, 'working');
+  assert.equal(p.last('update').state, 'listening');
+  p.advance(1000); p.bridge.inputLevel({ rms: 0.001, peak: 0.003 });
+  assert.equal(p.last('update').state, 'listening');
   p.bridge.inputLevel({ rms: 0.08, peak: 0.2 });
   assert.equal(p.last('update').state, 'listening');
+  p.bridge.update({ state: 'working', phase: 'PROCESANDO' });
+  assert.equal(p.last('update').state, 'working');
 });
 
 test('new wake clears old transcript, mutable input and microphone mute close waveform', () => {
@@ -209,7 +222,7 @@ test('buffer-start preceding HTMLAudio playing waits for sound and resumes after
   p.audio.emit('playing'); assert.equal(p.timers.size, 0);
 });
 
-test('backend health cannot show a connected dot before Realtime is ready or after error', () => {
+test('backend health cannot replace the connecting visual before Realtime is ready or after error', () => {
   const p = setup();
   p.bridge.connection({ healthy: true, label: 'Backend preparado' });
   assert.equal(p.last('connection').healthy, false);
@@ -272,6 +285,43 @@ test('browser synthesis follows real start/word/pause/end without synthetic dB',
   utterance.emit('end'); stop();
   assert.equal(p.last('speechBoundary').type, 'end');
   assert.equal(p.timers.size, 0);
+});
+
+test('speech engines without boundaries use text timing only during actual playback', () => {
+  const p = setup(), utterance = new Events();
+  utterance.text = 'Oye, esto ya funciona bastante bien.';
+  const stop = p.bridge.watchUtterance(utterance);
+  const approximations = () => p.calls.filter(call => call.value?.approximate);
+  p.advance(2000); assert.equal(approximations().length, 0);
+  utterance.emit('start'); p.advance(220);
+  assert.equal(approximations().length, 1);
+  assert.equal(p.last('outputLevel').available, false);
+  utterance.emit('pause'); const paused = approximations().length;
+  p.advance(1000); assert.equal(approximations().length, paused);
+  utterance.emit('resume'); p.advance(400);
+  assert.ok(approximations().length > paused);
+  utterance.emit('boundary', { name: 'word', charIndex: 10, charLength: 2 });
+  const bounded = approximations().length;
+  p.advance(3000); assert.equal(approximations().length, bounded);
+  stop(); p.advance(1000); assert.equal(p.timers.size, 0);
+});
+
+test('fallback is cancelled on error, stop, suspension and visibility loss', () => {
+  for (const ending of ['error', 'end', 'stop', 'suspend', 'hidden']) {
+    const p = setup(), utterance = new Events();
+    utterance.text = 'uno dos tres cuatro cinco seis siete';
+    const stop = p.bridge.watchUtterance(utterance);
+    utterance.emit('start'); p.advance(220);
+    if (ending === 'stop') stop();
+    else if (ending === 'suspend') p.bridge.suspend();
+    else if (ending === 'hidden') { p.document.hidden = true; p.document.emit('visibilitychange'); }
+    else utterance.emit(ending);
+    const count = p.calls.filter(call => call.value?.approximate).length;
+    p.advance(2000);
+    assert.equal(p.calls.filter(call => call.value?.approximate).length, count, ending);
+    assert.equal(p.timers.size, 0, ending);
+    stop();
+  }
 });
 
 test('ownership loss/pagehide clear meter, subscriptions and transcripts; stale events cannot resurrect', () => {

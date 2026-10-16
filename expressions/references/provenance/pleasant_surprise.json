@@ -1,0 +1,13 @@
+{
+  "id": "pleasant_surprise",
+  "path": "expressions/references/pleasant_surprise.png",
+  "tool": "image_gen.imagegen",
+  "prompt": "Use case: precise-object-edit.\nAsset type: ONE ATLAS expression concept reference, ID pleasant_surprise.\nInput image 1: exact base ATLAS face; edit target, preserve identity and layout.\nPrimary request: change only the facial expression to \"Qué sorpresa\". Intended context: Descubre algo positivo inesperado. Expression family: curiosity. Intensity: subtle. Make it readable but natural and restrained, never exaggerated.\nKeep the same blue oval eye sockets, positions and maximum width/height. Alter only the eyelid mask / eyebrow angle when needed. The mouth remains a single blue round-ended stroke of exactly the original thickness, no teeth, lips, tongue or mouth filling. Keep all face anchors and canvas framing identical. Maintain near-black background and blue #00a8ff palette, no glow or texture. Preserve existing tiny ATLAS header and settings icon, add no titles or labels.\nExpression details: mouth path shape parameters [halfWidth, baselineY, curvature, asymmetry] [22,545,0,0] relative to original [58,527,48,0]; eyebrow paths [\"M -32 -127 Q 0 -141 32 -127\",\"M -32 -127 Q 0 -141 32 -127\"]. Accessory: none; add no props.\nAvoid: big facial deformation, extra eyes, pupils, human features, 3D, illustration outlines, thicker mouth, exaggerated emotions, text captions, decorative scene. Deliver one single expression, not a sheet or grid.\nVisible eyelids required: Eye left: keep full original oval; never grow outside its original socket. Eye right: keep full original oval; never grow outside its original socket. Draw at most ONE eyebrow per eye, exactly two total if brows requested, not paired double lines.",
+  "elapsedSeconds": 35.636,
+  "role": "concept-reference",
+  "sourceAsset": "exec-bbe141f7-937b-4412-bd87-878a21df7a4f.png",
+  "sha256": "fadb00a54625816482c224d8d3926790c57645f7599a45033cb906636ab927ce",
+  "bytes": 1204140,
+  "width": 1591,
+  "height": 989
+}

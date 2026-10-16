@@ -1,0 +1,13 @@
+{
+  "id": "not_quite_sure",
+  "path": "expressions/references/not_quite_sure.png",
+  "tool": "image_gen.imagegen",
+  "prompt": "Use case: precise-object-edit.\nAsset type: ONE ATLAS expression concept reference, ID not_quite_sure.\nInput image 1: exact base ATLAS face; edit target, preserve identity and layout.\nPrimary request: change only the facial expression to \"No del todo seguro\". Intended context: Falta evidencia para afirmar algo. Expression family: uncertainty. Intensity: subtle. Make it readable but natural and restrained, never exaggerated.\nKeep the same blue oval eye sockets, positions and maximum width/height. Alter only the eyelid mask / eyebrow angle when needed. The mouth remains a single blue round-ended stroke of exactly the original thickness, no teeth, lips, tongue or mouth filling. Keep all face anchors and canvas framing identical. Maintain near-black background and blue #00a8ff palette, no glow or texture. Preserve existing tiny ATLAS header and settings icon, add no titles or labels.\nExpression details: mouth path shape parameters [halfWidth, baselineY, curvature, asymmetry] [45,543,-13,7] relative to original [58,527,48,0]; eyebrow paths [\"M -30 -132 Q 0 -144 30 -130\",\"M -30 -109 Q 0 -111 30 -105\"]. Accessory: none; add no props.\nAvoid: big facial deformation, extra eyes, pupils, human features, 3D, illustration outlines, thicker mouth, exaggerated emotions, text captions, decorative scene. Deliver one single expression, not a sheet or grid.\nVisible eyelids required: Eye left: keep full original oval; never grow outside its original socket. Eye right: clip its top with a straight horizontal eyelid at 47% down its original oval height; never grow outside its original socket. Draw at most ONE eyebrow per eye, exactly two total if brows requested, not paired double lines.",
+  "elapsedSeconds": 70.132,
+  "role": "concept-reference",
+  "sourceAsset": "exec-5d4f4612-6ad5-40de-8ae3-74d4e426efe5.png",
+  "sha256": "6aa5a4a50b37a238d7f6031ea221ee6d4c7f7ddc40cb4b212f7588a4c9965597",
+  "bytes": 1203447,
+  "width": 1591,
+  "height": 989
+}

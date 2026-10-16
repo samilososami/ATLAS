@@ -1,0 +1,13 @@
+{
+  "id": "music_groove",
+  "path": "expressions/references/music_groove.png",
+  "tool": "image_gen.imagegen",
+  "prompt": "Use case: precise-object-edit.\nAsset type: ONE ATLAS expression concept reference, ID music_groove.\nInput image 1: exact base ATLAS face; edit target, preserve identity and layout.\nPrimary request: change only the facial expression to \"Buen ritmo\". Intended context: Comenta el ritmo de una canción activa. Expression family: music. Intensity: subtle. Make it readable but natural and restrained, never exaggerated.\nKeep the same blue oval eye sockets, positions and maximum width/height. Alter only the eyelid mask / eyebrow angle when needed. The mouth remains a single blue round-ended stroke of exactly the original thickness, no teeth, lips, tongue or mouth filling. Keep all face anchors and canvas framing identical. Maintain near-black background and blue #00a8ff palette, no glow or texture. Preserve existing tiny ATLAS header and settings icon, add no titles or labels.\nExpression details: mouth path shape parameters [halfWidth, baselineY, curvature, asymmetry] [54,534,35,-10] relative to original [58,527,48,0]; eyebrow paths []. Accessory: headphones drawn in thin flat blue lines, no human head/body.\nAvoid: big facial deformation, extra eyes, pupils, human features, 3D, illustration outlines, thicker mouth, exaggerated emotions, text captions, decorative scene. Deliver one single expression, not a sheet or grid.\nVisible eyelids required: Eye left: clip its top with a straight horizontal eyelid at 20% down its original oval height; never grow outside its original socket. Eye right: clip its top with a straight horizontal eyelid at 17% down its original oval height; never grow outside its original socket. Draw at most ONE eyebrow per eye, exactly two total if brows requested, not paired double lines.",
+  "elapsedSeconds": 54.484,
+  "role": "concept-reference",
+  "sourceAsset": "exec-a7bfc2ad-fe85-4d1e-9fb2-b69783dfe055.png",
+  "sha256": "98e63dc741c5359758ffeb7753ce7d6fe6a26fdf819a8b76e9e2ad32c43f7cb9",
+  "bytes": 1178505,
+  "width": 1591,
+  "height": 989
+}

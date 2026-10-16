@@ -1,0 +1,13 @@
+{
+  "id": "apologetic_brief",
+  "path": "expressions/references/apologetic_brief.png",
+  "tool": "image_gen.imagegen",
+  "prompt": "Use case: precise-object-edit.\nAsset type: ONE ATLAS expression concept reference, ID apologetic_brief.\nInput image 1: exact base ATLAS face; edit target, preserve identity and layout.\nPrimary request: change only the facial expression to \"Perdón, lo corrijo\". Intended context: Disculpa proporcionada, sin autodesprecio. Expression family: disappointment. Intensity: subtle. Make it readable but natural and restrained, never exaggerated.\nKeep the same blue oval eye sockets, positions and maximum width/height. Alter only the eyelid mask / eyebrow angle when needed. The mouth remains a single blue round-ended stroke of exactly the original thickness, no teeth, lips, tongue or mouth filling. Keep all face anchors and canvas framing identical. Maintain near-black background and blue #00a8ff palette, no glow or texture. Preserve existing tiny ATLAS header and settings icon, add no titles or labels.\nExpression details: mouth path shape parameters [halfWidth, baselineY, curvature, asymmetry] [40,535,26,0] relative to original [58,527,48,0]; eyebrow paths [\"M -30 -111 Q 0 -123 30 -126\",\"M -30 -126 Q 0 -123 30 -111\"]. Accessory: none; add no props.\nAvoid: big facial deformation, extra eyes, pupils, human features, 3D, illustration outlines, thicker mouth, exaggerated emotions, text captions, decorative scene. Deliver one single expression, not a sheet or grid.\nVisible eyelids required: Eye left: clip its top with a straight horizontal eyelid at 19% down its original oval height; never grow outside its original socket. Eye right: clip its top with a straight horizontal eyelid at 17% down its original oval height; never grow outside its original socket. Draw at most ONE eyebrow per eye, exactly two total if brows requested, not paired double lines.",
+  "elapsedSeconds": 51.557,
+  "role": "concept-reference",
+  "sourceAsset": "exec-445ec88f-2c96-4d62-9503-92a4f7cd78f3.png",
+  "sha256": "4699ba58e1b077baed08cbb6a3869583673a19c85b1687b67e9aa17e50e22602",
+  "bytes": 1178537,
+  "width": 1591,
+  "height": 989
+}

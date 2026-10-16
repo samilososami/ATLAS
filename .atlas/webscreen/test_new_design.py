@@ -1,9 +1,13 @@
 import http.client
+import json
+import tempfile
 import threading
 import unittest
 from functools import partial
 from html.parser import HTMLParser
 from http.server import ThreadingHTTPServer
+from pathlib import Path
+from unittest.mock import patch
 
 import server as app
 
@@ -25,6 +29,22 @@ class ShellParser(HTMLParser):
 
 
 class NewDesignTests(unittest.TestCase):
+    def test_whatsapp_display_exposes_only_bounded_presentation_state(self):
+        with tempfile.TemporaryDirectory() as folder:
+            state = Path(folder) / 'ui-state.json'
+            with patch.object(app, 'WHATSAPP_UI_STATE_FILE', state):
+                state.write_text(json.dumps({
+                    'mode': 'qr', 'sequence': 7,
+                    'matrix': ['0' * 21 for _ in range(21)],
+                    'credential': 'never expose this',
+                }))
+                self.assertEqual(app.whatsapp_display_snapshot(), {
+                    'version': 1, 'mode': 'qr', 'sequence': 7,
+                    'matrix': ['0' * 21 for _ in range(21)],
+                })
+                state.write_text(json.dumps({'mode': 'qr', 'matrix': ['x']}))
+                self.assertEqual(app.whatsapp_display_snapshot()['mode'], 'idle')
+
     def test_new_presentation_keeps_every_existing_control_and_one_controller(self):
         source = (app.STATIC_DIR / 'index.html').read_text()
         rendered = app.render_new_design_shell(source).decode()
@@ -33,12 +53,17 @@ class NewDesignTests(unittest.TestCase):
         self.assertEqual(len(new.ids), len(set(new.ids)))
         self.assertIn('body data-design="new"', rendered)
         self.assertNotIn('data-design="new"', source)
-        self.assertEqual([s for s in new.scripts if not s.startswith('/new/')], original.scripts)
-        self.assertTrue(new.scripts[0].startswith('/new/face.js?'))
-        self.assertTrue(new.scripts[1].startswith('/new/audio.js?'))
-        self.assertTrue(new.scripts[2].startswith('/new/petting.js?'))
+        shared = lambda scripts: [s for s in scripts if not s.startswith('/new/') or s.startswith('/new/expressions-catalog.js?')]
+        self.assertEqual(shared(new.scripts), original.scripts)
+        self.assertTrue(new.scripts[0].startswith('/new/expressions-catalog.js?'))
+        self.assertTrue(new.scripts[1].startswith('/new/face.js?'))
+        self.assertTrue(new.scripts[2].startswith('/new/audio.js?'))
+        self.assertTrue(new.scripts[3].startswith('/new/petting.js?'))
         self.assertEqual(sum(s.startswith('/new/petting.js?') for s in new.scripts), 1)
-        self.assertFalse(any(s.startswith('/new/') for s in original.scripts))
+        self.assertEqual(sum(s.startswith('/new/expressions-catalog.js?') for s in original.scripts), 1)
+        self.assertFalse(any(s.startswith('/new/face.js?') for s in original.scripts))
+        self.assertLess(new.scripts.index(next(s for s in new.scripts if s.startswith('/voice-prosody.js?'))),
+                        new.scripts.index(next(s for s in new.scripts if s.startswith('/app.js?'))))
         self.assertIn('/new/face.css?', rendered)
         self.assertEqual(sum(s.startswith('/realtime.js') for s in new.scripts), 1)
 

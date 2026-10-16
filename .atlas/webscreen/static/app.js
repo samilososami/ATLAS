@@ -1,5 +1,5 @@
 const SpeechRecognitionAPI = window.SpeechRecognition || window.webkitSpeechRecognition;
-const CLIENT_BUILD = "2026-09-07-clap-2";
+const CLIENT_BUILD = "2026-09-26-natural-turns-1";
 const REALTIME_PRIMARY = Boolean(window.AtlasRealtime);
 const PHYSICAL_ATLAS_A1 = /(?:^|[?&])kiosk=1(?:&|$)/u.test(String(window.location?.search || ""));
 const accessFetch = (url, options) => window.atlasAccess.fetch(url, options);
@@ -41,13 +41,16 @@ const WAKE_ECHO_TAIL_MS = 1200;
 const A1_PLAYBACK_MIC_TAIL_MS = 200;
 const VOICE_SAMPLE_MS = 25;
 const VOICE_START_MS = 90;
-const VOICE_END_MS = 120;
+const VOICE_END_MS = 450;
 // El ruido de fondo no debe reiniciar continuamente la ventana de silencio.
 // Exigimos a la vez energía media y un pico propio de voz cercana; el umbral
 // sigue subiendo con el ruido real de la sala.
-const VOICE_MIN_RMS = 0.05;
-const VOICE_MIN_PEAK = 0.14;
-const VOICE_NOISE_MULTIPLIER = 3.4;
+// Digital capture levels, not sound-pressure dB: -35 dBFS RMS onset in a
+// quiet room. Chromium AGC/device gain affect these values; no speaker ID.
+const VOICE_MIN_RMS = 0.018;
+const VOICE_MIN_PEAK = 0.045;
+const VOICE_NOISE_MULTIPLIER = 2.5;
+const VOICE_EVIDENCE_MS = 900;
 
 function microphoneConstraints() {
   return { video: false, audio: {
@@ -92,6 +95,8 @@ const ttsSubmit = document.querySelector("#tts-submit");
 const ttsResult = document.querySelector("#tts-result");
 const settingsForm = document.querySelector("#settings-form");
 const voiceIdInput = document.querySelector("#elevenlabs-voice-id");
+const voiceNaturalnessInput = document.querySelector("#voice-naturalness");
+let voiceNaturalness = true;
 const settingsSubmit = document.querySelector("#settings-submit");
 const settingsResult = document.querySelector("#settings-result");
 const microphoneMuteButton = document.querySelector("#microphone-mute");
@@ -131,6 +136,8 @@ let voiceNoiseFloor = 0.008;
 let voiceLastRms = 0;
 let voiceLastPeak = 0;
 let voiceLastThreshold = VOICE_MIN_RMS;
+let voiceLastSampleAt = null;
+const voiceAdmissionBursts = [];
 let recognition = null;
 let recognitionRunning = false;
 let recognitionEnabled = false;
@@ -185,6 +192,7 @@ let ttsLabBusy = false;
 let realtimeController = null;
 let realtimeFallbackActive = false;
 let realtimeExternalSpeechRun = 0;
+const preparedRealtimeSpeech = new Set();
 let realtimeReconnectTimer = 0;
 let realtimeReconnectAttempts = 0;
 let realtimeReadyAt = null;
@@ -388,10 +396,8 @@ function playLabBrowserSpeech(text, token) {
       return;
     }
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = LANGUAGE;
-    utterance.rate = 1.02;
     const voice = browserVoice();
-    if (voice) utterance.voice = voice;
+    configureBrowserUtterance(utterance, voice);
     utterance.addEventListener("end", () => resolve(token === ttsLabToken), { once: true });
     utterance.addEventListener("error", (event) => {
       const message = event.error === "synthesis-failed"
@@ -482,6 +488,8 @@ async function loadSettings() {
     reasoningEffortSelect.value = settings.realtimeReasoningEffort || "default";
     reasoningEffortSelect.dataset.activeEffort = reasoningEffortSelect.value;
     voiceIdInput.value = settings.elevenlabsVoiceId || "";
+    voiceNaturalness = settings.voiceNaturalness !== false;
+    if (voiceNaturalnessInput) voiceNaturalnessInput.checked = voiceNaturalness;
     settingsResult.className = "tool-result";
     settingsResult.textContent = settings.voiceIdOverride
       ? "Voice ID personalizado activo."
@@ -502,11 +510,14 @@ async function saveSettings(event) {
     const response = await accessFetch("/api/settings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ elevenlabsVoiceId: voiceIdInput.value.trim() }),
+      body: JSON.stringify({ elevenlabsVoiceId: voiceIdInput.value.trim(),
+        voiceNaturalness: voiceNaturalnessInput ? voiceNaturalnessInput.checked : voiceNaturalness }),
     });
     const settings = await response.json();
     if (!response.ok) throw new Error(settings.error || "No se pudo guardar el Voice ID");
     voiceIdInput.value = settings.elevenlabsVoiceId || "";
+    voiceNaturalness = settings.voiceNaturalness !== false;
+    if (voiceNaturalnessInput) voiceNaturalnessInput.checked = voiceNaturalness;
     settingsResult.className = "tool-result success";
     settingsResult.textContent = settings.voiceIdOverride
       ? "Voice ID guardado y activo."
@@ -585,6 +596,8 @@ function beginVoiceBurst(startedAt) {
   wakeContextResultIndex = lastRecognitionResultCount;
   ignoredWakeResultIndex = -1;
   acceptedWakeResultIndex = -1;
+  voiceAdmissionBursts.push({ start: startedAt, end: null });
+  while (voiceAdmissionBursts.length > 32) voiceAdmissionBursts.shift();
 }
 
 function endVoiceBurst(endedAt) {
@@ -592,6 +605,21 @@ function endVoiceBurst(endedAt) {
   voiceCandidateStartedAt = 0;
   voiceQuietStartedAt = 0;
   voiceLastEndedAt = Math.max(voiceLastEndedAt, endedAt);
+  const burst = voiceAdmissionBursts.at(-1);
+  if (burst?.end === null) burst.end = endedAt;
+}
+
+function getInputAdmission({ since, until = performance.now() } = {}) {
+  const now = performance.now();
+  // Absent/suspended/stale telemetry cannot veto speech or explicit controls.
+  const available = Boolean(voiceAnalyser && voiceGateReady && voiceLastSampleAt !== null
+    && now - voiceLastSampleAt < 250 && voiceAudioContext?.state !== "suspended");
+  const start = Number.isFinite(since) ? since : now - VOICE_EVIDENCE_MS;
+  const allowed = !available || voiceAdmissionBursts.some(burst =>
+    burst.start <= until && (burst.end ?? now) >= start);
+  return { available, allowed, active: available && voiceActive,
+    rms: voiceLastRms, peak: voiceLastPeak,
+    thresholdDbfs: 20 * Math.log10(voiceLastThreshold) };
 }
 
 function sampleVoiceActivity() {
@@ -607,13 +635,14 @@ function sampleVoiceActivity() {
   const now = performance.now();
   const threshold = Math.max(
     VOICE_MIN_RMS,
-    Math.min(0.12, voiceNoiseFloor * VOICE_NOISE_MULTIPLIER),
+    Math.min(0.05, voiceNoiseFloor * VOICE_NOISE_MULTIPLIER),
   );
   const peakThreshold = Math.max(VOICE_MIN_PEAK, Math.min(0.38, threshold * 2.8));
   const looksLikeNearbySpeech = rms >= threshold && peak >= peakThreshold;
   voiceLastRms = rms;
   voiceLastPeak = peak;
   voiceLastThreshold = threshold;
+  voiceLastSampleAt = now;
   window.AtlasFaceBridge?.inputLevel({ rms, peak });
   // The clap module has no stream of its own. It receives one synchronous,
   // short-lived FFT frame only while mapping or while an already-calibrated
@@ -676,6 +705,8 @@ function stopVoiceActivityGate() {
   voiceLastRms = 0;
   voiceLastPeak = 0;
   voiceLastThreshold = VOICE_MIN_RMS;
+  voiceLastSampleAt = null;
+  voiceAdmissionBursts.length = 0;
   window.AtlasFaceBridge?.inputLevel({ rms: 0, peak: 0 });
   window.AtlasClap?.microphone?.({ available: false });
 }
@@ -831,6 +862,7 @@ function setA1PlaybackMicrophoneSuppressed(suppressed, options = {}) {
 
 function setMicrophoneMuted(muted) {
   microphoneMuted = Boolean(muted);
+  if (microphoneMuted) realtimeController?.closeFollowUp?.();
   window.AtlasFaceBridge?.microphoneMuted(microphoneMuted);
   microphoneStream?.getAudioTracks().forEach((track) => {
     track.enabled = !microphoneMuted && !a1PlaybackMicrophoneSuppressed;
@@ -1142,6 +1174,7 @@ function configureRecognition() {
       return;
     }
     if (!recognizedText) return;
+    if (!getInputAdmission().allowed) return;
     if (isLocalSilenceCommand(recognizedText)) {
       addLog("Orden local de silencio detectada");
       if (interactionActive) void silenceAndReturnToWake();
@@ -1169,9 +1202,9 @@ function configureRecognition() {
         .every(result => result.isFinal);
       wakeDetectedIso = new Date().toISOString();
       if (realtimeWakeMode) {
-        // Chrome alone owns activation: the exact word ATLAS anywhere in a
-        // changed result is sufficient, including interim results. No prefix,
-        // silence window, acoustic score or Realtime confirmation is required.
+        // Chrome owns the wake text, while the existing shared analyser must
+        // have sustained speech-level evidence when it is available.
+        if (!getInputAdmission().allowed) return;
         const wakeEvidence = ["ATLAS", initialRequest].filter(Boolean).join(", ");
         if (acceptedWakeResultIndex !== wakeResult.index) {
           if (!realtimeController?.authorizeLocalWake(wakeEvidence)) return;
@@ -1202,6 +1235,7 @@ function configureRecognition() {
 }
 
 function captureChromeWakeSnapshot(results) {
+  if (!getInputAdmission().allowed) return;
   // SpeechRecognitionEvent.results is a snapshot, not a stream of appended
   // words. Interim results at the same index can change or disappear entirely.
   const parts = [realtimeWakePrefix];
@@ -1331,15 +1365,51 @@ function reportBrowserEvent(stage, message, durationMs = null, error = null) {
   return reportBrowserEventFor(currentRequestId, stage, message, durationMs, error);
 }
 
+let cachedBrowserVoice = null;
+let cachedBrowserVoicePreference = "";
+window.speechSynthesis?.addEventListener?.("voiceschanged", () => {
+  cachedBrowserVoice = null;
+});
+
 function browserVoice() {
+  // Keep the same voice preference, without rebuilding/scanning the catalogue
+  // for every streamed clause. An empty/asynchronously loaded list is not cached.
+  let preferred = "";
+  try { preferred = window.localStorage?.getItem("atlas-browser-voice-uri") || ""; } catch {}
+  if (preferred !== cachedBrowserVoicePreference) {
+    cachedBrowserVoice = null;
+    cachedBrowserVoicePreference = preferred;
+  }
+  if (cachedBrowserVoice) return cachedBrowserVoice;
   const voices = window.speechSynthesis?.getVoices?.() || [];
-  return voices.find((voice) => voice.lang.toLowerCase() === "es-es")
+  cachedBrowserVoice = window.AtlasVoiceProsody?.chooseVoice(voices, preferred)
+    || voices.find((voice) => voice.lang.toLowerCase() === "es-es")
     || voices.find((voice) => voice.lang.toLowerCase().startsWith("es"))
     || null;
+  return cachedBrowserVoice;
+}
+
+function configureBrowserUtterance(utterance, voice) {
+  const snapshot = window.AtlasFace?.snapshot?.() || {};
+  const expression = snapshot.expression
+    || document.querySelector(".face-stage")?.dataset.expression || "neutral";
+  const catalogEntry = window.AtlasExpressionCatalog?.expressions?.find(entry => entry.id === expression);
+  const delivery = window.AtlasVoiceProsody?.browserDelivery({
+    text: utterance.text, expression, family: snapshot.category || catalogEntry?.category,
+    enabled: voiceNaturalness,
+  }) || { rate: voiceNaturalness ? 1 : 1.02, pitch: 1, volume: 1 };
+  // Keep punctuation and the entire text intact. Native engines use these for
+  // cadence; normalization used by the echo detector must never enter this path.
+  utterance.lang = voice?.lang || LANGUAGE;
+  Object.assign(utterance, delivery);
+  if (voice) utterance.voice = voice;
 }
 
 function browserSpeechSegments(text) {
   const source = String(text || "");
+  // The A1 already suspends capture for the whole playback. Splitting its
+  // own name into another utterance only inserts an audible, artificial gap.
+  if (PHYSICAL_ATLAS_A1) return source ? [{ text: source, protected: false }] : [];
   const segments = [];
   const protectedWord = /\S*atlas\S*/gi;
   let cursor = 0;
@@ -1356,19 +1426,16 @@ function browserSpeechSegments(text) {
 
 async function speakBrowserSegment(text, voice, onStart) {
   const utterance = new SpeechSynthesisUtterance(text);
-  utterance.lang = LANGUAGE;
-  utterance.rate = 1.02;
-  utterance.pitch = 1;
-  if (voice) utterance.voice = voice;
+  configureBrowserUtterance(utterance, voice);
   const stopVisualSpeech = window.AtlasFaceBridge?.watchUtterance(utterance);
-  await new Promise((resolve, reject) => {
+  return await new Promise((resolve, reject) => {
     utterance.addEventListener("start", () => onStart?.({
       source: "speechSynthesis.start", voice: voice?.name || "browser-default",
     }), { once: true });
-    utterance.addEventListener("end", resolve, { once: true });
+    utterance.addEventListener("end", () => resolve(true), { once: true });
     utterance.addEventListener("error", (event) => {
       if (["interrupted", "canceled"].includes(event.error)) {
-        resolve();
+        resolve(false);
         return;
       }
       reject(new Error(`La voz del navegador falló: ${event.error || "error desconocido"}`));
@@ -1385,11 +1452,12 @@ async function playBrowserSpeech(text, onStart) {
   window.speechSynthesis.cancel();
   const voice = browserVoice();
   for (const segment of browserSpeechSegments(text)) {
-    if (run !== browserSpeechRun) return;
+    if (run !== browserSpeechRun) return false;
     if (segment.protected && !PHYSICAL_ATLAS_A1) muteRecognitionFor(WAKE_ECHO_MUTE_MS);
-    await speakBrowserSegment(segment.text, voice, onStart);
-    if (run !== browserSpeechRun) return;
+    const completed = await speakBrowserSegment(segment.text, voice, onStart);
+    if (completed === false || run !== browserSpeechRun) return false;
   }
+  return true;
 }
 
 function resetStreamedSpeechState() {
@@ -1503,9 +1571,9 @@ async function playElevenLabsSpeech(encodedAudio, text = "") {
   }
 }
 
-async function playElevenLabsStream(streamUrl, text = "", onStart) {
+async function playElevenLabsStream(streamUrl, text = "", onStart, preparedAudio = null) {
   if (!streamUrl) throw new Error("ElevenLabs no devolvió un flujo de audio");
-  const audio = new Audio(streamUrl);
+  const audio = preparedAudio || new Audio(streamUrl);
   currentAudio = audio;
   const stopVisualAudio = window.AtlasFaceBridge?.watchAudio(audio);
   audio.addEventListener("playing", () => onStart?.({ source: "audio.playing", voice: "elevenlabs" }), { once: true });
@@ -1529,12 +1597,13 @@ async function playElevenLabsStream(streamUrl, text = "", onStart) {
       audio.addEventListener("ended", resolve, { once: true });
       audio.addEventListener("error", () => reject(new Error("Chrome no pudo reproducir el flujo de ElevenLabs")), { once: true });
     });
-    await audio.play();
-    await finished;
+    // Attach rejection handlers to both immediately: a network/media error can
+    // arrive before play() settles, especially while cancelling a preload.
+    await Promise.all([audio.play(), finished]);
   } finally {
     stopVisualAudio?.();
     if (currentAudioStop === stopPlayback) currentAudioStop = null;
-    currentAudio = null;
+    if (currentAudio === audio) currentAudio = null;
   }
 }
 
@@ -1564,46 +1633,93 @@ async function playSpeech(text, encodedAudio, provider = "browser", role = "fina
 }
 
 function stopCurrentPlayback() {
+  realtimeExternalSpeechRun += 1;
   window.AtlasFaceBridge?.stopExternal();
   browserSpeechRun += 1;
   if (currentAudio) currentAudio.pause();
   currentAudioStop?.();
   currentAudioStop = null;
   currentAudio = null;
+  for (const prepared of [...preparedRealtimeSpeech]) prepared.cancel();
   window.speechSynthesis?.cancel();
   resetStreamedSpeechState();
 }
 
 function stopRealtimeExternalSpeech() {
-  realtimeExternalSpeechRun += 1;
   stopCurrentPlayback();
 }
 
-async function playRealtimeExternalText(text, provider, { onStart } = {}) {
+function prepareRealtimeExternalText(text, provider, { onReady } = {}) {
+  if (provider !== "elevenlabs") return null;
+  const cleanText = String(text || "").trim();
+  const controller = new AbortController();
+  const prepared = {
+    text: cleanText, audio: null, streamUrl: "", cancelled: false, error: null,
+    cancel() {
+      if (prepared.cancelled) return;
+      prepared.cancelled = true;
+      controller.abort();
+      if (prepared.audio) {
+        prepared.audio.pause();
+        prepared.audio.removeAttribute("src");
+        prepared.audio.load(); // abort a preload/download, not only its playback
+      }
+      preparedRealtimeSpeech.delete(prepared);
+    },
+  };
+  preparedRealtimeSpeech.add(prepared);
+  const requestedAt = performance.now();
+  prepared.ready = (async () => {
+    const response = await accessFetch("/api/tts/stream-ticket", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: cleanText }), signal: controller.signal,
+    });
+    const payload = await response.json();
+    if (prepared.cancelled) return;
+    if (!response.ok) throw new Error(payload.error || "ElevenLabs no pudo abrir el flujo de voz");
+    // A same-origin, opaque ticket keeps credentials and text out of media URLs.
+    if (typeof payload.streamUrl !== "string" || !/^\/api\/tts\/stream\/[A-Za-z0-9_-]+$/u.test(payload.streamUrl)) {
+      throw new Error("Dirección del flujo de voz no válida");
+    }
+    prepared.streamUrl = payload.streamUrl;
+    const audio = new Audio();
+    prepared.audio = audio;
+    audio.preload = "auto";
+    audio.addEventListener("canplay", () => {
+      if (!prepared.cancelled) onReady?.({ source: "audio.canplay" });
+    }, { once: true });
+    audio.addEventListener("error", () => {
+      if (!prepared.cancelled) prepared.error = new Error("Chrome no pudo preparar el flujo de ElevenLabs");
+    }, { once: true });
+    audio.src = prepared.streamUrl;
+    audio.load();
+    addLog("Ticket ElevenLabs preparado; comienza la descarga de audio", performance.now() - requestedAt);
+  })().catch((error) => {
+    // Preparations may wait behind a playing phrase; never leak unhandled
+    // rejection or replay a failed request. Playback reports this once.
+    if (!prepared.cancelled) prepared.error = error;
+  });
+  return prepared;
+}
+
+async function playRealtimeExternalText(text, provider, { onStart, prepared } = {}) {
   const run = ++realtimeExternalSpeechRun;
   const cleanText = String(text || "").trim();
   if (!cleanText) return false;
   if (provider === "elevenlabs") {
-    const requestedAt = performance.now();
-    addLog("Abriendo el flujo de audio de ElevenLabs");
-    const response = await accessFetch("/api/tts/stream-ticket", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: cleanText }),
-    });
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || "ElevenLabs no pudo abrir el flujo de voz");
-    if (run !== realtimeExternalSpeechRun) return false;
-    addLog(`Flujo ElevenLabs preparado en ${payload.format || "MP3"}`, performance.now() - requestedAt);
-    setScreen("HABLANDO", "ATLAS está hablando", "ElevenLabs está enviando y reproduciendo el audio en directo.", "speaking");
+    const resource = prepared || prepareRealtimeExternalText(cleanText, provider);
     const started = performance.now();
-    beginPlaybackEchoGuard(cleanText);
     try {
-      await playElevenLabsStream(payload.streamUrl, cleanText, onStart);
+      await resource.ready;
+      if (resource.cancelled || run !== realtimeExternalSpeechRun) return false;
+      if (resource.error) throw resource.error;
+      beginPlaybackEchoGuard(cleanText);
+      await playElevenLabsStream(resource.streamUrl, cleanText, onStart, resource.audio);
       if (run !== realtimeExternalSpeechRun) return false;
       addLog("Streaming de ElevenLabs completado", performance.now() - started);
       return true;
     } finally {
+      resource.cancel();
       if (containsAtlasFragment(cleanText) && !PHYSICAL_ATLAS_A1) {
         muteRecognitionFor(WAKE_ECHO_TAIL_MS);
       }
@@ -1612,8 +1728,8 @@ async function playRealtimeExternalText(text, provider, { onStart } = {}) {
   try {
     // Realtime owns the queue and its A1 microphone gate. No blocking logging
     // request or per-chunk reopening belongs in the playback critical path.
-    await playBrowserSpeech(cleanText, onStart);
-    return run === realtimeExternalSpeechRun;
+    const completed = await playBrowserSpeech(cleanText, onStart);
+    return completed !== false && run === realtimeExternalSpeechRun;
   } finally {
     if (containsAtlasFragment(cleanText) && !PHYSICAL_ATLAS_A1) muteRecognitionFor(WAKE_ECHO_TAIL_MS);
   }
@@ -1987,16 +2103,21 @@ realtimeController = window.AtlasRealtime?.create({
       recordButton.hidden = true;
     },
     onInputStream: attachRealtimeWakeInput,
+    canFollowUp: () => hasControl() && activeView === "atlas" && !microphoneMuted
+      && !document.hidden && !realtimeFallbackActive && recordingMode === "wake"
+      && !nativeTranscribing && !dictationRunning && !dictationShouldRestart && !ttsLabBusy,
+    getInputAdmission,
     onOutputStream: (stream, audio) => window.AtlasFaceBridge?.outputStream(stream, audio),
     onOutputPlayback: active => window.AtlasFaceBridge?.outputPlayback(active),
     onOutputEnabled: enabled => window.AtlasFaceBridge?.outputEnabled(enabled),
     getVoiceActivity: () => ({
-      active: voiceActive,
+      active: getInputAdmission().active,
       rms: voiceLastRms,
       peak: voiceLastPeak,
       threshold: voiceLastThreshold,
     }),
     playExternalText: playRealtimeExternalText,
+    prepareExternalText: prepareRealtimeExternalText,
     stopExternalSpeech: stopRealtimeExternalSpeech,
     setA1MicrophoneSuppressed: setA1PlaybackMicrophoneSuppressed,
   },
@@ -2117,6 +2238,7 @@ reasoningEffortSelect.addEventListener("change", async () => {
   }
 });
 document.addEventListener("visibilitychange", () => {
+  if (document.hidden) realtimeController?.closeFollowUp?.();
   if (document.visibilityState === "visible") scheduleRecognitionRestart(100);
 });
 window.addEventListener("beforeunload", () => {

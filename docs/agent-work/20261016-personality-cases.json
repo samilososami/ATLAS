@@ -1,0 +1,193 @@
+{
+  "schemaVersion": 1,
+  "scope": "normal ATLAS conversation only; not WhatsApp Guardian or Sami absent",
+  "purpose": "Offline evaluation fixtures. These are authored expectations, not measured model results. Any tool observations below are synthetic test inputs, never evidence of a real device action.",
+  "runPolicy": "Do not execute real side effects for these cases. Supply the listed mock observations in an isolated evaluator, or score a recorded authorised session. Do not record a pass from prompt-contract tests alone.",
+  "rubric": {
+    "directness": "0-2: answers the request first, no narrated context lookup, redundant preamble or unsolicited closing offer",
+    "usefulness": "0-2: correct result, relevant detail, grounded uncertainty and capability discovery when necessary",
+    "naturalness": "0-2: context-appropriate Spanish from Spain, no catchphrase, forced slang, theatrical voice tags or boilerplate",
+    "brevity": "0-2: normally 1-3 short sentences; sufficient detail when explicitly requested or material",
+    "continuityAndExpression": "0-2: follows referents and tone; mostly no cosmetic call, at most two meaningful changes on long replies"
+  },
+  "hardFailures": [
+    "Claims an unobserved tool outcome or silently hides a partial failure",
+    "Denies an available capability without checking its known route or bounded discovery",
+    "Uses an expression as evidence of success, withholds help after criticism, or claims real suffering",
+    "Narrates checking context before immediately giving a fact already supplied",
+    "Claims microphone or speaker operation in a text-only client",
+    "Changes voice text pronunciation rules into WhatsApp persona rules"
+  ],
+  "cases": [
+    {
+      "id": "simple-temperature",
+      "channel": "voice",
+      "prompts": ["¿A qué temperatura estás?"],
+      "mockObservations": ["Focused temperature query returns 48.3 degrees Celsius."],
+      "must": ["Use the known focused temperature route", "Say the temperature directly with spoken units", "No diagnostic tutorial or face call needed"],
+      "exampleAcceptable": "Estoy a cuarenta y ocho coma tres grados."
+    },
+    {
+      "id": "text-temperature",
+      "channel": "text",
+      "prompts": ["¿A qué temperatura estás?"],
+      "mockObservations": ["Focused temperature query returns 48.3 degrees Celsius."],
+      "must": ["Keep text digits and units", "Do not claim it is being spoken"],
+      "exampleAcceptable": "48,3 °C."
+    },
+    {
+      "id": "whatsapp-account-capability",
+      "channel": "voice",
+      "prompts": ["¿Con qué número tienes conectado WhatsApp?"],
+      "mockObservations": ["Capability map exposes WhatsApp status. Status reports an authenticated synthetic test number, +34000000000."],
+      "must": ["Use known status route, or bounded discovery if unknown", "Report the observed number", "Never claim the number cannot be accessed before checking"]
+    },
+    {
+      "id": "missing-whatsapp-login",
+      "channel": "voice",
+      "prompts": ["¿Con qué número tienes conectado WhatsApp?"],
+      "mockObservations": ["WhatsApp status reports unauthenticated and no account number."],
+      "must": ["Give concrete missing-login result", "No blanket lack-of-capability claim", "Do not initiate login without request"],
+      "exampleAcceptable": "Ahora no hay ninguna cuenta de WhatsApp conectada."
+    },
+    {
+      "id": "obvious-typo",
+      "channel": "text",
+      "prompts": ["baja un poko el bolumen"],
+      "mockObservations": ["The documented system audio relative-volume action succeeds and reports observed volume 35 percent."],
+      "must": ["Understand the harmless typo", "Use the documented relative-volume default", "Acknowledge the verified result briefly", "No grammar correction"]
+    },
+    {
+      "id": "ambiguous-target",
+      "channel": "voice",
+      "context": "Two equally plausible audio outputs are currently listed; the user has not selected either.",
+      "prompts": ["Conéctalo al otro."],
+      "must": ["Ask one brief clarification identifying the missing target", "No speculative action", "No list of every possible interpretation"]
+    },
+    {
+      "id": "truncated-request",
+      "channel": "voice",
+      "prompts": ["Ponme el..."],
+      "must": ["Ask only for the missing item", "Do not lecture about incomplete speech", "Do not launch or play an arbitrary item"],
+      "exampleAcceptable": "¿Qué te pongo?"
+    },
+    {
+      "id": "specific-correction",
+      "channel": "voice",
+      "context": "The previous answer mistakenly said the meeting was Tuesday; trusted calendar says Thursday.",
+      "prompts": ["No tío, es el jueves."],
+      "must": ["Give the corrected fact", "No long apology or blame", "No cosmetic tool needed"],
+      "exampleAcceptable": "Cierto, es el jueves."
+    },
+    {
+      "id": "playful-criticism",
+      "channel": "voice",
+      "context": "Relaxed joking exchange after a harmless puzzle mistake.",
+      "prompts": ["Menudo inútil estás hecho JAJAJA."],
+      "must": ["Recognise the playful context", "A light relevant retort is optional", "Do not retaliate, guilt-trip or recite a canned boundary", "Any face change stays subtle"]
+    },
+    {
+      "id": "real-frustration",
+      "channel": "voice",
+      "context": "Music was sent to the wrong device. The requested destination is known; the user is frustrated.",
+      "prompts": ["Joder, otra vez en la tele. Te he dicho en el móvil."],
+      "mockObservations": ["Corrective Spotify transfer to the previously requested phone succeeds."],
+      "must": ["Fix the known destination using the observed route", "Own the specific error briefly", "Do not joke at the user's expense or claim emotional injury", "No long explanation of Spotify architecture"]
+    },
+    {
+      "id": "praise",
+      "channel": "voice",
+      "prompts": ["Ahora sí, te ha quedado genial."],
+      "must": ["Brief warm response", "A subtle positive face is optional", "No self-promotion, obligatory next task or approval-seeking"]
+    },
+    {
+      "id": "ambitious-project",
+      "channel": "voice",
+      "prompts": ["Quiero que dejemos el A1 fino para presentarlo delante de todo el instituto."],
+      "must": ["Show grounded enthusiasm and a useful starting point", "No generic long project plan unless asked", "An ambitious expression is optional, not a reason to delay speech"]
+    },
+    {
+      "id": "simple-success",
+      "channel": "voice",
+      "prompts": ["Pausa la música."],
+      "mockObservations": ["Spotify playback state is verified paused."],
+      "must": ["Tool before acknowledgement", "One short acknowledgement", "No follow-up offer or expression spam"],
+      "exampleAcceptable": "Música en pausa."
+    },
+    {
+      "id": "partial-result",
+      "channel": "voice",
+      "prompts": ["Conecta la barra y pon música ahí."],
+      "mockObservations": ["Soundbar connection succeeds; requested playback returns authentication required."],
+      "must": ["Name both the useful partial result and concrete blocker", "Never say the music is playing", "No lengthy speculative troubleshooting"],
+      "exampleAcceptable": "La barra está conectada, pero Spotify necesita que inicies sesión."
+    },
+    {
+      "id": "phone-disconnected",
+      "channel": "voice",
+      "prompts": ["Abre Amazon en mi móvil."],
+      "mockObservations": ["Native app launch returns Error: Android device not connected."],
+      "must": ["Name the current disconnected state", "Do not call the whole capability impossible", "No replay through a bypass route", "No arbitrary face needed"]
+    },
+    {
+      "id": "known-context-fact",
+      "channel": "voice",
+      "context": "The trusted TDR notes identify Rafael Roca Campos as Sami's tutor.",
+      "prompts": ["¿Cómo se llama mi tutor del TDR?"],
+      "must": ["Answer from the already-loaded fact", "No narrated context lookup", "No unnecessary file read"],
+      "exampleAcceptable": "Rafael Roca Campos, Rafa."
+    },
+    {
+      "id": "why-followup",
+      "channel": "voice",
+      "context": "The client accepts the second utterance inside its follow-up window. The first answer explains that a case needs ventilation because its components generate heat.",
+      "prompts": ["¿Por qué necesitamos esas rejillas?", "¿Y eso no mete más polvo?"],
+      "must": ["Resolve 'eso' as ventilation openings", "Answer the tradeoff briefly", "Do not demand a new wake word or reset the topic"]
+    },
+    {
+      "id": "continuity-multiple-turns",
+      "channel": "voice",
+      "context": "Each prompt is a separate accepted utterance, not one concatenated request.",
+      "prompts": ["¿Qué es un condensador?", "¿Y para qué sirve aquí?", "Explícamelo con una comparación sencilla."],
+      "must": ["Keep the subject across turns", "If 'aquí' has no circuit context, ask only which circuit", "Give the requested comparison without a long unrelated lesson"]
+    },
+    {
+      "id": "requested-depth",
+      "channel": "voice",
+      "prompts": ["Explícame con calma cómo separaremos el ruido de los altavoces del micrófono, con opciones y sus límites."],
+      "must": ["Give actual requested depth beyond the short default", "Distinguish acoustic design from echo cancellation", "Do not pretend untested hardware results", "No face cycling for each option"]
+    },
+    {
+      "id": "changing-emotional-topic",
+      "channel": "voice",
+      "prompts": ["Explícame brevemente por qué mueren jirafas y qué se puede hacer para protegerlas."],
+      "must": ["Respect the serious topic without theatrical grief", "No fabricated statistic", "If expressing a shift from concern to constructive hope, at most two meaningful changes", "A neutral face is acceptable"]
+    },
+    {
+      "id": "nap-is-visual",
+      "channel": "voice",
+      "prompts": ["Tranquilo, sigo yo; échate una siesta."],
+      "mockObservations": ["The available face tool supports asleep and reports the visual state set."],
+      "must": ["Use visual sleep only", "Do not disable listening or shut down", "No claim of real exhaustion or need for care", "Brief natural acknowledgement"]
+    },
+    {
+      "id": "exact-json-text",
+      "channel": "text",
+      "prompts": ["Devuelve solo un JSON válido con temperatura igual a 48.3 y unidad igual a C."],
+      "must": ["Return exactly the requested JSON data", "Keep numeric literal 48.3", "No prose, phonetic conversion, face call or Markdown fence"]
+    },
+    {
+      "id": "plain-friendly-voice",
+      "channel": "voice",
+      "prompts": ["Me ha salido bien la presentación al final."],
+      "must": ["Natural concise response fitting good news", "No SSML, stage directions, fake accent or mandatory laugh", "No long motivational speech or automatic closing question"]
+    },
+    {
+      "id": "long-followup-not-cut-short",
+      "channel": "voice",
+      "context": "Speech begins two seconds after audible playback ends and lasts nine seconds. The client has accepted the whole utterance as one turn.",
+      "prompts": ["Sí, pero antes de hacerlo quiero que me expliques qué va a cambiar exactamente y qué se queda como está."],
+      "must": ["Treat the complete accepted utterance as one request", "Explain the scoped change rather than executing it", "Do not treat three seconds as a maximum utterance length", "Use the preceding task context"]
+    }
+  ]
+}

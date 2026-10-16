@@ -44,6 +44,25 @@ class RealtimeInstructionTests(unittest.TestCase):
         self.assertIn("single short progress update", self.instructions)
         self.assertIn("Keep each update to one short sentence", self.instructions)
 
+    def test_loaded_facts_do_not_require_a_narrated_lookup_or_tool(self):
+        self.assertIn("A question answered by the loaded knowledge", self.instructions)
+        self.assertIn("Answer from them directly", self.instructions)
+        self.assertIn("obtain the current time only if it is missing or genuinely stale", self.instructions)
+        self.assertIn("Looking up a fact in already-loaded knowledge is not a wait", self.instructions)
+        self.assertIn("This does not hide uncertainty or an actual failure", self.instructions)
+
+    def test_personality_is_contextual_not_a_repeated_script(self):
+        self.assertIn("Natural conversation, not a performance", self.instructions)
+        self.assertIn("not a script to repeat", self.instructions)
+        self.assertIn("never reuse a prescribed comeback", self.instructions)
+        self.assertIn("Do not narrate the chosen facial expression", self.instructions)
+        self.assertIn("Never guess an action from a partial command", self.instructions)
+
+    def test_clock_mode_is_explicit_persistent_presentation_only(self):
+        self.assertIn("modo reloj", self.instructions)
+        self.assertIn("atlas_display_mode", self.instructions)
+        self.assertIn("never changes voice, microphone, Wi-Fi or devices", self.instructions)
+
 
 if __name__ == "__main__":
     unittest.main()

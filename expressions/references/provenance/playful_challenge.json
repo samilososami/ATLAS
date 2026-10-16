@@ -1,0 +1,13 @@
+{
+  "id": "playful_challenge",
+  "path": "expressions/references/playful_challenge.png",
+  "tool": "image_gen.imagegen",
+  "prompt": "Use case: precise-object-edit.\nAsset type: ONE ATLAS expression concept reference, ID playful_challenge.\nInput image 1: exact base ATLAS face; edit target, preserve identity and layout.\nPrimary request: change only the facial expression to \"A ver si puedes\". Intended context: Reto amistoso del usuario. Expression family: humor. Intensity: medium. Make it readable but natural and restrained, never exaggerated.\nKeep the same blue oval eye sockets, positions and maximum width/height. Alter only the eyelid mask / eyebrow angle when needed. The mouth remains a single blue round-ended stroke of exactly the original thickness, no teeth, lips, tongue or mouth filling. Keep all face anchors and canvas framing identical. Maintain near-black background and blue #00a8ff palette, no glow or texture. Preserve existing tiny ATLAS header and settings icon, add no titles or labels.\nExpression details: mouth path shape parameters [halfWidth, baselineY, curvature, asymmetry] [54,534,35,-10] relative to original [58,527,48,0]; eyebrow paths [\"M -30 -124 Q 0 -134 30 -124\",\"\"]. Accessory: none; add no props.\nAvoid: big facial deformation, extra eyes, pupils, human features, 3D, illustration outlines, thicker mouth, exaggerated emotions, text captions, decorative scene. Deliver one single expression, not a sheet or grid.\nVisible eyelids required: Eye left: clip its top with a straight horizontal eyelid at 20% down its original oval height; never grow outside its original socket. Eye right: clip its top with a straight horizontal eyelid at 17% down its original oval height; never grow outside its original socket. Draw at most ONE eyebrow per eye, exactly two total if brows requested, not paired double lines.",
+  "elapsedSeconds": 18.012,
+  "role": "concept-reference",
+  "sourceAsset": "exec-743435ef-234b-429c-bf77-7ba3389b2dc3.png",
+  "sha256": "a43fa7ced5f5c4ce9a7ba75e7e175635038ea380a0149c579e0285ac03094e03",
+  "bytes": 1223835,
+  "width": 1591,
+  "height": 989
+}

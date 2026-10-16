@@ -12,10 +12,11 @@ runtime="$atlas_home/.atlas/webscreen"
 [[ -f "$runtime/start.sh" ]] || { echo "Existing WebScreen installation not found" >&2; exit 1; }
 atlas_user=${ATLAS_USER:-$(stat -c %U "$atlas_home")}
 atlas_group=$(id -gn "$atlas_user")
-files=(server.py access_control.py wifi_control.py codex_usage.py README.md NEW_DESIGN.md CLAP.md static/access.js static/app.js static/clap.js static/wifi.js static/index.html static/navigation.js static/realtime.js static/styles.css
-  static/new/face.css static/new/face.js static/new/audio.js static/new/petting.js static/new/logo.png static/new/atlas-wordmark.svg)
-system_sources=(atlas-commands/atlas-screen atlas-commands/atlas-webscreen system/libexec/atlas-screen-kiosk-session system/libexec/atlas-screen-browser-watchdog.cjs misc/atlas-touch-type/atlas-touch-type.py misc/atlas-touch-type/atlas-touch-type-session)
-system_targets=(usr/local/bin/atlas-screen usr/local/bin/atlas-webscreen usr/local/libexec/atlas-screen-kiosk-session usr/local/libexec/atlas-screen-browser-watchdog.cjs usr/local/libexec/atlas-touch-type.py usr/local/libexec/atlas-touch-type-session)
+files=(server.py capabilities.py access_control.py display_state.py usb_monitor.py face_state.py wifi_control.py codex_usage.py README.md NEW_DESIGN.md FACE.md CLAP.md static/access.js static/app.js static/clap.js static/wifi.js static/index.html static/navigation.js static/realtime.js static/styles.css
+  static/voice-prosody.js static/expression-events.js static/new/expressions-catalog.js static/new/expressions-catalog.json
+  static/new/face.css static/new/face.js static/new/face-events.js static/new/audio.js static/new/petting.js static/new/logo.png static/new/atlas-wordmark.svg)
+system_sources=(atlas-commands/atlas-screen atlas-commands/atlas-webscreen atlas-commands/atlas-face system/libexec/atlas-screen-kiosk-session system/libexec/atlas-screen-browser-watchdog.cjs misc/atlas-touch-type/atlas-touch-type.py misc/atlas-touch-type/atlas-touch-type-session)
+system_targets=(usr/local/bin/atlas-screen usr/local/bin/atlas-webscreen usr/local/bin/atlas-face usr/local/libexec/atlas-screen-kiosk-session usr/local/libexec/atlas-screen-browser-watchdog.cjs usr/local/libexec/atlas-touch-type.py usr/local/libexec/atlas-touch-type-session)
 unit_sources=(system/systemd/atlas-webscreen.service system/systemd/atlas-screen-boot-on.service)
 unit_targets=(etc/systemd/system/atlas-webscreen.service etc/systemd/system/atlas-screen-boot-on.service)
 system_root=${ATLAS_SYSTEM_ROOT:-/}

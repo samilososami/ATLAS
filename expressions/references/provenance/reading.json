@@ -1,0 +1,13 @@
+{
+  "id": "reading",
+  "path": "expressions/references/reading.png",
+  "tool": "image_gen.imagegen",
+  "prompt": "Use case: precise-object-edit.\nAsset type: ONE ATLAS expression concept reference, ID reading.\nInput image 1: exact base ATLAS face; edit target, preserve identity and layout.\nPrimary request: change only the facial expression to \"Leyendo\". Intended context: Está leyendo un resultado relevante. Expression family: focus. Intensity: subtle. Make it readable but natural and restrained, never exaggerated.\nKeep the same blue oval eye sockets, positions and maximum width/height. Alter only the eyelid mask / eyebrow angle when needed. The mouth remains a single blue round-ended stroke of exactly the original thickness, no teeth, lips, tongue or mouth filling. Keep all face anchors and canvas framing identical. Maintain near-black background and blue #00a8ff palette, no glow or texture. Preserve existing tiny ATLAS header and settings icon, add no titles or labels.\nExpression details: mouth path shape parameters [halfWidth, baselineY, curvature, asymmetry] [48,542,0.3,0] relative to original [58,527,48,0]; eyebrow paths [\"M -30 -117 Q 0 -117 30 -117\",\"M -30 -117 Q 0 -117 30 -117\"]. Accessory: none; add no props.\nAvoid: big facial deformation, extra eyes, pupils, human features, 3D, illustration outlines, thicker mouth, exaggerated emotions, text captions, decorative scene. Deliver one single expression, not a sheet or grid.\nVisible eyelids required: Eye left: clip its top with a straight horizontal eyelid at 47% down its original oval height; never grow outside its original socket. Eye right: clip its top with a straight horizontal eyelid at 31% down its original oval height; never grow outside its original socket. Draw at most ONE eyebrow per eye, exactly two total if brows requested, not paired double lines.",
+  "elapsedSeconds": 35.723,
+  "role": "concept-reference",
+  "sourceAsset": "exec-a3c92b36-a1c7-4dea-a9e7-98d09b4e20fa.png",
+  "sha256": "3ab861346938d34d859ecb4182dbe3279b4de8665e83cb310bd3d42e8a8b7cf8",
+  "bytes": 1219760,
+  "width": 1591,
+  "height": 989
+}

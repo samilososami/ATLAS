@@ -8,21 +8,36 @@ const path = require('node:path');
 const http = require('node:http');
 const assert = require('node:assert/strict');
 const root = path.join(__dirname, 'static');
-const output = path.resolve(__dirname, '../../docs/images/webscreen-expressions');
-const expressions = ['neutral', 'angry', 'delighted', 'surprised', 'curious',
-  'skeptical', 'sad', 'worried', 'sleepy', 'wink', 'laughing', 'focused', 'shy', 'defiant'];
+const expanded = process.argv.includes('--expanded');
+const fullCatalog = process.argv.includes('--catalog');
+const output = path.resolve(__dirname, fullCatalog ? '../../expressions/renders' : expanded ? '../../docs/images/webscreen-expressions-20260926' : '../../docs/images/webscreen-expressions');
+const expressions = fullCatalog ? require('../../expressions/catalog.json').expressions.map(entry => entry.id) : expanded
+  ? ['ambitious', 'confident', 'affectionate', 'confused', 'embarrassed', 'relieved', 'bored', 'excited', 'asleep']
+  : ['neutral', 'angry', 'delighted', 'surprised', 'curious',
+    'skeptical', 'sad', 'worried', 'sleepy', 'wink', 'laughing', 'focused', 'shy', 'defiant'];
 const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8')
   .replace('<body>', '<body data-design="new">')
   .replace('id="webscreen-content" hidden inert', 'id="webscreen-content"')
   .replace('class="access-blocked"', 'class="access-blocked" hidden')
   .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
   .replace('</head>', '<link rel="stylesheet" href="/new/face.css"></head>')
-  .replace('</body>', '<script src="/new/face.js"></script><script src="/new/audio.js"></script><script src="/new/petting.js"></script><script src="/navigation.js"></script></body>');
+  .replace('</body>', '<script src="/new/expressions-catalog.js"></script><script src="/new/face.js"></script><script src="/new/audio.js"></script><script src="/new/petting.js"></script><script src="/navigation.js"></script></body>');
 const mime = { '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml',
   '.png': 'image/png', '.ico': 'image/x-icon' };
 const server = http.createServer((request, response) => {
   const url = new URL(request.url, 'http://localhost');
   response.setHeader('Cache-Control', 'no-store');
+  if (url.pathname.startsWith('/expressions/')) {
+    const galleryRoot = path.resolve(__dirname, '../../expressions');
+    const relative = url.pathname === '/expressions/' ? 'gallery.html' : decodeURIComponent(url.pathname.slice('/expressions/'.length));
+    const target = path.resolve(galleryRoot, relative);
+    if (!target.startsWith(galleryRoot + path.sep)) { response.writeHead(404).end(); return; }
+    try {
+      response.setHeader('Content-Type', target.endsWith('.html') ? 'text/html; charset=utf-8' : mime[path.extname(target)] || 'application/octet-stream');
+      response.end(fs.readFileSync(target));
+    } catch { response.writeHead(404).end(); }
+    return;
+  }
   if (url.pathname === '/new/' || url.pathname === '/new') {
     response.setHeader('Content-Type', 'text/html; charset=utf-8');
     response.end(html); return;
@@ -57,20 +72,73 @@ async function main() {
       await page.evaluate(expression => {
         AtlasFaceBridge.update({ state: 'idle', phase: 'EN ESPERA' });
         AtlasFaceBridge.connection({ healthy: true, label: 'ATLAS A1 conectado' });
-        const accepted = expression === 'defiant'
-          ? AtlasFace.clap()
-          : AtlasFace.expression({ expression, source: 'model', durationMs: 30000 });
+        const accepted = AtlasFace.expression({ expression, source: 'command', durationMs: 30000 });
         if (!accepted) {
           throw new Error(`Expression rejected: ${expression}`);
         }
       }, expression);
       await page.waitForTimeout(650);
+      await page.waitForFunction(() => Number(getComputedStyle(document.querySelector('.face-character')).opacity) > .999
+        && Number(getComputedStyle(document.querySelector('.face-connection-visual')).opacity) < .001);
       assert.equal(await page.locator('.face-stage').getAttribute('data-state'), 'idle');
       assert.equal(await page.locator('.face-stage').getAttribute('data-expression'), expression);
+      assert.equal(await page.locator('.face-stage').getAttribute('data-presentation'), 'face');
       assert.equal(await page.locator('.face-caption').textContent(), '');
-      const file = `${String(index).padStart(2, '0')}-${expression}.png`;
+      const file = fullCatalog ? `${expression}.png` : `${String(index).padStart(2, '0')}-${expression}.png`;
       await page.screenshot({ path: path.join(output, file), animations: 'allow' });
       captures.push({ expression, file });
+    }
+    if (fullCatalog) {
+      assert.deepEqual(errors, []);
+      assert.equal(captures.length, 173);
+      const crypto = require('node:crypto');
+      const report = { renderer: 'Chromium, real WebScreen SVG/CSS', viewport: {width:1591,height:989},
+        note: 'Deterministic local states; no microphone, provider or account calls.',
+        captures: captures.map(item => ({...item, sha256: crypto.createHash('sha256').update(fs.readFileSync(path.join(output,item.file))).digest('hex')})), errors };
+      fs.writeFileSync(path.join(output, 'manifest.json'), JSON.stringify(report, null, 2)+'\n');
+      console.log(JSON.stringify({count: captures.length, output, errors}));
+      return;
+    }
+    if (expanded) {
+      await page.evaluate(() => {
+        window.testRest = document.querySelector('.face-mouth').getAttribute('d');
+        window.testUtterance = new EventTarget();
+        testUtterance.text = 'Oye, ya funciona la voz sin eventos de palabras.';
+        window.testStop = AtlasFaceBridge.watchUtterance(testUtterance);
+        testUtterance.dispatchEvent(new Event('start'));
+      });
+      await page.waitForFunction(() => document.querySelector('.face-mouth').getAttribute('d') !== testRest);
+      assert.equal(await page.locator('.face-stage').getAttribute('data-sleep'), 'asleep');
+      assert.equal(await page.locator('.face-mouth').evaluate(el => getComputedStyle(el).opacity), '1');
+      await page.screenshot({ path: path.join(output, '09-asleep-speaking.png') });
+      captures.push({ expression: 'asleep speaking with no word boundaries (fixture)', file: '09-asleep-speaking.png' });
+      await page.evaluate(() => { testUtterance.dispatchEvent(new Event('end')); testStop(); });
+      assert.equal(await page.locator('.face-mouth').getAttribute('d'), await page.evaluate(() => testRest));
+      await page.evaluate(() => AtlasFaceBridge.update({ state: 'listening', phase: 'ACTIVADO' }));
+      assert.equal(await page.locator('.face-stage').getAttribute('data-sleep'), 'awake');
+      await page.waitForTimeout(200); // Let the separate 180 ms wake-surprise finish.
+      await page.evaluate(() => {
+        AtlasFaceBridge.update({ state: 'idle', phase: 'EN ESPERA' });
+        AtlasFace.expression({ expression: 'ambitious' });
+      });
+      await page.waitForTimeout(70);
+      const transition = await page.locator('.face-eye-ambitious').first().evaluate(el => ({
+        opacity: Number(getComputedStyle(el).opacity), duration: getComputedStyle(el).transitionDuration,
+      }));
+      assert.equal(transition.duration, '0.18s');
+      assert.ok(transition.opacity > 0 && transition.opacity < 1, JSON.stringify(transition));
+      await page.waitForTimeout(200);
+      assert.equal(await page.locator('.face-eye-ambitious').first().evaluate(el => getComputedStyle(el).opacity), '1');
+      await page.setViewportSize({ width: 1024, height: 600 });
+      await page.screenshot({ path: path.join(output, '10-ambitious-pi-1024x600.png') });
+      captures.push({ expression: 'ambitious on A1 viewport', file: '10-ambitious-pi-1024x600.png' });
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      await page.evaluate(() => AtlasFace.expression({ expression: 'excited' }));
+      assert.equal(await page.locator('.face-mouth').evaluate(el => getComputedStyle(el).animationName), 'none');
+      assert.deepEqual(errors, []);
+      console.log(JSON.stringify({ captures, transition, errors,
+        note: 'Real Chromium SVG/CSS; synthetic local utterance lifecycle, no audio/model call.' }, null, 2));
+      return;
     }
     // Exercise the real inactivity deadline in browser time instead of adding
     // a public "sleep now" query flag or altering production controller state.

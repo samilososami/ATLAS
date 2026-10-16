@@ -271,11 +271,25 @@ class AnswerView:
 
 REALTIME_TOOLS: list[dict[str, Any]] = [
     {
+        "type": "function", "name": "atlas_capabilities",
+        "description": "Consulta de solo lectura de capacidades y manuales instalados de ATLAS. Úsala antes de negar acceso si no conoces la ruta, sin pedir comandos al usuario. Si ya conoces la herramienta adecuada, úsala directamente. No comprueba conexiones ni concede permisos: después consulta el estado real. Sin argumentos devuelve mapa e índice; query busca; manual y offset leen páginas.",
+        "parameters": {
+            "type": "object", "additionalProperties": False,
+            "properties": {
+                "query": {"type": "string", "maxLength": 400},
+                "manual": {"type": "string", "description": "Nombre exacto devuelto por el índice de manuales."},
+                "offset": {"type": "integer", "minimum": 0, "maximum": 128000},
+            },
+            "required": [],
+        },
+    },
+    {
         "type": "function",
         "name": "atlas_shell",
         "description": (
             "Ejecuta un comando no interactivo en la Raspberry Pi como sami. "
-            "Úsala para consultar el sistema o realizar la acción solicitada. "
+            "Consulta datos reales del sistema y cuentas, estado de WhatsApp, Spotify, audio, cuota ChatGPT y archivos, o realiza una acción autorizada. "
+            "No niegues acceso sin comprobar la ruta disponible; si desconoces el comando, consulta atlas_capabilities. "
             "La salida se devuelve a ATLAS."
         ),
         "parameters": {
@@ -334,6 +348,16 @@ REALTIME_TOOLS: list[dict[str, Any]] = [
                     "enum": ["day", "week", "month", "year"],
                     "description": "Filtro temporal opcional.",
                 },
+                "include_domains": {
+                    "type": "array", "maxItems": 20, "items": {"type": "string"},
+                    "description": "Limita a dominios sin protocolo ni ruta.",
+                },
+                "exclude_domains": {
+                    "type": "array", "maxItems": 20, "items": {"type": "string"},
+                    "description": "Excluye dominios sin protocolo ni ruta.",
+                },
+                "start_date": {"type": "string", "description": "Fecha inicial YYYY-MM-DD."},
+                "end_date": {"type": "string", "description": "Fecha final YYYY-MM-DD."},
             },
             "required": ["query"],
         },
@@ -923,7 +947,9 @@ class AtlasChat:
         self._last_tool_image = None
         started = time.perf_counter()
         try:
-            if name == "atlas_shell":
+            if name == "atlas_capabilities":
+                result = self.webscreen.capabilities.discover(self.webscreen.resolve_knowledge_dir(), args)
+            elif name == "atlas_shell":
                 result = self.webscreen.execute_realtime_shell(
                     str(args.get("command") or ""),
                     interaction_id,
@@ -936,6 +962,10 @@ class AtlasChat:
                     str(args.get("topic") or "general"),
                     args.get("max_results", 5),
                     str(args.get("time_range") or ""),
+                    include_domains=args.get("include_domains"),
+                    exclude_domains=args.get("exclude_domains"),
+                    start_date=str(args.get("start_date") or ""),
+                    end_date=str(args.get("end_date") or ""),
                 )
             elif name == "atlas_routine":
                 result = self.webscreen.manage_realtime_routine(args)
@@ -1000,7 +1030,7 @@ class AtlasChat:
             },
         })
 
-    def ask(self, prompt: str) -> str:
+    def ask(self, prompt: str, *, final_response_only: bool = False) -> str:
         prompt = prompt.strip()
         if not prompt:
             return ""
@@ -1144,8 +1174,19 @@ class AtlasChat:
                         raise AtlasChatError(f"Respuesta {status}: {detail or 'sin detalle'}")
                     if status == "cancelled":
                         self._stop_android_control()
+                        if final_response_only:
+                            # A cancelled turn must not publish an unfinished preamble.
+                            assistant_parts.clear()
+                            usage = event.get("response", {}).get("usage") or {}
+                            break
                     if pending_continuation:
                         pending_continuation = False
+                        if final_response_only:
+                            # Guardian sends one bubble after the whole tool chain.
+                            # Text from tool-bearing responses is commentary, not the
+                            # final reply. Keep the default terminal/absent behavior.
+                            assistant_parts.clear()
+                            text_items_with_delta.clear()
                         self._send({"type": "response.create"})
                         continue
                     usage = event.get("response", {}).get("usage") or {}

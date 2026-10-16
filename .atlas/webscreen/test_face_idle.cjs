@@ -78,9 +78,21 @@ test('idle blink is a sparse320ms one-shot with randomized13–16s start-to-star
   p.advance(1); assert.equal(p.stage.getAttribute('data-blinking'), 'true');
   assert.equal(p.rafRequests, 0);
   assert.match(css, /data-blinking="true".*animation: face-blink \.32s ease-in-out 1/);
-  for (const line of css.split('\n').filter(line => /animation:[^;]*infinite/.test(line))) assert.ok(line.includes('[data-sleep="asleep"]'), 'continuous animation is restricted to actual decorative sleep');
+  for (const line of css.split('\n').filter(line => /animation:[^;]*infinite/.test(line))) {
+    assert.ok(line.includes('[data-sleep="asleep"]') || line.includes('[data-presentation="connecting"]')
+      || line.includes('[data-presentation="offline"]') || line.includes('face-clock-separator')
+      || line.includes('face-whatsapp-spinner'),
+    'continuous animation is restricted to sleep, connection feedback or the clock separator');
+  }
   assert.match(css, /body\[data-design="new"\] \.face-character \{[^}]*transform:\s*scale\(1\.875\)/);
   assert.match(css, /data-state="working"\] \.face-character \{[^}]*transform:[^;}]*scale\(1\.875\)/);
+});
+
+test('native SVG presentations stay in the viewBox while only the HTML WhatsApp layer is centered with percentages', () => {
+  const svgActive = css.match(/body\[data-design="new"\] \.face-stage\[data-presentation="clock"\] \.face-clock-visual,[\s\S]*?\.face-usb-visual \{([^}]*)\}/)?.[1] || '';
+  assert.match(svgActive, /transform: translateY\(0\) scale\(1\)/);
+  assert.doesNotMatch(svgActive, /translate\(-50%, -50%\)/);
+  assert.match(css, /data-presentation="whatsapp"\] \.face-whatsapp-visual \{ opacity: 1; transform: translate\(-50%, -50%\) scale\(1\)/);
 });
 
 test('eye spacing is native geometry so blink cannot reset horizontal translation', () => {
@@ -158,7 +170,7 @@ test('unchanged recognized text does not rewrite the caption or transcript', () 
 
 test('all model expressions and the local defiant gesture are native geometry and independent from voice state', () => {
   const p = setup(), face = p.window.AtlasFace;
-  const names = ['neutral', 'angry', 'delighted', 'surprised', 'curious', 'skeptical', 'sad', 'worried', 'sleepy', 'wink', 'laughing', 'focused', 'shy'];
+  const names = ['neutral', 'angry', 'delighted', 'surprised', 'curious', 'skeptical', 'sad', 'worried', 'sleepy', 'wink', 'laughing', 'focused', 'shy', 'ambitious', 'confident', 'affectionate', 'confused', 'embarrassed', 'relieved', 'bored', 'excited', 'asleep'];
   for (const expression of names) {
     assert.equal(face.expression({ expression }), true, expression);
     assert.equal(p.stage.dataset.expression, expression);
@@ -168,13 +180,15 @@ test('all model expressions and the local defiant gesture are native geometry an
     assert.ok(p.stage.innerHTML.includes(`face-eye-${expression === 'delighted' ? 'neutral' : expression}`), expression);
     assert.ok(css.includes(`[data-expression="${expression}"] .face-eye-${expression === 'delighted' ? 'neutral' : expression}`));
   }
-  assert.equal(face.expression({ expression: 'defiant' }), false, 'Realtime cannot pick the clap-only face');
+  assert.equal(face.expression({ expression: 'happy' }), true);
+  assert.equal(p.stage.dataset.expression, 'delighted');
+  assert.equal(face.expression({ expression: 'defiant' }), true);
   assert.equal(face.clap(), true);
   assert.equal(p.stage.dataset.expression, 'defiant');
   assert.equal(p.stage.dataset.expressionSource, 'clap');
   assert.ok(p.stage.innerHTML.includes('face-eye-defiant'));
   assert.ok(css.includes('[data-expression="defiant"] .face-eye-defiant'));
-  for (const payload of [null, {}, { expression: 'happy' }, { expression: '__proto__' }, { expression: 'sad', source: 'remote' }, { expression: 'angry', source: 'petting' }]) {
+  for (const payload of [null, {}, { expression: '__proto__' }, { expression: 'sad', source: 'remote' }, { expression: 'angry', source: 'petting' }]) {
     assert.equal(face.expression(payload), false);
     assert.equal(p.stage.dataset.expression, 'defiant');
   }
@@ -192,7 +206,7 @@ test('double clap is a ready-only three-second expression and never changes a re
   p.advance(2999); assert.equal(p.stage.dataset.expression, 'defiant');
   p.advance(1); assert.equal(p.stage.dataset.expression, 'neutral');
   assert.equal(p.stage.getAttribute('data-clap-returning'), 'true');
-  p.advance(339); assert.equal(p.stage.getAttribute('data-clap-returning'), 'true');
+  p.advance(179); assert.equal(p.stage.getAttribute('data-clap-returning'), 'true');
   p.advance(1); assert.equal(p.stage.hasAttribute('data-clap-returning'), false);
   face.update({ state: 'speaking' });
   assert.equal(face.clap(), false);
@@ -253,7 +267,7 @@ test('listening waveform and transcript take priority over expressions without a
   assert.equal(p.stage.dataset.state, 'listening');
   assert.equal(p.node('.face-transcript').textContent, '', 'transcript is confined to shared debug UI');
   assert.deepEqual(p.node('.face-wave').children.map(node => node.getAttribute('height')), bars);
-  assert.match(css, /data-state="listening"\] \.face-character \{ opacity: 0;/);
+  assert.match(css, /data-presentation="listening"\] \.face-character \{ opacity: 0;/);
   face.update({ state: 'working' });
   assert.equal(p.stage.dataset.expression, 'delighted');
 });
@@ -344,7 +358,7 @@ test('sleep has two blink-gated drowsy phases and completes between100–105s', 
     'stage-one eyelids have a perfectly straight, symmetric top edge');
   assert.match(css, /M -53 20 H 53 L 53 42/,
     'stage-two eyelids retain the straight horizontal top edge');
-  assert.equal((source.match(/M -49 3 Q 0 52 49 3/g) || []).length, 2,
+  assert.equal((source.match(/<path class="face-sleep-eye" d="M -49 3 Q 0 52 49 3/g) || []).length, 2,
     'sleeping crescents are identical and deeply curved, never inclined');
   for (const [random, firstAt, secondAt, asleepAt] of [[0, 50000, 75000, 100000], [.5, 52500, 77500, 102500], [1, 55000, 80000, 105000]]) {
     const p = setup(random), face = p.window.AtlasFace;
@@ -491,7 +505,7 @@ test('happy uses rising masks on persistent ovals, not a crossfade to replacemen
   assert.match(p.stage.innerHTML, /mask="url\(#atlas-happy-left\)"/);
   assert.match(p.stage.innerHTML, /mask="url\(#atlas-happy-right\)"/);
   assert.doesNotMatch(p.stage.innerHTML, /face-eye-variant face-eye-delighted/);
-  assert.match(css, /\.face-happy-cutout \{ transform: translateY\(160px\); transition: transform \.26s/);
+  assert.match(css, /\.face-happy-cutout \{ transform: translateY\(160px\); transition: transform \.18s/);
   assert.match(css, /data-expression="delighted"\] \.face-happy-cutout \{ transform: translateY\(0\);/);
   face.expression({ expression: 'delighted' });
   assert.equal(p.stage.getAttribute('data-happy-bounce'), 'true');
@@ -499,4 +513,51 @@ test('happy uses rising masks on persistent ovals, not a crossfade to replacemen
   face.expression({ expression: 'neutral' });
   assert.equal(p.stage.dataset.expression, 'neutral');
   assert.equal(p.rafRequests, 0);
+});
+
+test('forced sleep speaks, restores resting pose, and wakes immediately on new input', () => {
+  const p = setup(), face = p.window.AtlasFace;
+  face.connection({ healthy: true });
+  assert.equal(face.expression({ expression: 'sleep' }), true);
+  assert.equal(p.stage.dataset.sleep, 'asleep');
+  p.advance(31000);
+  assert.equal(p.stage.dataset.expression, 'asleep');
+  const rest = p.node('.face-mouth').getAttribute('d');
+  face.update({ state: 'speaking' });
+  face.outputLevel({ rms: .15 }); p.flushFrame();
+  assert.equal(p.stage.dataset.sleep, 'asleep');
+  assert.notEqual(p.node('.face-mouth').getAttribute('d'), rest);
+  assert.match(css, /data-state="speaking"\] \.face-mouth \{ opacity: 1 !important/);
+  face.update({ state: 'idle' });
+  assert.equal(p.node('.face-mouth').getAttribute('d'), rest);
+  face.update({ state: 'listening' });
+  assert.equal(p.stage.dataset.sleep, 'awake');
+  assert.equal(p.stage.dataset.expression, 'neutral');
+});
+
+test('all new faces articulate and restore their own resting mouth', () => {
+  for (const name of ['ambitious', 'confident', 'affectionate', 'confused', 'embarrassed', 'relieved', 'bored', 'excited', 'asleep', 'defiant']) {
+    const p = setup(), face = p.window.AtlasFace;
+    face.expression({ expression: name });
+    const rest = p.node('.face-mouth').getAttribute('d');
+    face.update({ state: 'speaking' }); face.outputLevel({ rms: .2 }); p.flushFrame();
+    assert.notEqual(p.node('.face-mouth').getAttribute('d'), rest, name);
+    face.update({ state: 'idle' });
+    assert.equal(p.node('.face-mouth').getAttribute('d'), rest, name);
+  }
+});
+
+test('old command expiry cannot clear a newer model choice or petting response', () => {
+  const p = setup(), face = p.window.AtlasFace;
+  face.expression({ expression: 'angry', source: 'command', durationMs: 1000 });
+  assert.equal(p.stage.dataset.expressionSource, 'command');
+  face.expression({ expression: 'curious', source: 'model' });
+  face.clearCommand();
+  assert.equal(p.stage.dataset.expression, 'curious');
+  face.expression({ expression: 'angry', source: 'command' });
+  face.expression({ expression: 'delighted', source: 'petting' });
+  face.clearCommand();
+  assert.equal(p.stage.dataset.expression, 'delighted');
+  p.advance(6000);
+  assert.equal(p.stage.dataset.expression, 'neutral');
 });

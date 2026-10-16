@@ -4,15 +4,17 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 function setup({ design = 'new', bridge = true, renderer = true } = {}) {
-  const sent = [], painted = [], requests = [], timers = new Map();
+  const sent = [], painted = [], displayModes = [], requests = [], timers = new Map();
   let timerId = 0;
   const window = {
+    AtlasExpressionCatalog: JSON.parse(fs.readFileSync(`${__dirname}/static/new/expressions-catalog.json`, 'utf8')),
     setTimeout(fn, delay) { timers.set(++timerId, { fn, delay }); return timerId; },
     clearTimeout(id) { timers.delete(id); },
   };
   if (bridge) window.AtlasFaceBridge = {
     expressionsAvailable: () => renderer,
     expression(value) { painted.push(JSON.parse(JSON.stringify(value))); return true; },
+    async setDisplayMode(mode) { displayModes.push(mode); return true; },
   };
   vm.runInNewContext(fs.readFileSync(`${__dirname}/static/realtime.js`, 'utf8'), {
     window, document: { body: { dataset: { design } } }, navigator: {},
@@ -43,14 +45,14 @@ function setup({ design = 'new', bridge = true, renderer = true } = {}) {
   });
   const outputs = () => sent.filter(e => e.item?.type === 'function_call_output');
   const creates = () => sent.filter(e => e.type === 'response.create');
-  return { c, window, realtime, sent, painted, requests, timers, tools, event, response, call, done, outputs, creates };
+  return { c, window, realtime, sent, painted, displayModes, requests, timers, tools, event, response, call, done, outputs, creates };
 }
 
 test('only the new surface with a functioning bridge advertises the optional local tool', () => {
   for (const opts of [{ design: 'debug' }, { bridge: false }, { renderer: false }]) {
     const p = setup(opts);
     assert.deepEqual(Array.from(p.tools, tool => tool.name),
-      ['atlas_shell', 'atlas_web_search', 'atlas_routine', 'atlas_phone', 'atlas_android', 'atlas_actions']);
+      ['atlas_capabilities', 'atlas_shell', 'atlas_web_search', 'atlas_routine', 'atlas_phone', 'atlas_android', 'atlas_actions']);
     p.response(); p.call(); p.done();
     assert.equal(p.painted.length, 0);
     assert.equal(p.outputs().length, 0);
@@ -59,12 +61,44 @@ test('only the new surface with a functioning bridge advertises the optional loc
   }
   const p = setup();
   assert.deepEqual(Array.from(p.tools, tool => tool.name),
-    ['atlas_shell', 'atlas_web_search', 'atlas_routine', 'atlas_phone', 'atlas_android', 'atlas_actions', 'atlas_face']);
+    ['atlas_capabilities', 'atlas_shell', 'atlas_web_search', 'atlas_routine', 'atlas_phone', 'atlas_android', 'atlas_actions', 'atlas_face', 'atlas_display_mode']);
   assert.equal(p.realtime.model, 'gpt-realtime-2.1');
-  assert.equal(p.realtime._test.realtimeTools.length, 6); // no global debug mutation
-  assert.equal(p.realtime._test.faceTool.parameters.properties.expression.enum.length, 13);
-  assert.match(p.realtime._test.faceInstructions, /semánticamente/);
+  assert.equal(p.realtime._test.realtimeTools.length, 7); // no global debug mutation
+  assert.equal(p.realtime._test.faceTool.parameters.properties.expression.enum.length, 173);
+  assert.match(p.realtime._test.faceInstructions, /según el contexto/);
   p.c.stop(false);
+});
+
+test('clock mode is a persistent presentation setting and never paints an expression or interrupts voice', async () => {
+  const p = setup(); p.response();
+  await p.c.handleTool({ name: 'atlas_display_mode', call_id: 'clock-call', item_id: 'clock-item',
+    response_id: 'r1', arguments: '{"mode":"clock"}' });
+  assert.deepEqual(p.displayModes, ['clock']);
+  assert.equal(p.painted.length, 0);
+  assert.deepEqual(JSON.parse(p.outputs()[0].item.output), { ok: true, mode: 'clock', persistent: true });
+  assert.equal(p.sent.some(e => ['response.cancel', 'output_audio_buffer.clear'].includes(e.type)), false);
+  assert.equal(p.c.pendingToolResponse, true);
+  p.c.stop(false);
+});
+
+test('invalid clock-mode calls stay cosmetic failures and preserve the active response', async () => {
+  const p = setup(); p.response();
+  await p.c.handleTool({ name: 'atlas_display_mode', call_id: 'bad-clock', item_id: 'bad-clock-item',
+    response_id: 'r1', arguments: '{"mode":"invalid"}' });
+  assert.deepEqual(p.displayModes, []);
+  assert.equal(JSON.parse(p.outputs()[0].item.output).error, 'invalid_display_mode');
+  assert.equal(p.c.responseActive, true);
+  p.c.stop(false);
+});
+
+test('forced sleep and new expressions use the same immediate local acknowledgement', () => {
+  for (const expression of ['asleep', 'defiant', 'ambitious', 'confident', 'affectionate',
+    'confused', 'embarrassed', 'relieved', 'bored', 'excited']) {
+    const p = setup(); p.response(); p.call({ expression });
+    assert.equal(p.painted[0].expression, expression);
+    assert.equal(p.painted[0].durationMs, expression === 'asleep' ? 3600000 : 15000);
+    assert.equal(p.creates().length, 0); p.c.stop(false);
+  }
 });
 
 test('the model-selected expression paints locally and immediately ACKs without another response', async () => {
@@ -82,7 +116,7 @@ test('a face-only response gets exactly one normal continuation with only visual
   const p = setup(); p.response(); p.call(); p.done();
   assert.equal(p.creates().length, 1);
   assert.deepEqual(p.creates()[0].response.tools.map(t => t.name),
-    ['atlas_shell', 'atlas_web_search', 'atlas_routine', 'atlas_phone', 'atlas_android', 'atlas_actions']);
+    ['atlas_capabilities', 'atlas_shell', 'atlas_web_search', 'atlas_routine', 'atlas_phone', 'atlas_android', 'atlas_actions']);
   p.done();
   assert.equal(p.creates().length, 1);
   p.response('r2');
@@ -93,13 +127,14 @@ test('a face-only response gets exactly one normal continuation with only visual
   p.c.stop(false);
 });
 
-test('one semantic selection per explicit turn, even if provider emits a second different call ID', () => {
+test('up to two semantic selections per explicit turn, never a cosmetic-only loop', () => {
   const p = setup(); p.response(); p.call(); p.call({ expression: 'angry' }, 'second-call');
-  assert.equal(p.painted.length, 1);
-  assert.equal(JSON.parse(p.outputs()[1].item.output).error, 'expression_already_selected');
+  assert.equal(p.painted.length, 2);
+  p.call({ expression: 'laughing' }, 'third-call');
+  assert.equal(JSON.parse(p.outputs()[2].item.output).error, 'expression_already_selected');
   p.done(); assert.equal(p.creates().length, 1);
-  p.response('r2'); p.call({ expression: 'laughing' }, 'third-call'); p.done();
-  assert.equal(p.painted.length, 1);
+  p.response('r2'); p.call({ expression: 'laughing' }, 'fourth-call'); p.done();
+  assert.equal(p.painted.length, 2);
   assert.equal(p.creates().length, 1); // no function-only cosmetic loop
   p.c.stop(false);
 });
@@ -156,7 +191,7 @@ test('face plus real tool uses only the existing tool continuation, with shell/s
   p.done([{ type: 'function_call', name: 'atlas_shell' }]);
   assert.equal(p.creates().length, 1);
   assert.deepEqual(p.creates()[0].response.tools.map(t => t.name),
-    ['atlas_shell', 'atlas_web_search', 'atlas_routine', 'atlas_phone', 'atlas_android', 'atlas_actions']);
+    ['atlas_capabilities', 'atlas_shell', 'atlas_web_search', 'atlas_routine', 'atlas_phone', 'atlas_android', 'atlas_actions']);
   p.c.stop(false);
 });
 
@@ -189,6 +224,7 @@ test('stale, finished, unsolicited and cancelled tool calls cannot change the fa
 
 for (const args of [{ expression: 'command' }, { expression: 'angry', command: 'poweroff' },
   { expression: 'shy', duration_ms: 0 }, { expression: 'shy', duration_ms: 30001 },
+  { expression: 'asleep', duration_ms: 3600001 },
   { expression: 'shy', duration_ms: '5000' }, { expression: 'shy', duration_ms: 1.2 },
   [], null, '{bad-json']) {
   test(`invalid visual payload is rejected without cancelling voice: ${JSON.stringify(args)}`, () => {
@@ -216,7 +252,7 @@ test('a capability probe exception disables the optional tool, without disabling
   const p = setup();
   p.window.AtlasFaceBridge.expressionsAvailable = () => { throw new Error('optional renderer'); };
   assert.deepEqual(Array.from(p.c.configureFaceTools(), tool => tool.name),
-    ['atlas_shell', 'atlas_web_search', 'atlas_routine', 'atlas_phone', 'atlas_android', 'atlas_actions']);
+    ['atlas_capabilities', 'atlas_shell', 'atlas_web_search', 'atlas_routine', 'atlas_phone', 'atlas_android', 'atlas_actions']);
   assert.equal(p.c.closed, false);
   p.c.stop(false);
 });

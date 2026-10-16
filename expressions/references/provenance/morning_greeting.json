@@ -1,0 +1,10 @@
+{
+  "id": "morning_greeting",
+  "path": "expressions/references/morning_greeting.png",
+  "tool": "image_gen.imagegen",
+  "sourceAsset": "exec-13c704ee-a56c-4402-8a07-8de49a86a94c.png",
+  "sha256": "9be302003cfdfa7e58f6c60e63f74065510ae1014ea546d1084d2dbc96d4d1a0",
+  "bytes": 1212495,
+  "width": 1591,
+  "height": 989
+}

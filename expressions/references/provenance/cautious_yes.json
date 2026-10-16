@@ -1,0 +1,13 @@
+{
+  "id": "cautious_yes",
+  "path": "expressions/references/cautious_yes.png",
+  "tool": "image_gen.imagegen",
+  "prompt": "Use case: precise-object-edit.\nAsset type: ONE ATLAS expression concept reference, ID cautious_yes.\nInput image 1: exact base ATLAS face; edit target, preserve identity and layout.\nPrimary request: change only the facial expression to \"Sí, con matices\". Intended context: Acepta con una condición importante. Expression family: uncertainty. Intensity: subtle. Make it readable but natural and restrained, never exaggerated.\nKeep the same blue oval eye sockets, positions and maximum width/height. Alter only the eyelid mask / eyebrow angle when needed. The mouth remains a single blue round-ended stroke of exactly the original thickness, no teeth, lips, tongue or mouth filling. Keep all face anchors and canvas framing identical. Maintain near-black background and blue #00a8ff palette, no glow or texture. Preserve existing tiny ATLAS header and settings icon, add no titles or labels.\nExpression details: mouth path shape parameters [halfWidth, baselineY, curvature, asymmetry] [46,537,14,0] relative to original [58,527,48,0]; eyebrow paths [\"M -30 -111 Q 0 -123 30 -126\",\"M -30 -126 Q 0 -123 30 -111\"]. Accessory: none; add no props.\nAvoid: big facial deformation, extra eyes, pupils, human features, 3D, illustration outlines, thicker mouth, exaggerated emotions, text captions, decorative scene. Deliver one single expression, not a sheet or grid.\nVisible eyelids required: Eye left: clip its top with a straight horizontal eyelid at 17% down its original oval height; never grow outside its original socket. Eye right: clip its top with a straight horizontal eyelid at 20% down its original oval height; never grow outside its original socket. Draw at most ONE eyebrow per eye, exactly two total if brows requested, not paired double lines.",
+  "elapsedSeconds": 44.481,
+  "role": "concept-reference",
+  "sourceAsset": "exec-b2a58a48-b761-4468-8e7c-063a0f452c1a.png",
+  "sha256": "f7f05c11a3fb9ed86aa39743c9ccea83499d5eb4ac5cff53ced9e395f5589004",
+  "bytes": 1222799,
+  "width": 1591,
+  "height": 989
+}

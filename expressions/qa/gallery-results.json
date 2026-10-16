@@ -1,0 +1,9 @@
+{
+  "gallery": 173,
+  "musicFilter": 10,
+  "search": true,
+  "livePreview": true,
+  "automaticReturn": true,
+  "mobileNoOverflow": true,
+  "errors": []
+}

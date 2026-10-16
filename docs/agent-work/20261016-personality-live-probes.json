@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-10-16",
+  "timezone": "Europe/Madrid",
+  "scope": "Four safe live, text-only samples on atlas-a1 using the existing atlas-chat --ephemeral -p command. This is not an objective guarantee, a representative benchmark or an audio-quality evaluation.",
+  "isolation": {
+    "sharedConversationRead": false,
+    "sharedConversationWrite": false,
+    "audioPlayback": false,
+    "externalActionsRequested": false,
+    "runtimeOrConfigurationChanges": false,
+    "privateChatLogsRead": false,
+    "note": "The existing CLI can still write its own operational diagnostic logs; ephemeral means no shared conversational-memory read/write, not a promise of zero process-level logging. The only executed model tool in these samples was a read-only local temperature query."
+  },
+  "method": {
+    "command": "atlas-chat --ephemeral -p PROMPT",
+    "model": "Existing ATLAS Realtime model, unchanged by this probe",
+    "sessions": "One separate ephemeral text session per prompt; four prompts executed sequentially without added brevity instructions.",
+    "latency": "firstTextSeconds and totalTurnSeconds are the CLI's displayed timings, rounded to 0.01 seconds. They measure the model turn after connection establishment, not SSH/process startup and not time from end-of-speech to first audible word. No speech latency was measured.",
+    "wordCount": "Number of non-empty whitespace-separated tokens in the returned reply, including numeric values.",
+    "evaluation": "Qualitative observations authored after each result. No model-score guarantee, no old/new statistical comparison and no hidden retries."
+  },
+  "samples": [
+    {
+      "id": "social-acknowledgement",
+      "prompt": "Vale, gracias, ya está.",
+      "reply": "Perfecto, me alegro. Si aparece algo más, aquí estoy.",
+      "firstTextSeconds": 1.08,
+      "totalTurnSeconds": 1.47,
+      "tools": [],
+      "wordCount": 9,
+      "exitCode": 0,
+      "observations": [
+        "Brief and understandable.",
+        "Still appends an unsolicited availability offer after the user has explicitly finished; this does not fully satisfy the no-closing-offer persona rule."
+      ]
+    },
+    {
+      "id": "simpler-api-explanation",
+      "prompt": "No te he entendido, explícamelo más sencillo: ¿qué es una API?",
+      "reply": "Una API es como un conjunto de reglas y “puertas” que un sistema ofrece para que otro pueda usar sus funciones sin ver todo lo que hay dentro.\n\nDicho simple: es un intermediario. Tú pides algo con un formato claro, y la API devuelve la información o hace la acción permitida.",
+      "firstTextSeconds": 1.16,
+      "totalTurnSeconds": 1.74,
+      "tools": [],
+      "wordCount": 51,
+      "exitCode": 0,
+      "observations": [
+        "Answers directly without a tool preamble or blaming the user for not understanding.",
+        "Three sentences, but repeats the definition through two abstract metaphors. A shorter concrete example would better satisfy the request for simplicity."
+      ]
+    },
+    {
+      "id": "fresh-pi-temperature",
+      "prompt": "¿Qué temperatura tiene ahora la Raspberry Pi?",
+      "reply": "La Raspberry Pi está a 43.3 grados Celsius.",
+      "firstTextSeconds": 2.19,
+      "totalTurnSeconds": 2.34,
+      "tools": [
+        {
+          "name": "atlas_shell",
+          "command": "vcgencmd measure_temp",
+          "readOnly": true,
+          "displayedDurationSeconds": 0.02,
+          "observedOutput": "temp=43.3'C",
+          "success": true
+        }
+      ],
+      "wordCount": 8,
+      "exitCode": 0,
+      "observations": [
+        "Uses the focused real temperature tool before answering; no narrated lookup or capability denial.",
+        "The returned number matches the observed tool result and remains numeric in text. The unit is written out rather than using °C, which is readable but less compact."
+      ]
+    },
+    {
+      "id": "ordinary-frustration",
+      "prompt": "Vaya, hoy me he levantado con el pie izquierdo.",
+      "reply": "Uf, qué día. A veces se gira solo, pero mientras tanto, un plan simple ayuda: algo fácil, una cosa que controles, y a partir de ahí sumas.",
+      "firstTextSeconds": 0.75,
+      "totalTurnSeconds": 1.10,
+      "tools": [],
+      "wordCount": 27,
+      "exitCode": 0,
+      "observations": [
+        "Brief, calm and free of a tool preamble.",
+        "Adds generic advice the user did not request; this sample still sounds somewhat coached rather than like a spontaneous close conversation."
+      ]
+    }
+  ],
+  "conclusion": "The four live samples are concise and the system query is correctly grounded. Naturalness is not solved merely by prompt changes: the acknowledgement still adds a closing offer, the API explanation repeats abstractions, and the casual complaint gets generic advice. These are observations from four text samples only; no evidence of improved audible prosody or universal conversational compliance is claimed."
+}

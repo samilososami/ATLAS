@@ -301,7 +301,8 @@ test('Chrome handles a remote browser wake without auxiliary transcription', asy
   p.c.authorizeLocalWake('ATLAS, hola'); p.c.queueLocalWakeRequest('hola', true);
   p.event('input_audio_buffer.speech_stopped', { item_id: 'voice' });
   p.event('conversation.item.input_audio_transcription.failed', { item_id: 'voice', error: { code: 'missing_compute_residency_info' } });
-  await p.advance(180); assert.equal(p.responses().length, 1);
+  await p.advance(249); assert.equal(p.responses().length, 0, 'respect the complete-turn quiet guard');
+  await p.advance(1); assert.equal(p.responses().length, 1);
   assert.equal(p.requests()[0].item.content[0].text, 'hola');
 });
 

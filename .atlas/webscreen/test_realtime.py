@@ -8,6 +8,46 @@ import server as app
 
 
 class RealtimeBackendTests(unittest.TestCase):
+    def test_provider_usage_is_optional_and_strictly_numeric(self):
+        keys = ("inputTokens", "cachedInputTokens", "outputTokens", "reasoningTokens", "totalTokens")
+        with tempfile.TemporaryDirectory() as directory, patch.object(app, "LOG_DIR", Path(directory)):
+            path = app.append_realtime_event({
+                "interactionId": "usage-present", "stage": "response.done",
+                "inputTokens": 20000, "cachedInputTokens": 19712,
+                "outputTokens": 80, "reasoningTokens": 0, "totalTokens": 20080,
+                "usage": {"private": "not-persisted"}, "reasoning": "not-persisted",
+            })
+            record = json.loads(path.read_text())
+            self.assertEqual({key: record[key] for key in keys}, {
+                "inputTokens": 20000, "cachedInputTokens": 19712,
+                "outputTokens": 80, "reasoningTokens": 0, "totalTokens": 20080,
+            })
+            self.assertNotIn("usage", record)
+            self.assertNotIn("reasoning", record)
+            for index, value in enumerate((None, True, False, "20", -1, 0.5, float("inf"),
+                                           float("nan"), 9007199254740992)):
+                path = app.append_realtime_event({
+                    "interactionId": f"usage-invalid-{index}", "stage": "response.done",
+                    **dict.fromkeys(keys, value),
+                })
+                record = json.loads(path.read_text())
+                self.assertTrue(all(key not in record for key in keys))
+            path = app.append_realtime_event({"interactionId": "usage-missing", "stage": "response.done"})
+            self.assertTrue(all(key not in json.loads(path.read_text()) for key in keys))
+
+    def test_quiet_input_diagnostics_keep_digital_threshold_without_audio(self):
+        with tempfile.TemporaryDirectory() as directory, patch.object(app, "LOG_DIR", Path(directory)):
+            path = app.append_realtime_event({
+                "interactionId": "quiet-input-check", "stage": "input.level_rejected",
+                "rms": 0.006, "peak": 0.017, "thresholdDbfs": -34.9,
+                "audio": "not-persisted", "untrustedField": "not-persisted",
+            })
+            record = json.loads(path.read_text())
+        self.assertEqual(record["thresholdDbfs"], -34.9)
+        self.assertEqual(record["rms"], 0.006)
+        self.assertNotIn("audio", record)
+        self.assertNotIn("untrustedField", record)
+
     def test_reasoning_levels_survive_save_and_reservation_without_changing_voice(self):
         with tempfile.TemporaryDirectory() as directory, \
              patch.object(app, "RUNTIME_DIR", Path(directory)), \
@@ -342,7 +382,8 @@ class RealtimeBackendTests(unittest.TestCase):
             self.assertGreater(stats["fillerEstimatedTokens"], 0)
             self.assertEqual(stats["revision"], revision)
             self.assertEqual(stats["availableFillerTokens"],
-                             app.REALTIME_CONTEXT_LIMIT_TOKENS - stats["crucialEstimatedTokens"])
+                             min(app.REALTIME_CONVERSATION_LIMIT_TOKENS,
+                                 app.REALTIME_CONTEXT_LIMIT_TOKENS - stats["crucialEstimatedTokens"]))
             app.empty_persistent_context()
             _, cleared = app.build_realtime_context(
                 Path(directory) / "missing-workspace", Path(directory) / "missing-adb",

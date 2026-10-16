@@ -7,12 +7,14 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-PUBLIC = ('server.py', 'access_control.py', 'wifi_control.py', 'codex_usage.py', 'README.md',
-          'NEW_DESIGN.md', 'CLAP.md', 'static/access.js', 'static/clap.js',
+PUBLIC = ('server.py', 'capabilities.py', 'access_control.py', 'display_state.py', 'usb_monitor.py', 'face_state.py', 'wifi_control.py', 'codex_usage.py', 'README.md',
+          'NEW_DESIGN.md', 'FACE.md', 'CLAP.md', 'static/access.js', 'static/clap.js',
           'static/app.js', 'static/wifi.js', 'static/index.html', 'static/navigation.js', 'static/realtime.js', 'static/styles.css',
-          'static/new/face.css', 'static/new/face.js', 'static/new/audio.js',
+          'static/voice-prosody.js', 'static/expression-events.js',
+          'static/new/expressions-catalog.js', 'static/new/expressions-catalog.json',
+          'static/new/face.css', 'static/new/face.js', 'static/new/face-events.js', 'static/new/audio.js',
           'static/new/petting.js', 'static/new/logo.png', 'static/new/atlas-wordmark.svg')
-SYSTEM = ('atlas-commands/atlas-screen', 'atlas-commands/atlas-webscreen', 'system/libexec/atlas-screen-kiosk-session',
+SYSTEM = ('atlas-commands/atlas-screen', 'atlas-commands/atlas-webscreen', 'atlas-commands/atlas-face', 'system/libexec/atlas-screen-kiosk-session',
           'system/libexec/atlas-screen-browser-watchdog.cjs', 'misc/atlas-touch-type/atlas-touch-type.py',
           'misc/atlas-touch-type/atlas-touch-type-session')
 UNITS = ('system/systemd/atlas-webscreen.service', 'system/systemd/atlas-screen-boot-on.service')
@@ -68,6 +70,7 @@ class WebScreenInstaller(unittest.TestCase):
             self.assertEqual(helper.stat().st_mode & 0o777, 0o755)
             self.assertTrue((system / 'usr/local/bin/atlas-screen').is_file())
             self.assertTrue((system / 'usr/local/bin/atlas-webscreen').is_file())
+            self.assertEqual((system / 'usr/local/bin/atlas-face').stat().st_mode & 0o777, 0o755)
             unit = system / 'etc/systemd/system/atlas-webscreen.service'
             self.assertEqual(unit.read_text(), 'unit fixture: system/systemd/atlas-webscreen.service')
             self.assertEqual(unit.stat().st_mode & 0o777, 0o644)

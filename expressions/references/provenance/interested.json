@@ -1,0 +1,13 @@
+{
+  "id": "interested",
+  "path": "expressions/references/interested.png",
+  "tool": "image_gen.imagegen",
+  "prompt": "Use case: precise-object-edit.\nAsset type: ONE ATLAS expression concept reference, ID interested.\nInput image 1: exact base ATLAS face; edit target, preserve identity and layout.\nPrimary request: change only the facial expression to \"Interesado\". Intended context: Escucha una explicación interesante. Expression family: curiosity. Intensity: subtle. Make it readable but natural and restrained, never exaggerated.\nKeep the same blue oval eye sockets, positions and maximum width/height. Alter only the eyelid mask / eyebrow angle when needed. The mouth remains a single blue round-ended stroke of exactly the original thickness, no teeth, lips, tongue or mouth filling. Keep all face anchors and canvas framing identical. Maintain near-black background and blue #00a8ff palette, no glow or texture. Preserve existing tiny ATLAS header and settings icon, add no titles or labels.\nExpression details: mouth path shape parameters [halfWidth, baselineY, curvature, asymmetry] [40,535,26,0] relative to original [58,527,48,0]; eyebrow paths [\"M -32 -127 Q 0 -141 32 -127\",\"M -32 -127 Q 0 -141 32 -127\"]. Accessory: none; add no props.\nAvoid: big facial deformation, extra eyes, pupils, human features, 3D, illustration outlines, thicker mouth, exaggerated emotions, text captions, decorative scene. Deliver one single expression, not a sheet or grid.\nVisible eyelids required: Eye left: clip its top with a straight horizontal eyelid at 8% down its original oval height; never grow outside its original socket. Eye right: keep full original oval; never grow outside its original socket. Draw at most ONE eyebrow per eye, exactly two total if brows requested, not paired double lines.",
+  "elapsedSeconds": 33.745,
+  "role": "concept-reference",
+  "sourceAsset": "exec-ebc94089-0d24-4efc-b021-e7f02b4825b9.png",
+  "sha256": "0c199962ffec594ebf6dfe02410cae46284e357d3ba61c95002e048cee2a15c0",
+  "bytes": 1227197,
+  "width": 1591,
+  "height": 989
+}
