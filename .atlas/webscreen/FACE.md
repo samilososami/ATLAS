@@ -27,7 +27,7 @@ atlas-face reset
 
 ## Catalogue and restraint
 
-The catalogue contains **173 expressions: 23 preserved and 150 new**. Its
+The catalogue contains **323 expressions: 23 preserved and two authored collections of 150**. Its
 canonical repository source is `expressions/catalog.json`, with generated
 browser/deployment assets in `static/new/expressions-catalog.json` and
 `static/new/expressions-catalog.js`. Do not hand-edit a generated copy: regenerate
@@ -41,7 +41,7 @@ normal conversation context. The CLI reads at most 64 KiB and rejects an
 oversized response explicitly instead of silently truncating it.
 
 The backend reads its local JSON once at startup, with a 1 MiB file limit, a
-23–256 entry limit, unique bounded IDs, bounded labels/categories and preservation
+23–512 entry limit, unique bounded IDs, bounded labels/categories and preservation
 of every legacy name. If that asset is missing, an older deployment can still
 use the 23 legacy expressions. A present malformed, oversized or incompatible
 catalogue fails clearly; it never silently switches to a different vocabulary.
@@ -50,11 +50,14 @@ Restart the backend after replacing the generated catalogue.
 The 23 preserved IDs are neutral, angry, defiant, delighted, surprised, curious,
 skeptical, sad, worried, sleepy, wink, laughing, focused, shy, ambitious,
 confident, affectionate, confused, embarrassed, relieved, bored, excited and
-asleep. The 150 additions cover welcome, warmth, humour, confidence, focus,
+asleep. The first 150 additions cover welcome, warmth, humour, confidence, focus,
 curiosity, uncertainty, care, disappointment, boundaries, energy, celebration,
 music, devices and assistance. Examples: `needs_detail`, `curious_smile`,
 `challenge_accepted`, `music_headphones`, `tv_connected`, `speaker_connected`
-and `back_to_you`. Consult the installed list instead of inventing a name.
+and `back_to_you`. The next 150 cover acknowledgment, listening, clarification,
+reasoning, troubleshooting, discovery, storytelling, playful company, emotional
+grounding, creative work, research, pacing, repair/trust, audiovisual moments and
+everyday help. Consult the installed list instead of inventing a name.
 
 Most brief factual answers need **no expression change**: neutral is the
 baseline, not a failure to express personality. Keep a suitable face rather
@@ -80,6 +83,18 @@ available to other screens; reconnecting the same screen does not replay it.
 The existing model tool uses `AtlasFaceBridge.expression()` locally in the
 browser. It does not need a shell, network classifier or cosmetic model turn.
 The CLI is useful from ordinary shell tools, including `atlas-chat`.
+
+Conversational poses wait for actual playback before their duration starts;
+inter-chunk silence does not retire them, and final turn completion returns to
+neutral. A bounded local fallback can supply a small gesture for clear personal
+praise, an achievement, a bad day or a shared challenge if the model has not
+selected one. It reads only the confirmed current user input at playback start,
+rejects quoted/reported/ambiguous text, and never analyzes tool or web output.
+Its provenance is `face.conversation_cue`, not a model tool call. Manual poses
+and device events take precedence. A later model choice may replace the cue
+immediately but still counts toward the two-visible-change limit. There is no
+extra inference or network call; this conservative rule is not a general
+emotion recognizer. Sleep and CLI durations remain independent.
 
 ## Persistent display mode
 
@@ -175,6 +190,11 @@ yielding to genuine boundaries. This fallback is not audio amplitude or a
 claim of phoneme synchronization. The resting mouth returns when speech ends.
 
 Each catalogue entry includes its own entry and exit motion specification.
+Eyebrows and headphone bands use the original smile's 26-unit weight. Ear pads
+are filled, separated from the eyes, and joined to the band. Geometry crossfades
+take 180–240 ms; the restrained gesture independently settles over 400–560 ms.
+The 300 authored poses are geometrically unique, but intentionally share seven
+coherent gesture primitives instead of hundreds of unrelated motion styles.
 The neutral baseline's eye sockets, blue colour and mouth stroke are not
 globally enlarged to make expressions more noticeable. Subtle asymmetry,
 eyelids and brows are valid expressions; accessories such as headphones remain
@@ -187,6 +207,16 @@ provider. Do not issue new face calls for every audio chunk or switch to a
 generic mouth-only expression just because speech begins. Visual tiredness,
 sleep and sadness are cartoon cues, not actual suffering or reasons to withhold
 help.
+
+Conversational model expressions use an `awaitSpeech` lease. Their requested
+duration starts at the first actual audio playback, not during tool execution or
+TTS preparation; chunk boundaries cannot restart it. A no-playback timeout of
+45 seconds prevents a stuck expression. `expressionPlayback({active:false,
+final:true})` releases only that lease at whole-turn completion. Commands, sleep,
+petting and verified action feedback keep their independent lifetimes. Reset or
+cancellation retires the lease so late playback cannot resurrect it. At most two
+semantic changes remain allowed; a real-tool continuation can use the second,
+whereas a face-only continuation cannot recursively call the cosmetic tool.
 
 ## Conversation continuation is not a face action
 

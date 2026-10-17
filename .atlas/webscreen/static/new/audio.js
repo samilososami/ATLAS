@@ -61,6 +61,9 @@
     else if (state === "listening" && microphoneMuted) state = "idle";
     if (state !== lastVisualState) {
       lastVisualState = state;
+      // Lifetime belongs to real playout, not text generation or a queued TTS
+      // request. A brief gap between phrases is not the end of the turn.
+      face("expressionPlayback", { active: state === "speaking" });
       face("update", { ...screen, state,
         ...(microphoneMuted && state === "idle" ? { phase: "MICRÓFONO SILENCIADO", title: "Micrófono silenciado" } : {}) });
       if (state === "listening" && currentTranscript) face("transcript", currentTranscript);
@@ -385,8 +388,17 @@
     const duration = value?.durationMs ?? (name === 'asleep' ? 3600000 : 15000);
     if (!expressionsAvailable() || !["model", "event"].includes(value?.source) || !EXPRESSIONS.has(name)
         || !Number.isInteger(duration) || duration < 1000 || duration > (name === 'asleep' ? 3600000 : 30000)) return false;
-    try { return window.AtlasFace.expression({ expression: name,
-      source: value.source, durationMs: duration }) === true; } catch { return false; }
+    try {
+      const applied = window.AtlasFace.expression({ expression: name,
+        source: value.source, durationMs: duration,
+        ...(value.source === "model" && value.awaitSpeech === true ? { awaitSpeech: true } : {}),
+        ...(value.source === "event" && value.conversationCue === true && value.awaitSpeech === true
+          ? { conversationCue: true, awaitSpeech: true } : {}) }) === true;
+      // A second semantic expression can arrive while the same audio is
+      // already playing, so there may be no new `speaking` state transition.
+      if (applied && outputIsPlaying()) face("expressionPlayback", { active: true });
+      return applied;
+    } catch { return false; }
   }
 
   function connection(value) {
@@ -411,6 +423,11 @@
       catch { return Promise.resolve(false); }
     },
     expression, expressionsAvailable,
+    expressionPlayback(value) {
+      if (!suspended && value?.active === false && value.final === true) {
+        face("expressionPlayback", { active: false, final: true });
+      }
+    },
     microphoneMuted(value) {
       microphoneMuted = Boolean(value);
       if (microphoneMuted) face("inputLevel", ZERO);

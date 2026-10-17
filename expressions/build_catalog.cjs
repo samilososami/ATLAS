@@ -5,6 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 const root = path.resolve(__dirname, "..");
+const additions = require("./catalog_additions.cjs");
 const facePath = path.join(root, ".atlas/webscreen/static/new/face.js");
 const source = fs.readFileSync(facePath, "utf8");
 const first = source.indexOf("  const smile =");
@@ -228,9 +229,22 @@ const motions = {
   disappointment:"settle", boundaries:"focus", energy:"settle",
   celebration:"lift", music:"sway", devices:"nod", assistance:"nod",
 };
+Object.assign(lids, additions.lids);
+Object.assign(mouthShapes, additions.mouthShapes);
+Object.assign(eyebrows, additions.eyebrows);
+const gestureFor = kind => ({
+  nod: {durationMs:440,x:0,y:3,rotate:0},
+  tilt: {durationMs:480,x:1.5,y:0,rotate:-1.2},
+  "soft-rise": {durationMs:520,x:0,y:-2,rotate:0},
+  lift: {durationMs:440,x:0,y:-4,rotate:0},
+  settle: {durationMs:480,x:0,y:2,rotate:0},
+  focus: {durationMs:400,x:0,y:0,rotate:0},
+  sway: {durationMs:560,x:3,y:0,rotate:1.4},
+}[kind] || {durationMs:400,x:0,y:0,rotate:0});
 const n = value => Number(value.toFixed(3));
 function eyeFor(name) {
-  if (name === "closed") return {d:"M -49 3 Q 0 52 49 3",stroke:17,mirrored:false};
+  if (name === "closed") return {d:"M -43 3 Q 0 52 43 3",stroke:26,mirrored:false};
+  if (!lids[name]) throw Error(`Unknown eye shape: ${name}`);
   const [top,slope,bottom] = lids[name];
   // Fixed socket envelope: clip an ellipse, never stretch or move it.
   const points = Array.from({length:64},(_,i)=>{
@@ -245,21 +259,43 @@ function mouthFor(name) {
   const [half,y,bend,tilt]=mouthShapes[name];
   return {mouth:`M ${795.5-half} ${y} Q 795.5 ${y+bend} ${795.5+half} ${y+tilt}`,stroke:26,speech:bend< -15?'frown':name==='considering'||name==='uncertain'?'curious':bend<10?'flat':half<45?'small':'smile',mouthShape:[half,y,bend,tilt]};
 }
+function browPaths(name, accessory) {
+  // The headphone band occupies the brow arc. Keep the eyes/mouth expressive,
+  // but don't merge a raised eyebrow into the solid band or show it above it.
+  if (accessory === 'headphones' || accessory === 'headphone_one') return [];
+  return eyebrows[name].map(v=>v.length?`M ${v[0]} ${v[1]} Q ${v[2]} ${v[3]} ${v[4]} ${v[5]}`:'');
+}
 const entries=Object.entries(legacy).map(([id,pose])=>({
   id,label:id,category:"legacy",trigger:"Expresión existente conservada; selección explícita según contexto",intensity:"original",recommendedDurationMs:id==='asleep'?3600000:6000,
+  source:{collection:"legacy",kind:"preserved"},
   motion:{entry:id==='delighted'?'lift':'morph',exit:'settle',entryMs:180,exitMs:200},
   legacy:true,pose:{...pose,brows:[],accessory:'none'},
 }));
 for(const [category,rows] of Object.entries(groups)) for(const row of rows){
   const [id,label,trigger,eyes,mouth,brows,accessory]=row.split('|');
   entries.push({id,label,category,trigger,intensity:['celebration','humor'].includes(category)?'medium':'subtle',recommendedDurationMs:category==='devices'?4500:category==='music'?9000:6000,
-    motion:{entry:motions[category],exit:'settle',entryMs:category==='care'?240:190,exitMs:220},legacy:false,
-    pose:{eyes:eyes.split('/').map(eyeFor),...mouthFor(mouth),brows:eyebrows[brows].map(v=>v.length?`M ${v[0]} ${v[1]} Q ${v[2]} ${v[3]} ${v[4]} ${v[5]}`:''),accessory},
+    source:{collection:"2026-10-16",kind:"authored"},
+    motion:{entry:motions[category],exit:'settle',entryMs:220,exitMs:220,gesture:gestureFor(motions[category])},legacy:false,
+    pose:{eyes:eyes.split('/').map(eyeFor),...mouthFor(mouth),brows:browPaths(brows,accessory),accessory},
   });
 }
-if(entries.length!==173||new Set(entries.map(x=>x.id)).size!==173) throw Error('Expected 23 legacy + 150 new unique IDs');
+for(const [category,rows] of Object.entries(additions.groups)) for(const row of rows){
+  const fields=row.split('|');
+  if(fields.length!==9) throw Error(`Expected nine authored fields: ${fields[0]}`);
+  const [id,label,trigger,eyes,mouth,brows,accessory,entry,exit]=fields;
+  if(!eyebrows[brows]) throw Error(`Unknown brow shape: ${brows}`);
+  if(!mouthShapes[mouth]) throw Error(`Unknown mouth shape: ${mouth}`);
+  entries.push({
+    id,label,category,trigger,intensity:category==='playful_company'?'medium':'subtle',
+    source:{collection:"2026-10-17",kind:"authored"},
+    recommendedDurationMs:category==='audiovisual_moments'?7500:6000,
+    motion:{entry,exit,entryMs:220,exitMs:220,gesture:gestureFor(entry)},legacy:false,
+    pose:{eyes:eyes.split('/').map(eyeFor),...mouthFor(mouth),brows:browPaths(brows,accessory),accessory},
+  });
+}
+if(entries.length!==323||new Set(entries.map(x=>x.id)).size!==323) throw Error('Expected 23 legacy + 150 original + 150 additional unique IDs');
 const signatures=entries.filter(x=>!x.legacy).map(x=>JSON.stringify(x.pose));
-if(new Set(signatures).size!==150) throw Error('Duplicate visual pose');
+if(new Set(signatures).size!==300) throw Error('Duplicate visual pose');
 const catalog={schemaVersion:1,baseline:{viewBox:[0,0,1591,989],eyeSockets:[{cx:639.6525,cy:425,rx:56,ry:104},{cx:951.3475,cy:425,rx:56,ry:104}],mouth:legacy.neutral.mouth,mouthStroke:26,mouthTranslateY:26.58222,characterScale:1.875,blueStops:['#00a8ff','#009bff','#008cee']},policy:{maxChangesPerResponse:2,minHoldMs:1800,cooldownMs:2500,defaultDurationMs:6000,neutralIsDefault:true,automaticRandomSelection:false},expressions:entries};
 fs.mkdirSync(__dirname,{recursive:true});
 fs.writeFileSync(path.join(__dirname,'catalog.json'),JSON.stringify(catalog,null,2)+'\n');
@@ -273,4 +309,4 @@ for(const entry of compact.expressions) if(entry.pose.eyes) entry.pose.eyes=entr
   return eyeIndexes.get(key);
 });
 fs.writeFileSync(path.join(root,'.atlas/webscreen/static/new/expressions-catalog.js'),'/* Generated by expressions/build_catalog.cjs. Edit source, then regenerate. */\n(() => { "use strict"; const eyes = '+JSON.stringify(eyeTemplates)+'; const catalog = '+JSON.stringify(compact)+'; for (const entry of catalog.expressions) { if (entry.pose.eyes) entry.pose.eyes = entry.pose.eyes.map(index => eyes[index]); } const freeze = value => { if (value && typeof value === "object" && !Object.isFrozen(value)) { Object.values(value).forEach(freeze); Object.freeze(value); } return value; }; globalThis.AtlasExpressionCatalog = freeze(catalog); })();\n');
-console.log(JSON.stringify({legacy:23,added:150,total:173,uniqueNewPoses:new Set(signatures).size}));
+console.log(JSON.stringify({legacy:23,previouslyAdded:150,addedThisRevision:150,total:323,uniqueAuthoredPoses:new Set(signatures).size}));

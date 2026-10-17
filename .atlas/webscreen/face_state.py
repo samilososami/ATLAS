@@ -16,7 +16,7 @@ LEGACY_EXPRESSIONS = (
 ALIASES = {'happy': 'delighted', 'sleep': 'asleep'}
 CATALOG_PATH = Path(__file__).resolve().parent / 'static/new/expressions-catalog.json'
 CATALOG_MAX_BYTES = 1024 * 1024
-CATALOG_MAX_EXPRESSIONS = 256
+CATALOG_MAX_EXPRESSIONS = 512
 
 
 def load_expression_catalog(path=CATALOG_PATH):
@@ -52,7 +52,7 @@ def load_expression_catalog(path=CATALOG_PATH):
         raise ValueError('Unsupported expression catalogue schemaVersion')
     entries = data.get('expressions')
     if not isinstance(entries, list) or not len(LEGACY_EXPRESSIONS) <= len(entries) <= CATALOG_MAX_EXPRESSIONS:
-        raise ValueError('Expression catalogue must contain 23..256 entries')
+        raise ValueError(f'Expression catalogue must contain {len(LEGACY_EXPRESSIONS)}..{CATALOG_MAX_EXPRESSIONS} entries')
     seen = set()
     metadata = []
     for entry in entries:

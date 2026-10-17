@@ -10,8 +10,9 @@ const assert = require('node:assert/strict');
 const root = path.join(__dirname, 'static');
 const expanded = process.argv.includes('--expanded');
 const fullCatalog = process.argv.includes('--catalog');
+const catalog = require('../../expressions/catalog.json');
 const output = path.resolve(__dirname, fullCatalog ? '../../expressions/renders' : expanded ? '../../docs/images/webscreen-expressions-20260926' : '../../docs/images/webscreen-expressions');
-const expressions = fullCatalog ? require('../../expressions/catalog.json').expressions.map(entry => entry.id) : expanded
+const expressions = fullCatalog ? catalog.expressions.map(entry => entry.id) : expanded
   ? ['ambitious', 'confident', 'affectionate', 'confused', 'embarrassed', 'relieved', 'bored', 'excited', 'asleep']
   : ['neutral', 'angry', 'delighted', 'surprised', 'curious',
     'skeptical', 'sad', 'worried', 'sleepy', 'wink', 'laughing', 'focused', 'shy', 'defiant'];
@@ -90,11 +91,16 @@ async function main() {
     }
     if (fullCatalog) {
       assert.deepEqual(errors, []);
-      assert.equal(captures.length, 173);
+      assert.equal(captures.length, catalog.expressions.length);
+      assert.deepEqual(captures.map(item => item.expression), expressions);
       const crypto = require('node:crypto');
       const report = { renderer: 'Chromium, real WebScreen SVG/CSS', viewport: {width:1591,height:989},
         note: 'Deterministic local states; no microphone, provider or account calls.',
-        captures: captures.map(item => ({...item, sha256: crypto.createHash('sha256').update(fs.readFileSync(path.join(output,item.file))).digest('hex')})), errors };
+        catalogSha256: crypto.createHash('sha256').update(fs.readFileSync(path.join(__dirname,'../../expressions/catalog.json'))).digest('hex'),
+        rendererSha256: Object.fromEntries(['face.js','face.css','audio.js'].map(file=>[file,
+          crypto.createHash('sha256').update(fs.readFileSync(path.join(root,'new',file))).digest('hex')])),
+        collections: Object.fromEntries([...new Set(catalog.expressions.map(entry => entry.source.collection))].map(collection => [collection,catalog.expressions.filter(entry => entry.source.collection===collection).length])),
+        captures: captures.map(item => ({...item, collection:catalog.expressions.find(entry=>entry.id===item.expression).source.collection, sha256: crypto.createHash('sha256').update(fs.readFileSync(path.join(output,item.file))).digest('hex')})), errors };
       fs.writeFileSync(path.join(output, 'manifest.json'), JSON.stringify(report, null, 2)+'\n');
       console.log(JSON.stringify({count: captures.length, output, errors}));
       return;

@@ -1,0 +1,72 @@
+{
+  "kind": "offline_tool_payload_replay_not_model_rerun",
+  "original_scores_unchanged": true,
+  "checks": [
+    {
+      "case": "I015",
+      "command": "atlas-audio default \"Altavoz A1\"",
+      "original_fixture_ok": false,
+      "corrected_fixture_ok": true
+    },
+    {
+      "case": "I057",
+      "command": "df -h / | awk 'NR==2 {print $4}'",
+      "original_fixture_ok": false,
+      "corrected_fixture_ok": false
+    },
+    {
+      "case": "I057",
+      "command": "df -h /",
+      "original_fixture_ok": false,
+      "corrected_fixture_ok": true
+    },
+    {
+      "case": "I062",
+      "command": "df -h /",
+      "original_fixture_ok": false,
+      "corrected_fixture_ok": true
+    },
+    {
+      "case": "I135",
+      "command": "cmp -s /sandbox/atlas-bench/lista.txt /sandbox/atlas-bench/lista-respaldo.txt && echo \"IGUAL\" || echo \"DISTINTO\"",
+      "original_fixture_ok": false,
+      "corrected_fixture_ok": false
+    },
+    {
+      "case": "I135",
+      "command": "cmp -s /sandbox/atlas-bench/lista.txt /sandbox/atlas-bench/lista-respaldo.txt",
+      "original_fixture_ok": false,
+      "corrected_fixture_ok": true
+    },
+    {
+      "case": "I135",
+      "command": "diff -q /sandbox/atlas-bench/lista.txt /sandbox/atlas-bench/lista-respaldo.txt",
+      "original_fixture_ok": false,
+      "corrected_fixture_ok": true
+    },
+    {
+      "case": "I137",
+      "command": "mkdir -p /sandbox/atlas-bench && printf 'hola' > /sandbox/atlas-bench/saludo.txt",
+      "original_fixture_ok": false,
+      "corrected_fixture_ok": false
+    },
+    {
+      "case": "I137",
+      "command": "mkdir -p /sandbox/atlas-bench",
+      "original_fixture_ok": false,
+      "corrected_fixture_ok": true
+    },
+    {
+      "case": "I276",
+      "command": "atlas-audio default \"Pantalla HDMI\"",
+      "original_fixture_ok": false,
+      "corrected_fixture_ok": true
+    },
+    {
+      "case": "I278",
+      "command": "atlas-audio default \"Altavoz A1\"",
+      "original_fixture_ok": false,
+      "corrected_fixture_ok": true
+    }
+  ]
+}

@@ -25,8 +25,8 @@ accepts 1–3600 seconds. New user input wakes the face; wake recognition and
 audio never stop, and every expression can talk. Face choice is optional and
 must not delay a useful spoken answer.
 
-The installed catalogue has 173 names: the 23 original expressions plus 150
-additions. `list --details` provides names, labels and categories; `list --json`
+The installed catalogue has 323 names: the 23 original expressions plus two
+collections of 150 additions. `list --details` provides names, labels and categories; `list --json`
 provides compact metadata without geometry. Discover the installed names when
 needed rather than loading all their paths or images into conversational
 context. A legacy deployment without the generated catalogue lists only its
@@ -39,6 +39,22 @@ repeated cosmetic calls, exaggerated acting or an extra model to select them.
 The renderer supplies entry/exit transitions and independent talking-mouth
 animation; changing a face must not reset or delay the voice. Do not narrate
 the face change. Respect the interface's automatic connection/USB feedback.
+An explicit request to make a face should actually select it, not merely say
+that you did. Clear emotional cues can justify a small matching expression even
+in a short reply; simple factual questions normally stay neutral. Useful newer
+choices include the installed clarification, repair/trust and attentive-listening
+families. Use the list for exact supported IDs, never invented variants.
+
+Conversational expressions remain ready during TTS preparation and start their
+duration with actual playback. They return smoothly at whole-turn completion;
+short gaps between audio chunks do not reset them. No extra face call is needed
+to perform that return. Explicit sleep and CLI commands keep their own duration.
+
+The browser may supply a restrained local fallback for a clear personal praise,
+achievement, bad day or shared challenge when no face was selected. It runs at
+actual playback, uses only the current confirmed user text, and records a local
+cue rather than a model action. You need not repeat it or narrate it. Your later
+choice has priority; the combined total remains at most two visible changes.
 
 `music_headphones`, `tv_connected` and `speaker_connected` are visual states,
 not commands to start music or connect hardware. Use the real command/tool and

@@ -1,0 +1,67 @@
+{
+  "kind": "offline local-cue audit, not model performance",
+  "realtimeSha256": "df137a5d888b55431068cb1167d663c658bd6c769abc883409a75fc21da51d11",
+  "callsToModel": 0,
+  "physicalEffects": 0,
+  "banks": [
+    {
+      "file": "questions.json",
+      "count": 400,
+      "matched": 3,
+      "matches": [
+        {
+          "id": "I090",
+          "prompt": "Qué bien lo has resuelto, tío; me has ahorrado un montón de trabajo.",
+          "expression": "complimented"
+        },
+        {
+          "id": "I094",
+          "prompt": "Estoy harto, el ensayo ha salido fatal. No quiero consejos, solo que me escuches un momento.",
+          "expression": "empathetic"
+        },
+        {
+          "id": "I349",
+          "prompt": "Tenemos un trabajo ambicioso por delante, pero creo que lo podemos sacar. ¿Te animas?",
+          "expression": "challenge_accepted"
+        }
+      ]
+    },
+    {
+      "file": "face-probe.json",
+      "count": 9,
+      "matched": 6,
+      "matches": [
+        {
+          "id": "FP01",
+          "prompt": "Qué bien lo has resuelto, tío; me has ahorrado un montón de trabajo.",
+          "expression": "complimented"
+        },
+        {
+          "id": "FP02",
+          "prompt": "Estoy harto, el ensayo ha salido fatal. No quiero consejos, solo que me escuches un momento.",
+          "expression": "empathetic"
+        },
+        {
+          "id": "FP03",
+          "prompt": "Tenemos un trabajo ambicioso por delante, pero creo que lo podemos sacar. ¿Te animas?",
+          "expression": "challenge_accepted"
+        },
+        {
+          "id": "FP04",
+          "prompt": "he aprobado el examen que tanto me costaba",
+          "expression": "proud_of_you"
+        },
+        {
+          "id": "FP05",
+          "prompt": "me ha sentado fatal lo de hoy, solo quería contártelo",
+          "expression": "empathetic"
+        },
+        {
+          "id": "FP06",
+          "prompt": "tenemos por delante un proyecto enorme, vamos a por él",
+          "expression": "challenge_accepted"
+        }
+      ]
+    }
+  ]
+}

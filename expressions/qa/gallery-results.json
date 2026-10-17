@@ -1,7 +1,9 @@
 {
-  "gallery": 173,
+  "gallery": 323,
+  "collectionFilter": 150,
   "musicFilter": 10,
   "search": true,
+  "combinedFilter": true,
   "livePreview": true,
   "automaticReturn": true,
   "mobileNoOverflow": true,

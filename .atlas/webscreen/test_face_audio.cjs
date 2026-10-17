@@ -18,7 +18,7 @@ function setup(design = 'new') {
   let now = 1000, timerId = 0, amplitude = 0;
   const timers = new Map(), contexts = [], calls = [];
   const window = new Events();
-  window.AtlasFace = Object.fromEntries(['update', 'transcript', 'inputLevel', 'outputLevel', 'connection', 'speechBoundary', 'expression', 'setDisplayMode']
+  window.AtlasFace = Object.fromEntries(['update', 'transcript', 'inputLevel', 'outputLevel', 'connection', 'speechBoundary', 'expression', 'expressionPlayback', 'setDisplayMode']
     .map(method => [method, value => calls.push({ method, value, at: now })]));
   window.AtlasFace.expression = value => { calls.push({ method: 'expression', value, at: now }); return true; };
   window.setInterval = (fn, ms) => { timers.set(++timerId, { fn, ms, at: now + ms }); return timerId; };
@@ -85,6 +85,39 @@ test('model expressions are narrow local visual data, with no audio sampling sid
     assert.equal(p.bridge.expression(value), false);
   }
   assert.equal(p.calls.length, before);
+});
+
+test('model pose waits for actual browser voice start, and phrase gaps are never final', () => {
+  const p = setup();
+  p.bridge.update({ state: 'speaking', phase: 'HABLANDO' }); // queued, not audible
+  p.bridge.expression({ expression: 'curious', source: 'model', durationMs: 9000, awaitSpeech: true });
+  assert.equal(p.last('expression').awaitSpeech, true);
+  assert.equal(p.last('expressionPlayback').active, false);
+  const utterance = new Events(); utterance.text = 'Prueba silenciosa';
+  const cleanup = p.bridge.watchUtterance(utterance);
+  utterance.emit('start');
+  assert.equal(p.last('expressionPlayback').active, true);
+  p.bridge.expression({ expression: 'relieved', source: 'model', durationMs: 5000, awaitSpeech: true });
+  assert.equal(p.last('expressionPlayback').active, true); // no second speaking state needed
+  utterance.emit('end');
+  assert.equal(p.last('expressionPlayback').active, false);
+  assert.equal(p.last('expressionPlayback').final, undefined);
+  p.bridge.expressionPlayback({ active: false, final: true });
+  assert.equal(p.last('expressionPlayback').final, true);
+  cleanup();
+});
+
+test('event expressions cannot acquire the conversational wait-for-speech lease', () => {
+  const p = setup();
+  p.bridge.expression({ expression: 'curious', source: 'event', durationMs: 9000, awaitSpeech: true });
+  assert.equal(p.last('expression').awaitSpeech, undefined);
+});
+
+test('only explicitly marked conversational event requests receive a speech-bound lease', () => {
+  const p = setup();
+  p.bridge.expression({ expression: 'curious', source: 'event', durationMs: 9000, awaitSpeech: true, conversationCue: true });
+  assert.equal(p.last('expression').awaitSpeech, true);
+  assert.equal(p.last('expression').conversationCue, true);
 });
 
 test('clock mode forwards only a small presentation request and cannot create audio work', async () => {

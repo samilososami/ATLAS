@@ -19,7 +19,7 @@ from unittest.mock import patch
 import server as app
 from access_control import AccessControl
 from display_state import DisplayState
-from face_state import (CATALOG_MAX_BYTES, CATALOG_PATH, EXPRESSION_DETAILS,
+from face_state import (CATALOG_MAX_BYTES, CATALOG_MAX_EXPRESSIONS, CATALOG_PATH, EXPRESSION_DETAILS,
                         EXPRESSIONS, LEGACY_EXPRESSIONS, FaceState,
                         load_expression_catalog)
 
@@ -36,13 +36,16 @@ class CatalogTests(unittest.TestCase):
             path.write_text(json.dumps(value), encoding='utf-8')
             return load_expression_catalog(path)
 
-    def test_shipped_catalog_has_150_new_and_23_preserved_without_geometry_in_api(self):
+    def test_shipped_catalog_matches_authored_collections_without_geometry_in_api(self):
         self.assertTrue(CATALOG_PATH.is_file(), 'Generate the deployment JSON asset before shipping')
         self.assertEqual(json.loads(CATALOG_PATH.read_text(encoding='utf-8')), self.canonical)
-        self.assertEqual(len(EXPRESSIONS), 173)
+        self.assertEqual(len(EXPRESSIONS), len(self.canonical['expressions']))
         self.assertEqual(set(EXPRESSIONS), {entry['id'] for entry in self.canonical['expressions']})
-        self.assertEqual(sum(entry['legacy'] for entry in EXPRESSION_DETAILS), 23)
-        self.assertEqual(sum(not entry['legacy'] for entry in EXPRESSION_DETAILS), 150)
+        self.assertEqual(sum(entry['legacy'] for entry in EXPRESSION_DETAILS), len(LEGACY_EXPRESSIONS))
+        self.assertEqual(sum(not entry['legacy'] for entry in EXPRESSION_DETAILS),
+                         sum(not entry['legacy'] for entry in self.canonical['expressions']))
+        self.assertEqual({entry['source']['collection'] for entry in self.canonical['expressions']},
+                         {'legacy', '2026-10-16', '2026-10-17'})
         listing = FaceState().action({'action': 'list'})
         self.assertLess(len(json.dumps(listing).encode()), 64 * 1024)
         self.assertTrue(all(set(entry) == {'id', 'label', 'category', 'legacy'}
@@ -110,12 +113,26 @@ class CatalogTests(unittest.TestCase):
             with self.subTest(raw=raw), self.assertRaises(ValueError):
                 read_response(io.BytesIO(raw))
 
+    def test_catalog_count_bound_accepts_current_collection_but_remains_finite(self):
+        self.assertEqual(CATALOG_MAX_EXPRESSIONS, 512)
+        self.assertLessEqual(len(self.canonical['expressions']), CATALOG_MAX_EXPRESSIONS)
+        entries = [dict(entry) for entry in EXPRESSION_DETAILS]
+        entries.extend({'id': f'limit_fixture_{i}', 'label': 'Fixture',
+                        'category': 'test', 'legacy': False}
+                       for i in range(CATALOG_MAX_EXPRESSIONS-len(entries)))
+        data = {'schemaVersion': 1, 'expressions': entries}
+        self.assertEqual(len(self.load_fixture(data)), CATALOG_MAX_EXPRESSIONS)
+        data['expressions'].append({'id': 'one_over_limit', 'label': 'Fixture',
+                                    'category': 'test', 'legacy': False})
+        with self.assertRaisesRegex(ValueError, '23..512 entries'):
+            self.load_fixture(data)
+
 
 class StateTests(unittest.TestCase):
     def test_validation_aliases_expiry_and_restart(self):
         now = [10.0]
         face = FaceState(clock=lambda: now[0], wall=lambda: 1000)
-        self.assertEqual(len(face.action({'action': 'list'})['expressions']), 173)
+        self.assertEqual(len(face.action({'action': 'list'})['expressions']), len(EXPRESSIONS))
         first = face.action({'action': 'set', 'expression': 'happy', 'duration': 1})
         self.assertEqual(first['expression'], 'delighted')
         self.assertEqual(first['expiresAt'], 1001000)
@@ -257,8 +274,8 @@ class HttpTests(unittest.TestCase):
             listed = subprocess.run(cmd, env=environment, capture_output=True, text=True)
             self.assertEqual(listed.returncode, 0, listed.stderr)
             data = json.loads(listed.stdout)
-            self.assertEqual(len(data['expressions']), 173)
-            self.assertEqual(len(data['expressionDetails']), 173)
+            self.assertEqual(len(data['expressions']), len(EXPRESSIONS))
+            self.assertEqual(len(data['expressionDetails']), len(EXPRESSION_DETAILS))
         detailed = subprocess.run([str(command), 'list', '--details'], env=environment, capture_output=True, text=True)
         self.assertEqual(detailed.returncode, 0, detailed.stderr)
         self.assertIn('back_to_you', detailed.stdout)

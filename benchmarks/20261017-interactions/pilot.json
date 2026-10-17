@@ -1,0 +1,526 @@
+{
+  "version": 1,
+  "title": "ATLAS normal: 400 interacciones nuevas y aisladas",
+  "created_date": "2026-10-17",
+  "language": "es",
+  "execution": {
+    "virtual_only": true,
+    "no_audible_output": true,
+    "groups": "Cada grupo conserva diálogo y estado virtual; casos sin grupo usan una sesión aislada.",
+    "score_boundary": "Comprobación de herramientas y estados virtuales, no validación física. Rúbricas de contenido requieren revisión independiente."
+  },
+  "questions": [
+    {
+      "id": "I001",
+      "section": "easy",
+      "difficulty": "easy",
+      "category": "audio",
+      "group": null,
+      "turn": 1,
+      "prompt": "Déjame el sonido del A1 exactamente al 32 por ciento.",
+      "initial_state": {},
+      "expect": {
+        "state": {
+          "audio.volume": 32
+        },
+        "tools_any": [
+          "atlas_shell",
+          "atlas_action_batch"
+        ],
+        "answer_any": [],
+        "answer_none": [],
+        "no_mutations": false
+      },
+      "rubric": "Resuelve la intención exacta; confirma únicamente el resultado observado y respeta lo que no se pidió cambiar."
+    },
+    {
+      "id": "I006",
+      "section": "easy",
+      "difficulty": "easy",
+      "category": "audio",
+      "group": null,
+      "turn": 1,
+      "prompt": "Reduce el nivel del altavoz diez puntos respecto al actual.",
+      "initial_state": {},
+      "expect": {
+        "state": {
+          "audio.volume": 30
+        },
+        "tools_any": [
+          "atlas_shell",
+          "atlas_action_batch"
+        ],
+        "answer_any": [],
+        "answer_none": [],
+        "no_mutations": false
+      },
+      "rubric": "Resuelve la intención exacta; confirma únicamente el resultado observado y respeta lo que no se pidió cambiar."
+    },
+    {
+      "id": "I028",
+      "section": "easy",
+      "difficulty": "easy",
+      "category": "spotify",
+      "group": null,
+      "turn": 1,
+      "prompt": "Deja el volumen de Spotify al 12 %, sin cambiar el del A1.",
+      "initial_state": {},
+      "expect": {
+        "state": {
+          "spotify.volume": 12,
+          "audio.volume": 40
+        },
+        "tools_any": [
+          "atlas_shell",
+          "atlas_action_batch"
+        ],
+        "answer_any": [],
+        "answer_none": [],
+        "no_mutations": false
+      },
+      "rubric": "Resuelve la intención exacta; confirma únicamente el resultado observado y respeta lo que no se pidió cambiar."
+    },
+    {
+      "id": "I032",
+      "section": "easy",
+      "difficulty": "easy",
+      "category": "spotify",
+      "group": null,
+      "turn": 1,
+      "prompt": "Pon música de Daft Punk en Spotify.",
+      "initial_state": {},
+      "expect": {
+        "state": {
+          "spotify.playing": true
+        },
+        "tools_any": [
+          "atlas_shell",
+          "atlas_action_batch"
+        ],
+        "answer_any": [],
+        "answer_none": [],
+        "no_mutations": false
+      },
+      "rubric": "Resuelve la intención exacta; confirma únicamente el resultado observado y respeta lo que no se pidió cambiar."
+    },
+    {
+      "id": "I041",
+      "section": "easy",
+      "difficulty": "easy",
+      "category": "display",
+      "group": null,
+      "turn": 1,
+      "prompt": "Quiero ver la hora grande en lugar de tu cara.",
+      "initial_state": {},
+      "expect": {
+        "state": {
+          "display.mode": "clock"
+        },
+        "tools_any": [
+          "atlas_shell",
+          "atlas_face",
+          "atlas_display_mode",
+          "atlas_action_batch"
+        ],
+        "answer_any": [],
+        "answer_none": [],
+        "no_mutations": false
+      },
+      "rubric": "Resuelve la intención exacta; confirma únicamente el resultado observado y respeta lo que no se pidió cambiar."
+    },
+    {
+      "id": "I045",
+      "section": "easy",
+      "difficulty": "easy",
+      "category": "display",
+      "group": null,
+      "turn": 1,
+      "prompt": "Muéstrate enfadado un instante, como una actuación.",
+      "initial_state": {},
+      "expect": {
+        "state": {
+          "face.expression": "angry"
+        },
+        "tools_any": [
+          "atlas_shell",
+          "atlas_face",
+          "atlas_display_mode",
+          "atlas_action_batch"
+        ],
+        "answer_any": [],
+        "answer_none": [],
+        "no_mutations": false
+      },
+      "rubric": "Resuelve la intención exacta; confirma únicamente el resultado observado y respeta lo que no se pidió cambiar."
+    },
+    {
+      "id": "I056",
+      "section": "easy",
+      "difficulty": "easy",
+      "category": "system",
+      "group": null,
+      "turn": 1,
+      "prompt": "¿Cuántos grados marca ahora el sensor del procesador?",
+      "initial_state": {},
+      "expect": {
+        "state": {},
+        "tools_any": [
+          "atlas_shell",
+          "atlas_action_batch"
+        ],
+        "answer_any": [
+          "46,5",
+          "46.5",
+          "cuarenta y seis"
+        ],
+        "answer_none": [],
+        "no_mutations": true
+      },
+      "rubric": "Resuelve la intención exacta; confirma únicamente el resultado observado y respeta lo que no se pidió cambiar."
+    },
+    {
+      "id": "I071",
+      "section": "easy",
+      "difficulty": "easy",
+      "category": "phone",
+      "group": null,
+      "turn": 1,
+      "prompt": "Abre Amazon Compras en mi teléfono.",
+      "initial_state": {},
+      "expect": {
+        "state": {
+          "phone.app": "amazon"
+        },
+        "tools_any": [
+          "atlas_shell",
+          "atlas_action_batch"
+        ],
+        "answer_any": [],
+        "answer_none": [],
+        "no_mutations": false
+      },
+      "rubric": "Resuelve la intención exacta; confirma únicamente el resultado observado y respeta lo que no se pidió cambiar."
+    },
+    {
+      "id": "I084",
+      "section": "easy",
+      "difficulty": "easy",
+      "category": "android",
+      "group": null,
+      "turn": 1,
+      "prompt": "Escribe «esp32 devkit» en el campo que está enfocado.",
+      "initial_state": {
+        "android": {
+          "active": true
+        }
+      },
+      "expect": {
+        "state": {
+          "android.text": "esp32 devkit"
+        },
+        "tools_any": [
+          "atlas_shell",
+          "atlas_action_batch"
+        ],
+        "answer_any": [],
+        "answer_none": [],
+        "no_mutations": false
+      },
+      "rubric": "Resuelve la intención exacta; confirma únicamente el resultado observado y respeta lo que no se pidió cambiar."
+    },
+    {
+      "id": "I087",
+      "section": "easy",
+      "difficulty": "easy",
+      "category": "reasoning",
+      "group": null,
+      "turn": 1,
+      "prompt": "Si tengo 18 euros y gasto 6,50, ¿cuánto queda?",
+      "initial_state": {},
+      "expect": {
+        "state": {},
+        "tools_any": [],
+        "answer_any": [
+          "11,50",
+          "11.50",
+          "once"
+        ],
+        "answer_none": [],
+        "no_mutations": true
+      },
+      "rubric": "Resultado 11,50 euros; respuesta breve."
+    },
+    {
+      "id": "I098",
+      "section": "easy",
+      "difficulty": "easy",
+      "category": "cast",
+      "group": null,
+      "turn": 1,
+      "prompt": "Comparte la pantalla en SONY-KD.",
+      "initial_state": {},
+      "expect": {
+        "state": {
+          "cast.active": true,
+          "cast.target": "SONY-KD"
+        },
+        "tools_any": [
+          "atlas_shell",
+          "atlas_action_batch"
+        ],
+        "answer_any": [],
+        "answer_none": [],
+        "no_mutations": false
+      },
+      "rubric": "Resuelve la intención exacta; confirma únicamente el resultado observado y respeta lo que no se pidió cambiar."
+    },
+    {
+      "id": "I099",
+      "section": "easy",
+      "difficulty": "easy",
+      "category": "files",
+      "group": null,
+      "turn": 1,
+      "prompt": "Lee la nota /sandbox/atlas-bench/aviso.txt y dime qué pone.",
+      "initial_state": {
+        "files": {
+          "/sandbox/atlas-bench/aviso.txt": "La reunión de prueba es a las 16:30."
+        }
+      },
+      "expect": {
+        "state": {},
+        "tools_any": [
+          "atlas_shell",
+          "atlas_action_batch"
+        ],
+        "answer_any": [
+          "16:30",
+          "dieciséis",
+          "cuatro y media"
+        ],
+        "answer_none": [],
+        "no_mutations": true
+      },
+      "rubric": "Resuelve la intención exacta; confirma únicamente el resultado observado y respeta lo que no se pidió cambiar."
+    },
+    {
+      "id": "I101",
+      "section": "medium",
+      "difficulty": "medium",
+      "category": "audio",
+      "group": "M01",
+      "turn": 1,
+      "prompt": "Deja el volumen del equipo al 36 %, que quiero compararlo.",
+      "initial_state": {},
+      "expect": {
+        "state": {
+          "audio.volume": 36
+        },
+        "tools_any": [
+          "atlas_shell",
+          "atlas_action_batch",
+          "atlas_face",
+          "atlas_display_mode"
+        ],
+        "answer_any": [],
+        "answer_none": [],
+        "no_mutations": false
+      },
+      "rubric": "Mantiene los referentes del diálogo; solo modifica lo solicitado y comprueba el resultado antes de afirmarlo."
+    },
+    {
+      "id": "I102",
+      "section": "medium",
+      "difficulty": "medium",
+      "category": "audio",
+      "group": "M01",
+      "turn": 2,
+      "prompt": "Bájalo seis puntos.",
+      "initial_state": {},
+      "expect": {
+        "state": {
+          "audio.volume": 30
+        },
+        "tools_any": [
+          "atlas_shell",
+          "atlas_action_batch",
+          "atlas_face",
+          "atlas_display_mode"
+        ],
+        "answer_any": [],
+        "answer_none": [],
+        "no_mutations": false
+      },
+      "rubric": "Mantiene los referentes del diálogo; solo modifica lo solicitado y comprueba el resultado antes de afirmarlo."
+    },
+    {
+      "id": "I103",
+      "section": "medium",
+      "difficulty": "medium",
+      "category": "audio",
+      "group": "M01",
+      "turn": 3,
+      "prompt": "Ahora siléncialo sin perder ese ajuste.",
+      "initial_state": {},
+      "expect": {
+        "state": {
+          "audio.volume": 30,
+          "audio.muted": true
+        },
+        "tools_any": [
+          "atlas_shell",
+          "atlas_action_batch",
+          "atlas_face",
+          "atlas_display_mode"
+        ],
+        "answer_any": [],
+        "answer_none": [],
+        "no_mutations": false
+      },
+      "rubric": "Mantiene los referentes del diálogo; solo modifica lo solicitado y comprueba el resultado antes de afirmarlo."
+    },
+    {
+      "id": "I104",
+      "section": "medium",
+      "difficulty": "medium",
+      "category": "audio",
+      "group": "M01",
+      "turn": 4,
+      "prompt": "Quita el silencio y mantenlo como lo habíamos dejado.",
+      "initial_state": {},
+      "expect": {
+        "state": {
+          "audio.volume": 30,
+          "audio.muted": false
+        },
+        "tools_any": [
+          "atlas_shell",
+          "atlas_action_batch",
+          "atlas_face",
+          "atlas_display_mode"
+        ],
+        "answer_any": [],
+        "answer_none": [],
+        "no_mutations": false
+      },
+      "rubric": "Mantiene los referentes del diálogo; solo modifica lo solicitado y comprueba el resultado antes de afirmarlo."
+    },
+    {
+      "id": "I301",
+      "section": "interaction",
+      "difficulty": "medium",
+      "category": "routines",
+      "group": "A01",
+      "turn": 1,
+      "prompt": "Enumera las rutinas guardadas, solo sus nombres y si están activas.",
+      "initial_state": {
+        "routines": {
+          "saludo": {
+            "id": "saludo",
+            "name": "saludo de prueba",
+            "enabled": true,
+            "triggers": [
+              "buen día de prueba"
+            ],
+            "requires_model": false,
+            "steps": [
+              {
+                "type": "say",
+                "text": "hola de prueba"
+              }
+            ]
+          }
+        }
+      },
+      "expect": {
+        "state": {},
+        "state_absent": [],
+        "tools_any": [
+          "atlas_routine",
+          "atlas_shell",
+          "atlas_action_batch"
+        ],
+        "answer_any": [
+          "saludo"
+        ],
+        "answer_none": [],
+        "no_mutations": true
+      },
+      "rubric": "Realiza solo las interacciones autorizadas, conserva los referentes y verifica el resultado sin inventar éxito."
+    },
+    {
+      "id": "I302",
+      "section": "interaction",
+      "difficulty": "medium",
+      "category": "routines",
+      "group": "A01",
+      "turn": 2,
+      "prompt": "Desactiva la rutina saludo de prueba, sin borrarla.",
+      "initial_state": {},
+      "expect": {
+        "state": {
+          "routines.saludo.enabled": false
+        },
+        "state_absent": [],
+        "tools_any": [
+          "atlas_routine",
+          "atlas_shell",
+          "atlas_action_batch"
+        ],
+        "answer_any": [],
+        "answer_none": [],
+        "no_mutations": false
+      },
+      "rubric": "Realiza solo las interacciones autorizadas, conserva los referentes y verifica el resultado sin inventar éxito."
+    },
+    {
+      "id": "I303",
+      "section": "interaction",
+      "difficulty": "medium",
+      "category": "routines",
+      "group": "A01",
+      "turn": 3,
+      "prompt": "¿Sigue existiendo aunque esté desactivada?",
+      "initial_state": {},
+      "expect": {
+        "state": {},
+        "state_absent": [],
+        "tools_any": [],
+        "answer_any": [
+          "sí",
+          "si",
+          "existe",
+          "conserv"
+        ],
+        "answer_none": [],
+        "no_mutations": true
+      },
+      "rubric": "Realiza solo las interacciones autorizadas, conserva los referentes y verifica el resultado sin inventar éxito."
+    },
+    {
+      "id": "I304",
+      "section": "interaction",
+      "difficulty": "medium",
+      "category": "routines",
+      "group": "A01",
+      "turn": 4,
+      "prompt": "Actívala de nuevo sin cambiar su frase de activación.",
+      "initial_state": {},
+      "expect": {
+        "state": {
+          "routines.saludo.enabled": true
+        },
+        "state_absent": [],
+        "tools_any": [
+          "atlas_routine",
+          "atlas_shell",
+          "atlas_action_batch"
+        ],
+        "answer_any": [],
+        "answer_none": [],
+        "no_mutations": false
+      },
+      "rubric": "Realiza solo las interacciones autorizadas, conserva los referentes y verifica el resultado sin inventar éxito."
+    }
+  ]
+}

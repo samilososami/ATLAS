@@ -163,8 +163,8 @@ body[data-design="new"] .face-eye-blink { transform-box: view-box; }
 body[data-design="new"] .face-eye-left { transform-origin: 639.6525px 425px; }
 body[data-design="new"] .face-eye-right { transform-origin: 951.3475px 425px; }
 body[data-design="new"] .face-eye-variant { opacity: 0; transition: opacity .18s ease; }
-/* Catalogue poses share the original sockets and colour; eyebrows/accessories
-   are separate accents, never a heavier replacement face. Only two eye pairs
+/* Catalogue poses share the original sockets and colour; eyebrows and the
+   headphone band match the 26-unit smile weight. Only two eye pairs
    exist regardless of catalogue size. Motion runs once, not as an idle loop. */
 body[data-design="new"] .face-catalog-eye,
 body[data-design="new"] .face-catalog-decoration { opacity: 0; pointer-events: none; }
@@ -177,14 +177,14 @@ body[data-design="new"] .face-stage[data-expression-transition="true"][data-cata
 body[data-design="new"] .face-stage[data-expression-transition="true"][data-catalog-previous="true"] .face-catalog-decoration-previous { animation: face-expression-out var(--face-expression-duration, 190ms) ease both; }
 body[data-design="new"] .face-stage[data-catalog-morph="true"] .face-catalog-eye-current { animation: none; }
 body[data-design="new"] .face-stage[data-catalog-morph="true"] .face-catalog-eye-previous { animation: none; opacity: 0; }
-body[data-design="new"] .face-stage[data-expression-transition="true"] .face-affect-bounce { transform-origin: 795.5px 425px; }
-body[data-design="new"] .face-stage[data-expression-transition="true"][data-expression-motion="nod"] .face-affect-bounce { animation: face-catalog-nod var(--face-expression-duration, 190ms) var(--face-ease) both; }
-body[data-design="new"] .face-stage[data-expression-transition="true"][data-expression-motion="tilt"] .face-affect-bounce { animation: face-catalog-tilt var(--face-expression-duration, 190ms) var(--face-ease) both; }
-body[data-design="new"] .face-stage[data-expression-transition="true"][data-expression-motion="soft-rise"] .face-affect-bounce,
-body[data-design="new"] .face-stage[data-expression-transition="true"][data-expression-motion="lift"] .face-affect-bounce { animation: face-catalog-lift var(--face-expression-duration, 190ms) var(--face-ease) both; }
-body[data-design="new"] .face-stage[data-expression-transition="true"][data-expression-motion="settle"] .face-affect-bounce { animation: face-catalog-settle var(--face-expression-duration, 190ms) var(--face-ease) both; }
-body[data-design="new"] .face-stage[data-expression-transition="true"][data-expression-motion="focus"] .face-affect-bounce { animation: face-catalog-focus var(--face-expression-duration, 190ms) var(--face-ease) both; }
-body[data-design="new"] .face-stage[data-expression-transition="true"][data-expression-motion="sway"] .face-affect-bounce { animation: face-catalog-sway var(--face-expression-duration, 190ms) var(--face-ease) both; }
+body[data-design="new"] .face-stage[data-expression-gesture="true"] .face-affect-bounce { transform-origin: 795.5px 425px; }
+body[data-design="new"] .face-stage[data-expression-gesture="true"][data-expression-motion="nod"] .face-affect-bounce { animation: face-catalog-nod var(--face-gesture-duration, 480ms) var(--face-ease) both; }
+body[data-design="new"] .face-stage[data-expression-gesture="true"][data-expression-motion="tilt"] .face-affect-bounce { animation: face-catalog-tilt var(--face-gesture-duration, 480ms) var(--face-ease) both; }
+body[data-design="new"] .face-stage[data-expression-gesture="true"][data-expression-motion="soft-rise"] .face-affect-bounce,
+body[data-design="new"] .face-stage[data-expression-gesture="true"][data-expression-motion="lift"] .face-affect-bounce { animation: face-catalog-lift var(--face-gesture-duration, 480ms) var(--face-ease) both; }
+body[data-design="new"] .face-stage[data-expression-gesture="true"][data-expression-motion="settle"] .face-affect-bounce { animation: face-catalog-settle var(--face-gesture-duration, 480ms) var(--face-ease) both; }
+body[data-design="new"] .face-stage[data-expression-gesture="true"][data-expression-motion="focus"] .face-affect-bounce { animation: face-catalog-focus var(--face-gesture-duration, 480ms) var(--face-ease) both; }
+body[data-design="new"] .face-stage[data-expression-gesture="true"][data-expression-motion="sway"] .face-affect-bounce { animation: face-catalog-sway var(--face-gesture-duration, 480ms) var(--face-ease) both; }
 body[data-design="new"] .face-happy-cutout { transform: translateY(160px); transition: transform .18s var(--face-ease); }
 body[data-design="new"] .face-stage[data-expression="delighted"] .face-happy-cutout { transform: translateY(0); }
 body[data-design="new"] .face-stage[data-expression="neutral"] .face-eye-neutral,

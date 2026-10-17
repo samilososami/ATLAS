@@ -72,6 +72,7 @@
   let activeExpressionSource = "neutral";
   let expressionTimer = 0;
   let expressionTransitionTimer = 0;
+  let expressionGestureTimer = 0;
   let clapPulseTimer = 0;
   let state = "idle";
   let frame = 0;
@@ -271,18 +272,20 @@
   }
   const accessoryPaths = Object.freeze({
     none: "",
-    headphones: '<path d="M 557 420 V 387 C 557 242 1034 242 1034 387 V 420"/><rect x="546" y="391" width="24" height="75" rx="11"/><rect x="1021" y="391" width="24" height="75" rx="11"/>',
-    headphone_one: '<path d="M 557 419 V 387 C 557 242 1034 242 1034 387"/><rect x="546" y="391" width="24" height="75" rx="11"/><path d="M 1034 387 L 1042 421"/>',
-    note: '<path d="M 1058 353 V 310 L 1080 304 V 343"/><ellipse cx="1049" cy="355" rx="9" ry="6"/><ellipse cx="1071" cy="345" rx="9" ry="6"/>',
-    tv: '<rect x="773" y="626" width="45" height="30" rx="4"/><path d="M 788 662 H 803 M 795.5 656 V 662"/>',
-    cast: '<rect x="775" y="626" width="43" height="30" rx="4"/><path d="M 768 639 Q 786 639 786 657 M 768 648 Q 777 648 777 657"/><circle cx="768" cy="657" r="1"/>',
-    speaker: '<path d="M 778 638 H 786 L 799 629 V 658 L 786 649 H 778 Z M 807 634 Q 816 644 807 654 M 815 628 Q 831 644 815 660"/>',
-    bluetooth: '<path d="M 793 622 V 666 L 811 651 L 778 633 M 778 655 L 811 636 L 793 622"/>',
-    phone: '<rect x="783" y="624" width="25" height="40" rx="5"/><path d="M 792 658 H 799"/>',
-    link: '<path d="M 790 635 L 796 629 Q 808 621 815 631 Q 821 640 810 647 L 805 651 M 800 651 L 794 657 Q 782 665 775 655 Q 769 646 780 639 L 785 635 M 785 651 L 805 635"/>',
-    link_off: '<path d="M 795 631 Q 808 621 815 631 Q 821 640 811 647 M 794 657 Q 782 665 775 655 Q 769 646 779 639 M 776 625 L 817 664"/>',
-    check: '<path d="M 778 642 L 791 654 L 815 629"/>',
-    search: '<circle cx="790" cy="639" r="14"/><path d="M 801 650 L 815 664"/>',
+    // Same 26-unit visual weight as the resting smile, with solid cushions.
+    // The band joins the pads, rather than continuing through hollow outlines.
+    headphones: '<path d="M 553 401 V 385 C 553 242 1038 242 1038 385 V 401"/><rect x="535" y="391" width="36" height="77" rx="17" fill="#009dff" stroke="none"/><rect x="1020" y="391" width="36" height="77" rx="17" fill="#009dff" stroke="none"/>',
+    headphone_one: '<path d="M 553 401 V 385 C 553 242 1038 242 1038 385 Q 1038 399 1046 408"/><rect x="535" y="391" width="36" height="77" rx="17" fill="#009dff" stroke="none"/><rect x="1032" y="399" width="36" height="66" rx="17" transform="rotate(-12 1050 432)" fill="#009dff" stroke="none"/>',
+    note: '<path d="M 1067 350 V 294 L 1120 283 V 339" stroke-width="18"/><ellipse cx="1055" cy="351" rx="22" ry="15" fill="#009dff" stroke="none"/><ellipse cx="1108" cy="340" rx="22" ry="15" fill="#009dff" stroke="none"/>',
+    tv: '<rect x="749" y="606" width="93" height="59" rx="10"/><path d="M 776 685 H 815 M 795.5 665 V 681" stroke-width="14"/>',
+    cast: '<path d="M 749 620 V 616 Q 749 606 759 606 H 832 Q 842 606 842 616 V 655 Q 842 665 832 665 H 805"/><path d="M 747 638 Q 775 638 775 666 M 747 656 Q 757 656 757 666" stroke-width="14"/><circle cx="746" cy="676" r="6" fill="#009dff" stroke="none"/>',
+    speaker: '<path d="M 752 628 H 771 L 796 608 V 669 L 771 650 H 752 Z" fill="#009dff" stroke="none"/><path d="M 814 622 Q 830 638 814 654 M 833 606 Q 861 638 833 670" stroke-width="16"/>',
+    bluetooth: '<path d="M 791 600 V 678 L 823 651 L 762 617 M 762 662 L 823 627 L 791 600" stroke-width="16"/>',
+    phone: '<rect x="770" y="603" width="51" height="79" rx="11" stroke-width="16"/><path d="M 790 666 H 801" stroke-width="8"/>',
+    link: '<path d="M 788 625 L 800 613 C 827 590 859 623 832 646 L 821 656 M 802 650 L 790 662 C 763 685 731 652 758 629 L 769 619 M 779 647 L 811 622" stroke-width="18"/>',
+    link_off: '<path d="M 800 613 C 827 590 859 623 832 646 M 790 662 C 763 685 731 652 758 629 M 753 603 L 840 678" stroke-width="18"/>',
+    check: '<path d="M 761 637 L 787 663 L 836 614"/>',
+    search: '<circle cx="783" cy="630" r="27" stroke-width="18"/><path d="M 804 650 L 835 680" stroke-width="18"/>',
   });
   const wave = stage.querySelector(".face-wave");
   const whatsappQr = stage.querySelector(".face-whatsapp-qr");
@@ -513,6 +516,11 @@
     stage.removeAttribute("data-catalog-previous");
     stage.removeAttribute("data-catalog-morph");
   }
+  function clearExpressionGesture() {
+    clearTimeout(expressionGestureTimer);
+    expressionGestureTimer = 0;
+    stage.removeAttribute("data-expression-gesture");
+  }
   function paintCatalogExpression(name, previousName) {
     const current = catalogEntries.get(name);
     const previous = catalogEntries.get(previousName);
@@ -525,6 +533,8 @@
     const duration = name === "neutral" ? previous?.motion?.exitMs : current?.motion?.entryMs;
     stage.style.setProperty("--face-expression-duration", `${duration || 180}ms`);
     stage.dataset.expressionMotion = name === "neutral" ? previous?.motion?.exit || "settle" : current?.motion?.entry || "morph";
+    const gesture = (name === "neutral" ? previous : current)?.motion?.gesture;
+    stage.style.setProperty("--face-gesture-duration", `${gesture?.durationMs || 480}ms`);
     let morphCompatible = Boolean(isNew && wasNew);
     catalogEyeNodes.forEach((nodes, index) => {
       for (const [layer, entry] of [["previous", previous], ["current", current]]) {
@@ -541,8 +551,8 @@
     decorations.previous.innerHTML = decorations.current.innerHTML;
     const pose = isNew ? current.pose : null;
     decorations.current.innerHTML = pose ? pose.brows.map((d, index) => d
-      ? `<path d="${d}" transform="translate(${index ? 951.3475 : 639.6525} 425)" fill="none" stroke="#009dff" stroke-width="8" stroke-linecap="round"/>` : "").join("")
-      + `<g class="face-catalog-accessory" data-accessory="${pose.accessory}" fill="none" stroke="#009dff" stroke-width="${pose.accessory.startsWith("headphone") ? 7 : 4}" stroke-linecap="round" stroke-linejoin="round">${accessoryPaths[pose.accessory] || ""}</g>` : "";
+      ? `<path class="face-catalog-brow" d="${d}" transform="translate(${index ? 951.3475 : 639.6525} 401)" fill="none" stroke="#009dff" stroke-width="26" stroke-linecap="round"/>` : "").join("")
+      + `<g class="face-catalog-accessory" data-accessory="${pose.accessory}" transform="translate(0 ${["none", "headphones", "headphone_one", "note"].includes(pose.accessory) ? 0 : 18})" fill="none" stroke="#009dff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round">${accessoryPaths[pose.accessory] || ""}</g>` : "";
   }
   function beginResponse(id) {
     if (id != null && id === responseExpressionId) return false;
@@ -600,6 +610,7 @@
     const changed = activeExpression !== name;
     if (changed) {
       clearExpressionTransition();
+      clearExpressionGesture();
       for (const attribute of ["d", "fill", "stroke-width"]) setAttribute(previousMouth, attribute, mouth.getAttribute(attribute) || "none");
     }
     activeExpression = name;
@@ -612,6 +623,13 @@
     if (state === "speaking") speechMouth(mouthLevel); else restMouth();
     if (animate && !suspended && !reducedMotion.matches) {
       stage.setAttribute("data-expression-transition", "true");
+      // Eye/mouth morphs finish quickly, but a small physical gesture needs
+      // time to settle. Do not truncate the gesture at the crossfade deadline.
+      const gesture = catalogEntries.get(name === "neutral" ? previousExpression : name)?.motion?.gesture;
+      if (gesture) {
+        stage.setAttribute("data-expression-gesture", "true");
+        expressionGestureTimer = setTimeout(clearExpressionGesture, gesture.durationMs);
+      }
       if (name === "delighted") stage.setAttribute("data-happy-bounce", "true");
       if (previousExpression === "defiant" && name === "neutral") stage.setAttribute("data-clap-returning", "true");
       expressionTransitionTimer = setTimeout(clearExpressionTransition,
@@ -642,6 +660,7 @@
     responseExpressionId = null;
     lastAutonomousExpressionAt = -Infinity;
     clearExpressionTransition();
+    clearExpressionGesture();
     renderExpression("neutral", "neutral", false);
   }
   function expression(payload = {}) {
@@ -650,14 +669,37 @@
     const name = ({ happy: "delighted", sleep: "asleep" })[payload.expression] || payload.expression;
     const durationMs = payload.durationMs ?? catalogEntries.get(name)?.recommendedDurationMs ?? (name === "asleep" ? 3600000 : expressionPolicy.defaultDurationMs);
     if (!expressionNames.includes(name) || !["model", "command", "petting", "event"].includes(source)) return false;
+    const conversationCue = source === "event" && payload.conversationCue === true && payload.awaitSpeech === true && name !== "asleep";
+    // Local conversation cues are fallback-only: never replace a manually
+    // chosen pose, a model pose, a caress/clap or verified device feedback.
+    if (conversationCue && (activeExpression !== "neutral" || modelExpression || pettingExpression || clapExpression)) return false;
     if (expressionCatalog && (source === "model" || source === "event")) {
       if (payload.responseId != null) beginResponse(payload.responseId);
-      // Repeated tool chunks do not restart a pose or extend its lifetime.
-      if (name === activeExpression) return true;
+      // Repeated model chunks do not restart a pose or extend its lifetime.
+      // A verified device event can already show the requested pose, however:
+      // transfer that same pose to the speech lease without another animation
+      // or geometric change. Explicit command poses retain their own lifetime.
+      if (name === activeExpression) {
+        if (source === "model" && payload.awaitSpeech === true && name !== "asleep"
+            && activeExpressionSource === "event" && modelExpression?.source === "event"
+            && modelExpression.expression === name) {
+          const duration = Number.isFinite(Number(durationMs))
+            ? clamp(durationMs, expressionPolicy.minHoldMs, 30000) : expressionPolicy.defaultDurationMs;
+          modelExpression = { expression: name, source, duration,
+            awaitSpeech: true, playbackStarted: false, expiresAt: performance.now() + 45000 };
+          syncExpression();
+        }
+        return true;
+      }
       const now = performance.now();
+      // The real model can select a more precise pose after the first audio
+      // fragment. Yield immediately without a neutral flash or cooldown
+      // penalty, but a different pose still consumes the second visual change.
+      const replacesCue = source === "model" && modelExpression?.conversationCue === true
+        && activeExpressionSource === "event";
       if (responseExpressionCount >= expressionPolicy.maxChangesPerResponse
-          || now-lastAutonomousExpressionAt < expressionPolicy.cooldownMs
-          || (["model", "event"].includes(activeExpressionSource) && now-lastExpressionChangedAt < expressionPolicy.minHoldMs)) return false;
+          || (!replacesCue && (now-lastAutonomousExpressionAt < expressionPolicy.cooldownMs
+          || (["model", "event"].includes(activeExpressionSource) && now-lastExpressionChangedAt < expressionPolicy.minHoldMs)))) return false;
       responseExpressionCount += 1;
       lastAutonomousExpressionAt = now;
     }
@@ -667,8 +709,21 @@
       pettingExpression = { expression: name, expiresAt: performance.now() + 6000 };
     } else {
       const duration = Number.isFinite(Number(durationMs)) ? clamp(durationMs, source === "command" ? 1 : expressionPolicy.minHoldMs, name === "asleep" ? 3600000 : 30000) : expressionPolicy.defaultDurationMs;
-      modelExpression = name === "neutral" ? null : { expression: name, source, expiresAt: performance.now() + duration };
+      const awaitSpeech = (source === "model" && payload.awaitSpeech === true && name !== "asleep") || conversationCue;
+      modelExpression = name === "neutral" ? null : { expression: name, source, duration,
+        awaitSpeech, conversationCue, playbackStarted: false, expiresAt: performance.now() + (awaitSpeech ? 45000 : duration) };
     }
+    syncExpression();
+    return true;
+  }
+  function expressionPlayback({ active = false, final = false } = {}) {
+    // Model poses and explicit local conversation cues follow actual playback.
+    // CLI poses, sleep and ordinary device events keep independent lifetimes.
+    if (!modelExpression?.awaitSpeech || (modelExpression.source !== "model" && !modelExpression.conversationCue)) return false;
+    if (final) { modelExpression = null; syncExpression(); return true; }
+    if (!active || modelExpression.playbackStarted) return false;
+    modelExpression.playbackStarted = true;
+    modelExpression.expiresAt = performance.now() + modelExpression.duration;
     syncExpression();
     return true;
   }
@@ -962,7 +1017,14 @@
     interact,
     clap,
     expression,
+    expressionPlayback,
     beginResponse,
+    clearConversationCue() {
+      if (!modelExpression?.conversationCue) return false;
+      modelExpression = null;
+      syncExpression();
+      return true;
+    },
     clearAutonomous() {
       // Cancellation is a lifecycle action, not another emotional tool call.
       // It cannot be rejected by a consumed budget, and must not cancel an
@@ -981,6 +1043,8 @@
         category: metadata?.category || "legacy", intensity: metadata?.intensity || "original",
         accessory: metadata?.pose?.accessory || "none", state, sleepPhase,
         presentation: stage.dataset.presentation, responseExpressionCount, responseId: responseExpressionId,
+        awaitingSpeech: Boolean(modelExpression?.awaitSpeech && !modelExpression.playbackStarted),
+        conversationCue: Boolean(modelExpression?.conversationCue),
         catalogVersion: expressionCatalog?.schemaVersion || 0 });
     },
     clearCommand() {

@@ -64,8 +64,11 @@ test('only the new surface with a functioning bridge advertises the optional loc
     ['atlas_capabilities', 'atlas_shell', 'atlas_web_search', 'atlas_routine', 'atlas_phone', 'atlas_android', 'atlas_actions', 'atlas_face', 'atlas_display_mode']);
   assert.equal(p.realtime.model, 'gpt-realtime-2.1');
   assert.equal(p.realtime._test.realtimeTools.length, 7); // no global debug mutation
-  assert.equal(p.realtime._test.faceTool.parameters.properties.expression.enum.length, 173);
-  assert.match(p.realtime._test.faceInstructions, /según el contexto/);
+  assert.equal(p.realtime._test.faceTool.parameters.properties.expression.enum.length,
+    p.window.AtlasExpressionCatalog.expressions.length);
+  assert.match(p.realtime._test.faceInstructions, /acompaña el significado de la conversación/);
+  assert.match(p.realtime._test.faceInstructions, /un elogio, una broma, un reto o una duda clara/);
+  assert.match(p.realtime._test.faceInstructions, /pregunta puramente factual, neutral suele bastar/);
   p.c.stop(false);
 });
 
@@ -103,7 +106,7 @@ test('forced sleep and new expressions use the same immediate local acknowledgem
 
 test('the model-selected expression paints locally and immediately ACKs without another response', async () => {
   const p = setup(); p.response(); p.call({ expression: 'curious', duration_ms: 9000 });
-  assert.deepEqual(p.painted, [{ expression: 'curious', source: 'model', durationMs: 9000 }]);
+  assert.deepEqual(p.painted, [{ expression: 'curious', source: 'model', durationMs: 9000, awaitSpeech: true }]);
   assert.deepEqual(JSON.parse(p.outputs()[0].item.output), { ok: true, expression: 'curious' });
   assert.equal(p.creates().length, 0);
   assert.equal(p.c.responseActive, true);
@@ -190,8 +193,31 @@ test('face plus real tool uses only the existing tool continuation, with shell/s
   assert.equal(p.c.pendingToolResponse, true);
   p.done([{ type: 'function_call', name: 'atlas_shell' }]);
   assert.equal(p.creates().length, 1);
-  assert.deepEqual(p.creates()[0].response.tools.map(t => t.name),
-    ['atlas_capabilities', 'atlas_shell', 'atlas_web_search', 'atlas_routine', 'atlas_phone', 'atlas_android', 'atlas_actions']);
+  assert.equal(p.creates()[0].response, undefined); // retain optional face tool for semantic change after result
+  p.response('r2');
+  p.call({ expression: 'relieved' }, 'after-result');
+  assert.equal(p.painted.at(-1).expression, 'relieved');
+  assert.equal(p.c.faceToolCountThisTurn, 2);
+  p.done();
+  assert.ok(p.creates().at(-1).response.tools.every(tool => tool.name !== 'atlas_face'));
+  p.c.stop(false);
+});
+
+test('speech-bound faces release only after the complete output queue, not response.done', () => {
+  const p = setup(); const playback = [];
+  p.window.AtlasFaceBridge.expressionPlayback = value => playback.push(value);
+  p.response(); p.call(); p.c.externalPlaybackActive = true;
+  p.done();
+  assert.equal(playback.length, 0);
+  p.c.externalPlaybackActive = false;
+  p.c.settleAfterResponse();
+  assert.equal(playback.at(-1).final, true);
+  p.c.stop(false);
+});
+
+test('forced sleep keeps its explicit lifetime instead of waiting for spoken output', () => {
+  const p = setup(); p.response(); p.call({ expression: 'asleep' });
+  assert.equal(p.painted[0].awaitSpeech, false);
   p.c.stop(false);
 });
 

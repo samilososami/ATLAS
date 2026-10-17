@@ -1,0 +1,47 @@
+{
+  "createdAt": "2026-10-17T17:43:07.538Z",
+  "environment": "Actual Chromium SVG/CSS with local-only fixture",
+  "browserPlugin": "not available; established Playwright fallback",
+  "viewports": [
+    {
+      "viewport": {
+        "width": 1591,
+        "height": 989
+      },
+      "poses": 323,
+      "articulated": 323,
+      "brows": 397,
+      "headphones": 14,
+      "minBadgeGap": 74.8458251953125
+    },
+    {
+      "viewport": {
+        "width": 1024,
+        "height": 600
+      },
+      "poses": 323,
+      "articulated": 323,
+      "brows": 397,
+      "headphones": 14,
+      "minBadgeGap": 45.406951904296875
+    }
+  ],
+  "gesture": {
+    "morph": false,
+    "gesture": true,
+    "animation": "face-catalog-sway",
+    "duration": "0.56s",
+    "active": 1
+  },
+  "speechLease": {
+    "preservedBeforePlaybackMs": 2100,
+    "startedBy": "synthetic utterance start",
+    "releasedBy": "final playout event",
+    "returnedToNeutral": true
+  },
+  "audioProduced": false,
+  "microphoneAcquired": false,
+  "providerCalls": 0,
+  "blockedRequests": [],
+  "errors": []
+}

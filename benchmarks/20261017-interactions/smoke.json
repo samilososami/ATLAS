@@ -1,0 +1,7 @@
+{
+  "version": 1,
+  "questions": [
+    {"id":"SMOKE01","difficulty":"easy","category":"conversation","group":null,"turn":1,"prompt":"Dime una forma breve de saludar en español, solo dos palabras.","expect":{"no_mutations":true}},
+    {"id":"SMOKE02","difficulty":"easy","category":"audio-read","group":null,"turn":1,"prompt":"Sin cambiar nada, ¿a qué porcentaje está el volumen del sistema?","expect":{"tools_any":["atlas_shell"],"answer_any":["40","cuarenta"],"no_mutations":true}}
+  ]
+}

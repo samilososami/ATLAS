@@ -1,0 +1,1746 @@
+{
+  "generatedAt": "2026-10-17T17:48:16.965Z",
+  "kind": "contact sheets of actual renderer PNGs",
+  "renderManifestSha256": "28fb6d29a80a7651a7b1dbe298252f206360de19e10aadd9c9b0116026235ab5",
+  "catalogSha256": "4697c1fb17b04ae6b4192e94d03f9cbac89017189454a48e75a9ba08b25289b4",
+  "columns": 4,
+  "maximumRows": 5,
+  "cardWidth": 480,
+  "totalExpressions": 323,
+  "sheets": [
+    {
+      "file": "sheet-01.png",
+      "firstIndex": 1,
+      "lastIndex": 20,
+      "entries": [
+        {
+          "id": "neutral",
+          "collection": "legacy",
+          "renderSha256": "6ad7d01646fdda5307485103f1af413264a035ff1d46061c24db9a5e974da9d9"
+        },
+        {
+          "id": "angry",
+          "collection": "legacy",
+          "renderSha256": "0cae8a16b214bc451a01459b3e3c21cff15aa0bdfb1738a2cb988d3f2f48da5d"
+        },
+        {
+          "id": "defiant",
+          "collection": "legacy",
+          "renderSha256": "b3b3106e959e22d540ad91df8c2dbe7b6e40aa4f49661edb309c9ae3981f229d"
+        },
+        {
+          "id": "delighted",
+          "collection": "legacy",
+          "renderSha256": "0f11abf9b2884879d14726388bf9ad284364df6cd26ee35d82b1537089e621c7"
+        },
+        {
+          "id": "surprised",
+          "collection": "legacy",
+          "renderSha256": "ffd8f373c9930e8f75f94e8cdc016a9be7b734ec8b1ec1fd2aa20a5a47efd943"
+        },
+        {
+          "id": "curious",
+          "collection": "legacy",
+          "renderSha256": "c7c925ce08f0631be7ec03aefdb6cf3fc11552e76c1146c75e1f25f5a81caa33"
+        },
+        {
+          "id": "skeptical",
+          "collection": "legacy",
+          "renderSha256": "5a4e9eb5491a98907cd345db6a0ed96beb321b7606f3caeb316a3a32280dc969"
+        },
+        {
+          "id": "sad",
+          "collection": "legacy",
+          "renderSha256": "3877cf279ac2ce9f418e03432b734539c690b37acfb6b736706ded711422d36f"
+        },
+        {
+          "id": "worried",
+          "collection": "legacy",
+          "renderSha256": "e9360fe12499959c4fc16bdad85ab4458eccbe14b8bf7ca78bca741a170fec24"
+        },
+        {
+          "id": "sleepy",
+          "collection": "legacy",
+          "renderSha256": "1d5ea5bf529f8c89f8b9b7f232e8e6786a1aa264bc6524d4bcbe25c824c6eb7d"
+        },
+        {
+          "id": "wink",
+          "collection": "legacy",
+          "renderSha256": "08427669c389fa4869917830477bc08e5fa0c518786a6fc97201dc00e3b61d47"
+        },
+        {
+          "id": "laughing",
+          "collection": "legacy",
+          "renderSha256": "d96df742daa7c60c5410fcf0df0396a608d65f7f3cfb5f5bf20e135fe00122d3"
+        },
+        {
+          "id": "focused",
+          "collection": "legacy",
+          "renderSha256": "c63c3b95efceae9a1e9f6cfa2e3a61afdd5c414684a3e932725add00734d7ae3"
+        },
+        {
+          "id": "shy",
+          "collection": "legacy",
+          "renderSha256": "d6c4bbfa89c66c401f4c69290814932f73135459d17eeb4dd4d79021a0393c0b"
+        },
+        {
+          "id": "ambitious",
+          "collection": "legacy",
+          "renderSha256": "f1f00f3faad0beca844d5d8fd6e42753c1f3cdf10c8f9e047c05fa5f453799db"
+        },
+        {
+          "id": "confident",
+          "collection": "legacy",
+          "renderSha256": "c14edeb78185947563e955bbf71bcb151bd4e6d908ec689f68614fda03a0c4b2"
+        },
+        {
+          "id": "affectionate",
+          "collection": "legacy",
+          "renderSha256": "509874574a852e3b3ebf37459f2e85e9686dfe29a35e2c596689edd6fd131a1d"
+        },
+        {
+          "id": "confused",
+          "collection": "legacy",
+          "renderSha256": "7daf1c3f5e1e50347ca6da5eddfd8620e8538ac83815bf4ac10575a2612c6a44"
+        },
+        {
+          "id": "embarrassed",
+          "collection": "legacy",
+          "renderSha256": "169b77325e1c9dfd040d4361746d50fb3f2e20cf1a0ca53d4e69b4ab06cbf1d4"
+        },
+        {
+          "id": "relieved",
+          "collection": "legacy",
+          "renderSha256": "894ed88680965a7ebec105e6b21c9b03500327e116d15068682669f40726d16a"
+        }
+      ]
+    },
+    {
+      "file": "sheet-02.png",
+      "firstIndex": 21,
+      "lastIndex": 40,
+      "entries": [
+        {
+          "id": "bored",
+          "collection": "legacy",
+          "renderSha256": "35e8f8f741ca50da6d400c729afde7e2f7ead8c489109731caaccf7e13ea0c0e"
+        },
+        {
+          "id": "excited",
+          "collection": "legacy",
+          "renderSha256": "eac1c193c6379cf7b6c681bdfa09d307b8a65a1cf17624acbe92f431d308ff2d"
+        },
+        {
+          "id": "asleep",
+          "collection": "legacy",
+          "renderSha256": "b220e17e8b4e8df9d997f684deab4e36ca42711f4992a470c4b6fb4d5c8a7433"
+        },
+        {
+          "id": "hello_soft",
+          "collection": "2026-10-16",
+          "renderSha256": "72623a7f2b983b64ab272ba3d04d4c88439e6f946f904b5120ece6bdb2f49afc"
+        },
+        {
+          "id": "welcome_back",
+          "collection": "2026-10-16",
+          "renderSha256": "13867cbde3da142c1c2546deacbb0f4d439fb4bae8369f380ddfae28bca376d2"
+        },
+        {
+          "id": "morning_greeting",
+          "collection": "2026-10-16",
+          "renderSha256": "78a90a2592242bc20e55b3e154f7d07f2ae7d1407188df146fcfeefa7532d4f9"
+        },
+        {
+          "id": "evening_greeting",
+          "collection": "2026-10-16",
+          "renderSha256": "7c97b42620ae7d2811a4a6d2ae7d5bff00d5ed30225f4dd69701bce247dc2943"
+        },
+        {
+          "id": "recognition",
+          "collection": "2026-10-16",
+          "renderSha256": "b628e8d61ec1b4d7687f49b86c45f0d335f168658dc0a728f30150f4aa1fcd12"
+        },
+        {
+          "id": "friendly_attention",
+          "collection": "2026-10-16",
+          "renderSha256": "d60c7cce29f48f5f6668b466b2fdd88a280c0b0063e5443e67c0beaf087dc713"
+        },
+        {
+          "id": "ready_to_chat",
+          "collection": "2026-10-16",
+          "renderSha256": "75ec09add923fd7bebcf5b0e7df462fd019da643b02b7fdc82f94f3236ed64ec"
+        },
+        {
+          "id": "warm_goodbye",
+          "collection": "2026-10-16",
+          "renderSha256": "7986b8ead1c3c2e3a90e056927a9cf9f256bf2b893e27917e8f2b793aad71643"
+        },
+        {
+          "id": "see_you_soon",
+          "collection": "2026-10-16",
+          "renderSha256": "8221de3d3d861f2212dbf0da38f52f4cfda2c390bfe521332acefe6b7b0abab3"
+        },
+        {
+          "id": "quiet_company",
+          "collection": "2026-10-16",
+          "renderSha256": "5c4d6b112b756d43f625d4eb78e5ab2e925dffccf3f391684df2e4bea0c438d0"
+        },
+        {
+          "id": "appreciative",
+          "collection": "2026-10-16",
+          "renderSha256": "81d02ca0da7d5744a2385ceac53622d7f68fd856225ce47e855233b55b0c3ff8"
+        },
+        {
+          "id": "complimented",
+          "collection": "2026-10-16",
+          "renderSha256": "0eaf9a534fa1297cadbb0bc6a23e1bd144d65085e9ea484d8ef173f82e7266aa"
+        },
+        {
+          "id": "touched",
+          "collection": "2026-10-16",
+          "renderSha256": "0a05d6b493a5a512c627dbd88413bf278ced3a6c13b93bf7c9e67d01a45d90aa"
+        },
+        {
+          "id": "supportive",
+          "collection": "2026-10-16",
+          "renderSha256": "c3d2ed01b55aa36c3c97c1e0412b6d47c664a92524e775d3ffb36333640cbc28"
+        },
+        {
+          "id": "encouraging",
+          "collection": "2026-10-16",
+          "renderSha256": "45b86653171e0870ebea6fc0a23fe90b8d11add6950d23f3ba75709d43f78232"
+        },
+        {
+          "id": "patient",
+          "collection": "2026-10-16",
+          "renderSha256": "3ebf265b0aca8722a313f04f101b449a166b5968c1c9af564c925919e1d025c9"
+        },
+        {
+          "id": "kind_agreement",
+          "collection": "2026-10-16",
+          "renderSha256": "810313db3b0a85c3b55fe23bebc1286df3519f9c4c95196e5b8eccc225c76450"
+        }
+      ]
+    },
+    {
+      "file": "sheet-03.png",
+      "firstIndex": 41,
+      "lastIndex": 60,
+      "entries": [
+        {
+          "id": "proud_of_you",
+          "collection": "2026-10-16",
+          "renderSha256": "c3e6297aee4bfb5e226b861c678ca6dc91e580a70f6a121386987b1582192885"
+        },
+        {
+          "id": "gentle_reassurance",
+          "collection": "2026-10-16",
+          "renderSha256": "f9ca1cfe6a596b84ee553dce2940b70ec0bba5e06a059ddc24396c883f6a14fd"
+        },
+        {
+          "id": "fond_amusement",
+          "collection": "2026-10-16",
+          "renderSha256": "ef7112db06f5b9917604e1291ff67a786871d50309f81ab4b9e14bd47683b591"
+        },
+        {
+          "id": "playful",
+          "collection": "2026-10-16",
+          "renderSha256": "fafd4af1b7bf89a8808f9a7a1d998883543246464fc55ad7c4c9e446172616b6"
+        },
+        {
+          "id": "cheeky",
+          "collection": "2026-10-16",
+          "renderSha256": "f673cc3df4c8a3c055c2027cbb6fbab07b74d3c6b6db86ce90aac4e303ff3452"
+        },
+        {
+          "id": "teasing",
+          "collection": "2026-10-16",
+          "renderSha256": "6aa2de3f9a42da7807ac2d12fdf76e9ff9c301fad6eb4550c2d1156a104e649e"
+        },
+        {
+          "id": "dry_humor",
+          "collection": "2026-10-16",
+          "renderSha256": "4308721edc4714a5764a40c4d80c842d300f1f3cedf6c68866d2a3fce8728432"
+        },
+        {
+          "id": "inside_joke",
+          "collection": "2026-10-16",
+          "renderSha256": "7348d10c75cf9b31b87df488348c3028110c4907acc32ea383198beea57e030e"
+        },
+        {
+          "id": "mock_serious",
+          "collection": "2026-10-16",
+          "renderSha256": "b4c29217723cdcbfa9c181f0d408db7301c72c8d97d5532027b9fe9dafa73986"
+        },
+        {
+          "id": "amused_disbelief",
+          "collection": "2026-10-16",
+          "renderSha256": "83ac2cc3b48f28e847aab5ffbdb5f08a26192883c136edbabd1e3fd10e90c7d1"
+        },
+        {
+          "id": "holding_laughter",
+          "collection": "2026-10-16",
+          "renderSha256": "031fcf13742ad935d25581c05e5737961f27e48be656e5141f584cf91952fb26"
+        },
+        {
+          "id": "quiet_chuckle",
+          "collection": "2026-10-16",
+          "renderSha256": "36adcb281a097a460340ed9e31f9b747944b1f9f2f8a4f8669556cf1fc3920e9"
+        },
+        {
+          "id": "playful_challenge",
+          "collection": "2026-10-16",
+          "renderSha256": "5f9ee62e31968da4c61c87e8b18eaa2815b373e6b82cd173f17cf8e7ee63cabf"
+        },
+        {
+          "id": "determined",
+          "collection": "2026-10-16",
+          "renderSha256": "a6bff26d56150170c4c3e0d10605ccd64b225bfbf7ee0a57d74a317d7f26af54"
+        },
+        {
+          "id": "resolute",
+          "collection": "2026-10-16",
+          "renderSha256": "969492149e9f1eb74a005ce4c38f4e3f0c13516a3c88ad4d1622f3129168dc0d"
+        },
+        {
+          "id": "quiet_pride",
+          "collection": "2026-10-16",
+          "renderSha256": "5bec830a6954e6d0af89a877396965c8be51d3c14d7817240e41d2fdbc3dfb9b"
+        },
+        {
+          "id": "capable",
+          "collection": "2026-10-16",
+          "renderSha256": "40ab5fcc506f708422ce479b7dc894e9a72eb3856e093d46fe778b4c62b7efc1"
+        },
+        {
+          "id": "optimistic",
+          "collection": "2026-10-16",
+          "renderSha256": "0a7e8c4740709ae47f1b07299db4a612359a61e6ee26ce8311916d639f7ff4df"
+        },
+        {
+          "id": "challenge_accepted",
+          "collection": "2026-10-16",
+          "renderSha256": "2db173ad0b2f956f40e26edab6419b4e047f8b0b9588f26f28bd1ceb533585f1"
+        },
+        {
+          "id": "steady",
+          "collection": "2026-10-16",
+          "renderSha256": "43bf96338a341224ab0a2561af212a04c074ccf6dbde33b77837001274b157c2"
+        }
+      ]
+    },
+    {
+      "file": "sheet-04.png",
+      "firstIndex": 61,
+      "lastIndex": 80,
+      "entries": [
+        {
+          "id": "resourceful",
+          "collection": "2026-10-16",
+          "renderSha256": "f06fa7b69e45356b6420c16075c8c0998d01c8da0dfad39845a30dfed6630177"
+        },
+        {
+          "id": "ready_for_work",
+          "collection": "2026-10-16",
+          "renderSha256": "580e3f4d0cfbdd011a2f1a3694121dad29cb511ff97a1e031d28c16d570a9a13"
+        },
+        {
+          "id": "earned_confidence",
+          "collection": "2026-10-16",
+          "renderSha256": "95ea5e4176e1abb6f0aa43e7ee91a24d7928ffb2335e6a83b051d4a95a3dbfa8"
+        },
+        {
+          "id": "thinking_light",
+          "collection": "2026-10-16",
+          "renderSha256": "5cffc7f1eb60a5fc4bc0e46413ef4aa36caf78f0cb2ac91c2ffb0c3f5df52477"
+        },
+        {
+          "id": "thinking_deep",
+          "collection": "2026-10-16",
+          "renderSha256": "dd187ac81bc84c9ae1a09ed08ec8b8fae05a6905391aae68999542bcda9d6d59"
+        },
+        {
+          "id": "reading",
+          "collection": "2026-10-16",
+          "renderSha256": "54ecce3fe88fb606b114b030dda25836daeede5611d9adfc654a7a78cb7eebf2"
+        },
+        {
+          "id": "checking",
+          "collection": "2026-10-16",
+          "renderSha256": "19a9ed6b66a1e7953f05b2438c4bbf089dab4cf0dc12cafefcc1f1c4dd19a901"
+        },
+        {
+          "id": "comparing",
+          "collection": "2026-10-16",
+          "renderSha256": "cfffad69bb3492ca06fd82e8d2ca922a244378d8131be5232076ccea820e74dd"
+        },
+        {
+          "id": "calculating",
+          "collection": "2026-10-16",
+          "renderSha256": "09a961b3fd729e3a43a36cd9e5da1c313c3c759e5d5c87884608f4d1e24acbf9"
+        },
+        {
+          "id": "planning",
+          "collection": "2026-10-16",
+          "renderSha256": "8b6c09d5a8807db155ec3954ab8f7fe8fcd2f2115567a4bef5da63a3f0be46a5"
+        },
+        {
+          "id": "debugging",
+          "collection": "2026-10-16",
+          "renderSha256": "001bcd1c3ff2a4f87276edc891a4ba329f24b2fb6bff9a73e667c829f4d685be"
+        },
+        {
+          "id": "careful_work",
+          "collection": "2026-10-16",
+          "renderSha256": "beda013c617e362b819647d69282f200d80aa90b2a61e051dfbddfa75fddeb57"
+        },
+        {
+          "id": "making_progress",
+          "collection": "2026-10-16",
+          "renderSha256": "74412cd7ad86f6984e8b1592176eb2c41a828f2e94e60de06ee66c7fe07b6cfc"
+        },
+        {
+          "id": "intrigued",
+          "collection": "2026-10-16",
+          "renderSha256": "8665b07da5e05b99e967d3cab2a54903474b7a681ad8379f9290fc00d43f8b96"
+        },
+        {
+          "id": "interested",
+          "collection": "2026-10-16",
+          "renderSha256": "4e85e9843b88093ddb625c59456968dfa30c4db7a1d917d07a0b1c03658cd979"
+        },
+        {
+          "id": "exploring",
+          "collection": "2026-10-16",
+          "renderSha256": "c27ed0ccb385e613ca3e6bd9f22cc88c51c9159f02fa419dca8273525c5332ba"
+        },
+        {
+          "id": "wondering",
+          "collection": "2026-10-16",
+          "renderSha256": "f60994ce5df460b0e4c8b18ed6990a151f85b98b5909cdbd84a290e21a514ef9"
+        },
+        {
+          "id": "pleasant_surprise",
+          "collection": "2026-10-16",
+          "renderSha256": "bf177abd31219d2cadc152be2f0d3d1360e873e3a3534375b4a95ce7c7c930dc"
+        },
+        {
+          "id": "lightbulb",
+          "collection": "2026-10-16",
+          "renderSha256": "b38d1683d3c44524fa3a029225cddefed035002eb0de93077e0c43926cf2c182"
+        },
+        {
+          "id": "fascinated",
+          "collection": "2026-10-16",
+          "renderSha256": "67ab8b45dec3b1441ded575490d5e3c870111ce0b6e794144a3cac95057b8756"
+        }
+      ]
+    },
+    {
+      "file": "sheet-05.png",
+      "firstIndex": 81,
+      "lastIndex": 100,
+      "entries": [
+        {
+          "id": "following_story",
+          "collection": "2026-10-16",
+          "renderSha256": "634fd1d36695b87eedf0a4b2ea5040f48d577183086b1336de286d77cdf24601"
+        },
+        {
+          "id": "asking_gently",
+          "collection": "2026-10-16",
+          "renderSha256": "d1ef1672aa48472592aedeade96820647f631ce7548df2c0a4c8a9d187004fc7"
+        },
+        {
+          "id": "curious_smile",
+          "collection": "2026-10-16",
+          "renderSha256": "966d7ac41d62ec70ea14d6ba18ff6a9ef20b5f0a5c349b1a0c093831dcd8e520"
+        },
+        {
+          "id": "not_quite_sure",
+          "collection": "2026-10-16",
+          "renderSha256": "3c4dd8ef79f12c53f2e9603a0396d256b3d633eedeac356fe902e6df0feafcb7"
+        },
+        {
+          "id": "needs_detail",
+          "collection": "2026-10-16",
+          "renderSha256": "c6282f5e51a751845435bd05d9eaa934b0cf2daba249cb7d5b59dadb4d0500be"
+        },
+        {
+          "id": "did_i_hear_right",
+          "collection": "2026-10-16",
+          "renderSha256": "8c4a5ac16a079b7d0360eafc1dbdf84e8e03050b4ef4897f72756077ddb22c00"
+        },
+        {
+          "id": "puzzled",
+          "collection": "2026-10-16",
+          "renderSha256": "104b11cecbeb27108f237d16683c46f4a77da1588cb9843cfb92fc0fe562c6c8"
+        },
+        {
+          "id": "double_check",
+          "collection": "2026-10-16",
+          "renderSha256": "35000dbd6e1749739a9952d1acf9b85abd15501630141104f262a3525c2d350c"
+        },
+        {
+          "id": "weighing_options",
+          "collection": "2026-10-16",
+          "renderSha256": "8f153e81d2e06b163e1a819a27787129917707784dbf347195e2f94412197379"
+        },
+        {
+          "id": "cautious_yes",
+          "collection": "2026-10-16",
+          "renderSha256": "9104b9a33fa853bdf4506aa327df5d213d65330c12cc9f80a38cad81883473ba"
+        },
+        {
+          "id": "uncertain_memory",
+          "collection": "2026-10-16",
+          "renderSha256": "e97f79f6122223ac78b95ced22552c3241f501dfe61d2ade53e4b7ce98ff0b98"
+        },
+        {
+          "id": "respectful_doubt",
+          "collection": "2026-10-16",
+          "renderSha256": "1245e2082618853621825aa84f409f788dff8d20dfc8f2a012f2ea6e3fccb344"
+        },
+        {
+          "id": "waiting_clarification",
+          "collection": "2026-10-16",
+          "renderSha256": "471ce220508a5f360afa343aa8af4325f0cbf347254fd8c15b0273549c3c3fbe"
+        },
+        {
+          "id": "concerned",
+          "collection": "2026-10-16",
+          "renderSha256": "0ca6380f9beebe4a8775c4922948fcc255234c1f7237e3885e1f570e75ac116d"
+        },
+        {
+          "id": "empathetic",
+          "collection": "2026-10-16",
+          "renderSha256": "2806849c284faf2924eb2090dea21eb4f222aa1a9b464b3906a72dee33f67bf4"
+        },
+        {
+          "id": "sympathetic",
+          "collection": "2026-10-16",
+          "renderSha256": "1828e1a7f04ca05ce2316bf2b5313e271e510df97b31f2d1de096cee25e6cdb1"
+        },
+        {
+          "id": "comforting",
+          "collection": "2026-10-16",
+          "renderSha256": "55a054eed833d2baf3b7646eded42915a05e2e543680cafc011738427b939313"
+        },
+        {
+          "id": "serious_attention",
+          "collection": "2026-10-16",
+          "renderSha256": "3704869c5cea107b84fcd801f19bea0bdc11ac62433ffbd1b8172c2c26002835"
+        },
+        {
+          "id": "gentle_sadness",
+          "collection": "2026-10-16",
+          "renderSha256": "f17089960add37d12237a06afe6a36b15f6b39eca5f5e07c33394fc09aa13c89"
+        },
+        {
+          "id": "hopeful",
+          "collection": "2026-10-16",
+          "renderSha256": "e133642042097c54d808634dd34c023126b910d80e55a14a603bb0c671d3391b"
+        }
+      ]
+    },
+    {
+      "file": "sheet-06.png",
+      "firstIndex": 101,
+      "lastIndex": 120,
+      "entries": [
+        {
+          "id": "respectful_silence",
+          "collection": "2026-10-16",
+          "renderSha256": "dcd8bda1239e4679f4ed36e2d99f4958225d0604a9aa5f2ebecb5e4c4cc4d959"
+        },
+        {
+          "id": "checking_on_you",
+          "collection": "2026-10-16",
+          "renderSha256": "8338591d5ea165b61fdeb9e3fed9a84e823ddf54615497749442fa974cc7e121"
+        },
+        {
+          "id": "calming",
+          "collection": "2026-10-16",
+          "renderSha256": "27ba7e5996f9ac28d83353b47de9246fa713a54276445a664a99d3f62d84f564"
+        },
+        {
+          "id": "let_down",
+          "collection": "2026-10-16",
+          "renderSha256": "17433aa35c8153500c3241c7f9e1e6f3d177199fbcbe493bce74f7aa1de0bf61"
+        },
+        {
+          "id": "regretful",
+          "collection": "2026-10-16",
+          "renderSha256": "426d0206fb6a1531243d9114a31d6e484c8ee62337a12a52d535e4693f83ad11"
+        },
+        {
+          "id": "crestfallen",
+          "collection": "2026-10-16",
+          "renderSha256": "3794a83da086b9ac0bfdf60af88de45d85c3cc4c308ad353fac332baea2a1747"
+        },
+        {
+          "id": "mild_frustration",
+          "collection": "2026-10-16",
+          "renderSha256": "fce0132edb0bde47fb4ce0e4790df54c17dfe3e6ff6a969e52ee71ee09e6ce53"
+        },
+        {
+          "id": "disappointed_but_ready",
+          "collection": "2026-10-16",
+          "renderSha256": "3c73b2dcdb2fc4afefa8538329059d828f7bbbdd822cea58fa6b5c6b0dd568a9"
+        },
+        {
+          "id": "unimpressed",
+          "collection": "2026-10-16",
+          "renderSha256": "6743c29f8518ad0a5ea25f57b8940f47c46e7f97c7a34d2752338e036fd1dc45"
+        },
+        {
+          "id": "oops",
+          "collection": "2026-10-16",
+          "renderSha256": "ce0e962a25bf3c4c1237a0efe363697995407b9c23882dca480b5a107dd485de"
+        },
+        {
+          "id": "awkward",
+          "collection": "2026-10-16",
+          "renderSha256": "8b9e3f50bda4e64570f5e35f7f4fa7effc08e7c8dc1b390142993605b1e59f7b"
+        },
+        {
+          "id": "apologetic_brief",
+          "collection": "2026-10-16",
+          "renderSha256": "f95a007ea36e1c53c4d263321685bbf31f06e540774722b04619e2bdea0b8a76"
+        },
+        {
+          "id": "recovering",
+          "collection": "2026-10-16",
+          "renderSha256": "31b021b3d94fc9e3eb6109aa93fa44078f2a380cbf3f06b2f3bc6faa05c5cc83"
+        },
+        {
+          "id": "not_amused",
+          "collection": "2026-10-16",
+          "renderSha256": "57aeb1dec48b5229d996007bb99a18266a14efd5f29a0eebe2dd42e0fee8859c"
+        },
+        {
+          "id": "mildly_annoyed",
+          "collection": "2026-10-16",
+          "renderSha256": "97c38e26c7b477f0c0fe69188ff63b1def8671488c25a9b06c9b748c44232c29"
+        },
+        {
+          "id": "firm_no",
+          "collection": "2026-10-16",
+          "renderSha256": "ed943aed4092bd1a2c2b4651f5de4bce10a48fdba6f0d5d1be579b5a6e4bc833"
+        },
+        {
+          "id": "serious_no",
+          "collection": "2026-10-16",
+          "renderSha256": "ee8cdc25fcab6c4d792e69c67bad381d3423999ccf07c8d14b0f841d0aeb53fa"
+        },
+        {
+          "id": "friendly_pushback",
+          "collection": "2026-10-16",
+          "renderSha256": "8224d12ca4c7cea432df012de47bdc06c09d98eff123964152cc4a31c25fb948"
+        },
+        {
+          "id": "mock_offended",
+          "collection": "2026-10-16",
+          "renderSha256": "f74f11e2d95c07b72363f82e4523669c117d451c83a6bd559a08a433ff73bb8c"
+        },
+        {
+          "id": "challenging_smirk",
+          "collection": "2026-10-16",
+          "renderSha256": "1e68669f853f01ffac87125ec81cee2cdce67fd220783daff311c731925877fb"
+        }
+      ]
+    },
+    {
+      "file": "sheet-07.png",
+      "firstIndex": 121,
+      "lastIndex": 140,
+      "entries": [
+        {
+          "id": "skeptical_amusement",
+          "collection": "2026-10-16",
+          "renderSha256": "c2810e04f99f90df5bc61c1479f04dee99f0339642d670ebb3c33aa4fab002af"
+        },
+        {
+          "id": "fair_point",
+          "collection": "2026-10-16",
+          "renderSha256": "b1c5738846db3d10196c9d916a4599bf5ece584b18027d3aef67e10f1d877300"
+        },
+        {
+          "id": "deescalating",
+          "collection": "2026-10-16",
+          "renderSha256": "118f1f3f421109e0a0b09e99d379d21714dbdc27a383b93d198fe0e413319ad6"
+        },
+        {
+          "id": "a_little_tired",
+          "collection": "2026-10-16",
+          "renderSha256": "098b1ef2d1f0ed13e4577499c08eb9a1575e058ce236fb3c898e6693b120f960"
+        },
+        {
+          "id": "long_day",
+          "collection": "2026-10-16",
+          "renderSha256": "c60794966a0d13d0d20f7edbaf1416f88c7bcf998a4d4757fba49cf2926d931a"
+        },
+        {
+          "id": "sleepy_smile",
+          "collection": "2026-10-16",
+          "renderSha256": "3beffed4832f11c8940143a0d40c121fb05bff28c1abeb59f8e3798f9ee56195"
+        },
+        {
+          "id": "stifled_yawn",
+          "collection": "2026-10-16",
+          "renderSha256": "41f376a64487f34c3f1db7d17ca2dea816163c8d7216d9d045e88f616e4d2782"
+        },
+        {
+          "id": "resting_eyes",
+          "collection": "2026-10-16",
+          "renderSha256": "8903f8de36d6a704eab92e86cdd1850e6a86c60151a0e8a0d558f1b1324cd815"
+        },
+        {
+          "id": "peaceful",
+          "collection": "2026-10-16",
+          "renderSha256": "c22855093cd1b38f95dba425929b399de928e8f2482eb3325cf48a84734372af"
+        },
+        {
+          "id": "recharged",
+          "collection": "2026-10-16",
+          "renderSha256": "7e9abd484c7cb65b8a0e3299d4968f6a54099d6e86f591928fde1b0dc7cc9ea5"
+        },
+        {
+          "id": "slow_morning",
+          "collection": "2026-10-16",
+          "renderSha256": "6a41045bf9c8900367974203627ae6128fd6f017cd049e26aaddf65f85ae51f6"
+        },
+        {
+          "id": "settling_down",
+          "collection": "2026-10-16",
+          "renderSha256": "0f81f771c7892bb557f3fdd72b47233a62a949c0ac8af230f0c30db55f2c0909"
+        },
+        {
+          "id": "quiet_focus",
+          "collection": "2026-10-16",
+          "renderSha256": "161e1416bcca7f62197813d8e400ac4652a12b883d38b927ba0259d2e15ba4aa"
+        },
+        {
+          "id": "small_win",
+          "collection": "2026-10-16",
+          "renderSha256": "568c305b4d4efb1924fcab3d0e7c4518579d0560e2ad910e6f60643fe74667dd"
+        },
+        {
+          "id": "success",
+          "collection": "2026-10-16",
+          "renderSha256": "d3adee8943b4edb3102918a753f547f14a31823ddadbb8d22b993efa1ed7fd0c"
+        },
+        {
+          "id": "nailed_it",
+          "collection": "2026-10-16",
+          "renderSha256": "3c1964ab42c55faadb977e20519df5d92c4407743cff25d2b9c4989bf335936d"
+        },
+        {
+          "id": "pleasantly_impressed",
+          "collection": "2026-10-16",
+          "renderSha256": "c8fbf499fe8c6a034692d8f44818814eff527c56e3bc876f60a4bc16b33258b6"
+        },
+        {
+          "id": "shared_joy",
+          "collection": "2026-10-16",
+          "renderSha256": "1e071a2c04a8c477dae138d548eea21643f2ac1bd4a83688b3caa6452bd18a9f"
+        },
+        {
+          "id": "satisfied",
+          "collection": "2026-10-16",
+          "renderSha256": "6cb9e5652ae219344e47dce503701ca4e8a2f3512e9260db9c3154b7877c1de0"
+        },
+        {
+          "id": "victory_grin",
+          "collection": "2026-10-16",
+          "renderSha256": "32bec371a046141e778b8cb3221f6da22b7d5f85cccb8f067a71ffd4b2822f4f"
+        }
+      ]
+    },
+    {
+      "file": "sheet-08.png",
+      "firstIndex": 141,
+      "lastIndex": 160,
+      "entries": [
+        {
+          "id": "delighted_wink",
+          "collection": "2026-10-16",
+          "renderSha256": "abe36b14cf20dc3d462de9df18d6a311b4d66ecdd8a92918f0f8498561ac35ea"
+        },
+        {
+          "id": "grateful_pride",
+          "collection": "2026-10-16",
+          "renderSha256": "bc4e89223042e64a9c655ef8b799bdb3f3f2759a5f5cce663de654334f8393d2"
+        },
+        {
+          "id": "celebration_calm",
+          "collection": "2026-10-16",
+          "renderSha256": "a25fb3bd08ff335e56ea6ffd4e4a41f30c464924aeca12dc78bb973ff446f9c0"
+        },
+        {
+          "id": "music_headphones",
+          "collection": "2026-10-16",
+          "renderSha256": "25ab68e21b1073b724033614b62ecd3bf962888fb147dc9063a13e3439415e03"
+        },
+        {
+          "id": "music_groove",
+          "collection": "2026-10-16",
+          "renderSha256": "de94e37ba80637135a59611539763cee36670e247093844d4b62fa8315337e60"
+        },
+        {
+          "id": "music_chill",
+          "collection": "2026-10-16",
+          "renderSha256": "d50f345b82bd5caa54f41d68d80e0a92b3c359d44ae7b953db4ee6c9184ea263"
+        },
+        {
+          "id": "music_delight",
+          "collection": "2026-10-16",
+          "renderSha256": "5bb4d106f80e10e365fd69ae9f7599ba1879ef7219d5394179a108856bef92af"
+        },
+        {
+          "id": "music_focused",
+          "collection": "2026-10-16",
+          "renderSha256": "165e9d7442d85c4ac753ede8319e7fa6fb285033d755c12a09df530e7cb4068b"
+        },
+        {
+          "id": "music_one_ear",
+          "collection": "2026-10-16",
+          "renderSha256": "db0935b5f85d733918f87ef66adc3c9a104e25a84b0670e1593a7c948d2c89a3"
+        },
+        {
+          "id": "music_singalong",
+          "collection": "2026-10-16",
+          "renderSha256": "84190de758ac228b37307b22c3c3562a4f3bbfec4031d1371ed65a2891a5795a"
+        },
+        {
+          "id": "music_discovery",
+          "collection": "2026-10-16",
+          "renderSha256": "a2c6a59ab92f8297701739bcb66065024f819a77994d122de73ab6e7bbd53ee7"
+        },
+        {
+          "id": "music_paused",
+          "collection": "2026-10-16",
+          "renderSha256": "6b741a76ab8f088cfcef81b6c69102243cf1613ea8a2c6fd5a1954847ed75f54"
+        },
+        {
+          "id": "music_finished",
+          "collection": "2026-10-16",
+          "renderSha256": "c8a8b963c012cb48ff5997a03ef23493a521e77e698d64a674907f84fa92ae84"
+        },
+        {
+          "id": "tv_connected",
+          "collection": "2026-10-16",
+          "renderSha256": "40a3d110ccc78543334f2582baf58a5defc01fdce19c1c77056e80fce0573c21"
+        },
+        {
+          "id": "tv_presenting",
+          "collection": "2026-10-16",
+          "renderSha256": "4ff5e863fc206c51686235e0b759638189e0b8c8dc5c76cd86d2b44b20dd9025"
+        },
+        {
+          "id": "casting_ready",
+          "collection": "2026-10-16",
+          "renderSha256": "e09b06279bac032fab0097efbc85bda6d08d7b709374e61ee4f5f1968725c4c5"
+        },
+        {
+          "id": "casting_active",
+          "collection": "2026-10-16",
+          "renderSha256": "6aa4677b8ea8e413ee607920b306f3bc51ff93bd18aa53f1fb4868100903f035"
+        },
+        {
+          "id": "speaker_connected",
+          "collection": "2026-10-16",
+          "renderSha256": "9d2704af1a72143e4e9780f92454801ddc0c9d7b501516c812cbdf0139ba4891"
+        },
+        {
+          "id": "audio_check",
+          "collection": "2026-10-16",
+          "renderSha256": "317a1ee4e5e373db933cc61598abd36e87d87f00b1ff534f3225538621dd6644"
+        },
+        {
+          "id": "bluetooth_connected",
+          "collection": "2026-10-16",
+          "renderSha256": "f30796264ca2fe558b231854695b40c366203d2bc43cf1f1396b9cbfc34e7c58"
+        }
+      ]
+    },
+    {
+      "file": "sheet-09.png",
+      "firstIndex": 161,
+      "lastIndex": 180,
+      "entries": [
+        {
+          "id": "phone_connected",
+          "collection": "2026-10-16",
+          "renderSha256": "7475c2b8f17c17b32b6c6a7085f48034f6a5c43d561eddee7ebb79c08f6dd64d"
+        },
+        {
+          "id": "device_reconnecting",
+          "collection": "2026-10-16",
+          "renderSha256": "a115a92c871c2cda49190e0fff2bca49a65b6f55cc2847e30f9991276702e240"
+        },
+        {
+          "id": "device_disconnected",
+          "collection": "2026-10-16",
+          "renderSha256": "ad196e20c0caee6ee998211af94aaa21cb09b0bce152d55db35ccbafb5f0518b"
+        },
+        {
+          "id": "searching_web",
+          "collection": "2026-10-16",
+          "renderSha256": "f5302061d65e827b7cca2728edd05ddde18ba57558c4d0b9bfd5fe230771a5cb"
+        },
+        {
+          "id": "search_found",
+          "collection": "2026-10-16",
+          "renderSha256": "f7351e7e8728e4cb13e1508f4f7c1fc01b72ff7dc4095a2cf54a5631e84348ce"
+        },
+        {
+          "id": "organizing",
+          "collection": "2026-10-16",
+          "renderSha256": "fd2f81256d435667fe8bde776f5de0ecba5a51b03b4bfd41b34a4b8c2fc5d982"
+        },
+        {
+          "id": "explaining",
+          "collection": "2026-10-16",
+          "renderSha256": "11cd48f82928b86bc7457d6b9a2a2d747c2b2ebbf947d0b5439d9600934652a9"
+        },
+        {
+          "id": "remembering",
+          "collection": "2026-10-16",
+          "renderSha256": "b27645dba1e1add36c8a62d31c21048423381e38ca2f5f75dd3e024afbb62d7c"
+        },
+        {
+          "id": "waiting_patiently",
+          "collection": "2026-10-16",
+          "renderSha256": "0d56b76f31be918cfd3e52fc6d83cc9174852eadc0cae4f6bb5b3ee174df06e9"
+        },
+        {
+          "id": "careful_warning",
+          "collection": "2026-10-16",
+          "renderSha256": "cd1ea3c966ca841e1b58108fa2748b20052b4deea8bfc2088ac1a7d8e08b78fc"
+        },
+        {
+          "id": "task_complete",
+          "collection": "2026-10-16",
+          "renderSha256": "367d72c37a8e4fc2b70ecb5ebfa8e05a57a567a4b2911ec9e542be778967f4a0"
+        },
+        {
+          "id": "honest_limitation",
+          "collection": "2026-10-16",
+          "renderSha256": "d8a85dff424365d661c8bdbdca155684378ba5e9b64c06332556224a29d4e614"
+        },
+        {
+          "id": "back_to_you",
+          "collection": "2026-10-16",
+          "renderSha256": "aa17425fc49a7255888dc713026f3d19291221c637de8206f84242f0abbcc633"
+        },
+        {
+          "id": "understood_brief",
+          "collection": "2026-10-17",
+          "renderSha256": "7df8f21e5afe1e99cd6c86f639a2a1820004b0b88f03e04a1357374de95a7c3e"
+        },
+        {
+          "id": "point_taken",
+          "collection": "2026-10-17",
+          "renderSha256": "73e0c7a85d7e7d96eb2349de9b752a574ae02f2b9092390f881a60a64459bc3e"
+        },
+        {
+          "id": "that_makes_sense",
+          "collection": "2026-10-17",
+          "renderSha256": "6f52fa5566eb62eb3e3b398722904f8cf12ceca1b8094f35aaa47b019c709ff4"
+        },
+        {
+          "id": "good_catch",
+          "collection": "2026-10-17",
+          "renderSha256": "1a34850378483df0afefb4662f947a9f021f1f927a6b4019ddef3711211ea577"
+        },
+        {
+          "id": "with_you_so_far",
+          "collection": "2026-10-17",
+          "renderSha256": "18aae91905efa674330a309894666c94d417c4bba24165e6d29446f0f365841b"
+        },
+        {
+          "id": "agreement_calm",
+          "collection": "2026-10-17",
+          "renderSha256": "842239cb0d00ebb969162bd4ed01d18b784cd64c31b4b1e8a42a6fc09551fbf5"
+        },
+        {
+          "id": "message_received",
+          "collection": "2026-10-17",
+          "renderSha256": "bd00dc231590d242200610e2b0704d81aec2f4820c24948110e911c096f9244a"
+        }
+      ]
+    },
+    {
+      "file": "sheet-10.png",
+      "firstIndex": 181,
+      "lastIndex": 200,
+      "entries": [
+        {
+          "id": "thanks_small",
+          "collection": "2026-10-17",
+          "renderSha256": "0cdce4534c90e1e4fab6523bd8b25528b8f49e21b9bb8205a4b9616d43661072"
+        },
+        {
+          "id": "your_call",
+          "collection": "2026-10-17",
+          "renderSha256": "44fdb63b8aa84e09037605e52b04bd551956ed71152a65f1c69bd7ab0d40308e"
+        },
+        {
+          "id": "we_agree",
+          "collection": "2026-10-17",
+          "renderSha256": "a8afa8511d7fa0ff493ebdb52317adf20022cac83a48f6e26b501db5604e0e0c"
+        },
+        {
+          "id": "listening_open",
+          "collection": "2026-10-17",
+          "renderSha256": "eb709b9b400b8777bf54d1c003bee23f1cd58b5c4516b4ab031f4451b06c2846"
+        },
+        {
+          "id": "listening_thoughtful",
+          "collection": "2026-10-17",
+          "renderSha256": "b962db0e4ebf77dcae7c2fad2c255359661a9839d644936c6c637800e3e3a13d"
+        },
+        {
+          "id": "tell_me_more",
+          "collection": "2026-10-17",
+          "renderSha256": "7ecf92c767f45f97f86652723a77d5ef3abc790bb9aec9765221714161c0af5d"
+        },
+        {
+          "id": "listening_serious",
+          "collection": "2026-10-17",
+          "renderSha256": "0c0ad7fc08a0d0b877fb30bed4bd8f99d2059d62e693436c9735e603e60da530"
+        },
+        {
+          "id": "taking_it_in",
+          "collection": "2026-10-17",
+          "renderSha256": "f919704769707e77c81314854bffe9c261c94f03240e0e75058fd4230a8d9ec3"
+        },
+        {
+          "id": "attentive_patience",
+          "collection": "2026-10-17",
+          "renderSha256": "d7de4af9c215898d3ce6e6a820f04e621ea3b927f9bb0880e914906bf99b7531"
+        },
+        {
+          "id": "listening_warm",
+          "collection": "2026-10-17",
+          "renderSha256": "4980b5c5a31b8f5f835f9d22297f83412376e0ccefad6e6018959f78f258ec9a"
+        },
+        {
+          "id": "following_detail",
+          "collection": "2026-10-17",
+          "renderSha256": "1c416896a0cc8247046a10430e2912ea78f031d3690a3aed21738c9ba0af0f5f"
+        },
+        {
+          "id": "room_for_you",
+          "collection": "2026-10-17",
+          "renderSha256": "8937804ae99761a41633972a34350e094163ec2bd276fb1d031b9a107d038511"
+        },
+        {
+          "id": "waiting_for_finish",
+          "collection": "2026-10-17",
+          "renderSha256": "e7c57f2b5ca3049722e9a8de92aeda21091d99de76780719a90ca24ebfd137bd"
+        },
+        {
+          "id": "one_specific_question",
+          "collection": "2026-10-17",
+          "renderSha256": "6fde502cf32aaa9a69ce1ee1c16a40b7296b1132a62f7e88bd55f547f96a2457"
+        },
+        {
+          "id": "two_meanings",
+          "collection": "2026-10-17",
+          "renderSha256": "db987b135d196e6b7a38d1c887b746f5e808f4ec692ee0189311b459e49622b6"
+        },
+        {
+          "id": "name_check",
+          "collection": "2026-10-17",
+          "renderSha256": "035d8e733a49911008d89aac6fc26263b65fa23188038efb6e8d0431c9d62ff5"
+        },
+        {
+          "id": "heard_fragment",
+          "collection": "2026-10-17",
+          "renderSha256": "15e025fa129c946432ae4b18701db9ae2316ccdc234be7ba4b65126820a8dc67"
+        },
+        {
+          "id": "which_of_two",
+          "collection": "2026-10-17",
+          "renderSha256": "e35da06ee1d9693b0950498bcf07e8891bf2792a384a026006486d8a7a204997"
+        },
+        {
+          "id": "confirm_before_change",
+          "collection": "2026-10-17",
+          "renderSha256": "e47232bce0941f5e171aa10c1d18928ccfb6c65125fac3c27740907dcdb6ae03"
+        },
+        {
+          "id": "resolved_ambiguity",
+          "collection": "2026-10-17",
+          "renderSha256": "cb81567ce7dda71e4804c3d16a6f30c476a769bf37a8edde112402c9c57e5776"
+        }
+      ]
+    },
+    {
+      "file": "sheet-11.png",
+      "firstIndex": 201,
+      "lastIndex": 220,
+      "entries": [
+        {
+          "id": "checking_reference",
+          "collection": "2026-10-17",
+          "renderSha256": "6053307e2a0db1e6c79745a46d6447e842edfc940dabe8ce34045820d1596146"
+        },
+        {
+          "id": "quiet_correction",
+          "collection": "2026-10-17",
+          "renderSha256": "2eb32b7354177408d06d18a4487ccdaab3c2710d265a6cf1e39b8017ffa962ac"
+        },
+        {
+          "id": "clarified_ready",
+          "collection": "2026-10-17",
+          "renderSha256": "9b32d11414edf48044b3a39700a1ea01f15b86cca3e371cea6303d40e9b5b4c5"
+        },
+        {
+          "id": "connecting_dots",
+          "collection": "2026-10-17",
+          "renderSha256": "15b1cc3a77103eb13734dc957c11866fa52faaa7ae0fea33056287b7205f4c23"
+        },
+        {
+          "id": "checking_assumption",
+          "collection": "2026-10-17",
+          "renderSha256": "bd8d5c13ab931a25439174b35cd82babf313b59b7fa0ac85ae724582f44a0832"
+        },
+        {
+          "id": "considering_tradeoff",
+          "collection": "2026-10-17",
+          "renderSha256": "1898515e3fc657baf336103e37c229496b0c37a6e31a9a3e1809734810826282"
+        },
+        {
+          "id": "evidence_first",
+          "collection": "2026-10-17",
+          "renderSha256": "4cd1f0b6aa2336f96b02d3f647db7cb5ba4ac448fc9e318ba6b24ce8f4a7d190"
+        },
+        {
+          "id": "second_thought",
+          "collection": "2026-10-17",
+          "renderSha256": "2a63c8bd5e83d9f73e14ec677e1d542cf4afc6efbffef12c9dbfe0d843ee8b61"
+        },
+        {
+          "id": "reasoned_agreement",
+          "collection": "2026-10-17",
+          "renderSha256": "dfe39e25470a79dc4b9b12175a74919ca35faa36b1d06f732ba1469867adfbb8"
+        },
+        {
+          "id": "reasoned_disagreement",
+          "collection": "2026-10-17",
+          "renderSha256": "f21e69227f8d91724739d192776738d7129841e8a0e1b7cab8732e3227b59ef1"
+        },
+        {
+          "id": "seeing_pattern",
+          "collection": "2026-10-17",
+          "renderSha256": "07522f9a29e549e68a0ea34472526e527249e273970be34839cfa88c10e482f4"
+        },
+        {
+          "id": "careful_estimate",
+          "collection": "2026-10-17",
+          "renderSha256": "7633fae47bf00b1cfb70d569dfbdb8f319ae7395ac4cab83fbd05dd25497348d"
+        },
+        {
+          "id": "conclusion_reached",
+          "collection": "2026-10-17",
+          "renderSha256": "7ec983af37d10f0d9d5aab48d28d76652e90e63fec49a95332c9a63ecfa8b7b7"
+        },
+        {
+          "id": "issue_spotted",
+          "collection": "2026-10-17",
+          "renderSha256": "1fe27aaab89835ffb61a50ac8604848f936e96d5136fb4d9f14e8cf600effb00"
+        },
+        {
+          "id": "reproducing_issue",
+          "collection": "2026-10-17",
+          "renderSha256": "03493ce5d4ef5c634e3873d34b1af7b5cef668e0e804197f853369922252ff78"
+        },
+        {
+          "id": "trying_alternative",
+          "collection": "2026-10-17",
+          "renderSha256": "b7a4329ccd569a2b84146fb787f381ad00dd26d55d27eed90a7d9a0fd17267ce"
+        },
+        {
+          "id": "unexpected_result",
+          "collection": "2026-10-17",
+          "renderSha256": "0f25e95241f1adfc9944b5f2e53cd25df1df77cec8c021c042992eac133e4faf"
+        },
+        {
+          "id": "small_setback",
+          "collection": "2026-10-17",
+          "renderSha256": "dd90cf81f802f9ca2062d5b6feccd17c15ac2fb1d52d341ac91e63b2a490ecf7"
+        },
+        {
+          "id": "fix_in_progress",
+          "collection": "2026-10-17",
+          "renderSha256": "98ad8b18cc3e9235445a88dc374e2cffd52c72a8773ac2b97d884b2c6f391f36"
+        },
+        {
+          "id": "checking_fix",
+          "collection": "2026-10-17",
+          "renderSha256": "ec40660f0671e21a44423efc8510c4c1181d48aea3b5b6a6e6142be9cfc06262"
+        }
+      ]
+    },
+    {
+      "file": "sheet-12.png",
+      "firstIndex": 221,
+      "lastIndex": 240,
+      "entries": [
+        {
+          "id": "fixed_and_checked",
+          "collection": "2026-10-17",
+          "renderSha256": "c6735d3db9c1d9208973fec305c80f2f46c2a4d24910b87ee02aee90091975eb"
+        },
+        {
+          "id": "honest_retry",
+          "collection": "2026-10-17",
+          "renderSha256": "0d6034f67889d6d1f3cb8ac60f7897652a4a0c3eeecebcb60cd7d4f274870a47"
+        },
+        {
+          "id": "safe_rollback",
+          "collection": "2026-10-17",
+          "renderSha256": "dc73f1f0a90fad65c584b1ecec2fbc90e84b85a5608c1eeafb94483c135e8eb2"
+        },
+        {
+          "id": "new_perspective",
+          "collection": "2026-10-17",
+          "renderSha256": "1ad3b4863cd63a9a24c011341d4713ff474d134192bb61226a14f25a406f0eb8"
+        },
+        {
+          "id": "interesting_fact",
+          "collection": "2026-10-17",
+          "renderSha256": "579b32a263f563f20868f5c9e1e051e649879ccbba0f85401b37b0786cd589c7"
+        },
+        {
+          "id": "useful_connection",
+          "collection": "2026-10-17",
+          "renderSha256": "d4de5df88fc12be7f5bbc468540d505f40696f4347d0eb484210f318b73e41e5"
+        },
+        {
+          "id": "concept_clicks",
+          "collection": "2026-10-17",
+          "renderSha256": "3d753fef495d339615d8928a5baa86d2fb69396b903c5732b0938db0086de593"
+        },
+        {
+          "id": "patient_explanation",
+          "collection": "2026-10-17",
+          "renderSha256": "d881a1cf45c41f82515d58527b292792d4ac19bf78dca5c9cd416b3ddd3a80cd"
+        },
+        {
+          "id": "tiny_example",
+          "collection": "2026-10-17",
+          "renderSha256": "59e866fe14d54cfd78f80093b03e498fb9f5125bbd3293a588a766f8ac0eecbf"
+        },
+        {
+          "id": "subtle_difference",
+          "collection": "2026-10-17",
+          "renderSha256": "9394db43ea24300e23411088ef97dfcedbb579fc8af3bdca0b479fd242731854"
+        },
+        {
+          "id": "learning_together",
+          "collection": "2026-10-17",
+          "renderSha256": "65590b37586b55e0954c2ba88d6c9ac145f5afa747a0656cae68c609f8cd7a8f"
+        },
+        {
+          "id": "useful_question",
+          "collection": "2026-10-17",
+          "renderSha256": "a9f69a304bd8d5709b289a7c3fe4c7089315a7a2a3f1021c4878e3a5b2d7f78b"
+        },
+        {
+          "id": "knowledge_boundary",
+          "collection": "2026-10-17",
+          "renderSha256": "ecbe73cc347005ab84d07c1813bb994b37d4686de9e4178e64ffc77415dd168e"
+        },
+        {
+          "id": "story_opening",
+          "collection": "2026-10-17",
+          "renderSha256": "052e67b141cb8905d917a7464508f80e62b4d750933adf8b12c71ce2dada0bc5"
+        },
+        {
+          "id": "story_suspense",
+          "collection": "2026-10-17",
+          "renderSha256": "0847b08a4c1d864c164c0fd2a619ff9e26e20faa66bfa1effae88f80ce149996"
+        },
+        {
+          "id": "story_twist",
+          "collection": "2026-10-17",
+          "renderSha256": "bb734c0908dfc2d5c8a4ed114e6cbf63479cd71d7201ee7514f5ae99228eb947"
+        },
+        {
+          "id": "story_irony",
+          "collection": "2026-10-17",
+          "renderSha256": "b53e86a72d2b30dc1f905e999c115e1f50cc5e3681e1b4012b1e36b53511c2c0"
+        },
+        {
+          "id": "story_tender",
+          "collection": "2026-10-17",
+          "renderSha256": "60297b16d14162451f5ba5d75aaf88ba50566dd21896e433a8bdcccd529335da"
+        },
+        {
+          "id": "story_somber",
+          "collection": "2026-10-17",
+          "renderSha256": "9810281d1f7fd8cb6b1e68ecd2b3e4604e7d759e1dcebb42092f52fa535fbbf4"
+        },
+        {
+          "id": "story_turnaround",
+          "collection": "2026-10-17",
+          "renderSha256": "629ae271f1dd4def1701b62eef783b913ccfb9b8fc348d464c0336492e51719f"
+        }
+      ]
+    },
+    {
+      "file": "sheet-13.png",
+      "firstIndex": 241,
+      "lastIndex": 260,
+      "entries": [
+        {
+          "id": "story_punchline",
+          "collection": "2026-10-17",
+          "renderSha256": "66123acb64a10af7ea996329d25915ca9b764c295d3eed930d9b6313b44733f7"
+        },
+        {
+          "id": "story_finished",
+          "collection": "2026-10-17",
+          "renderSha256": "4fad8b64786a847c6690a3ad0ac760df2cccfb16d5aa5c820a1264dc17fdf0ac"
+        },
+        {
+          "id": "story_reflection",
+          "collection": "2026-10-17",
+          "renderSha256": "fb89b7e41a0764f4c5fc3cce9c1fc5c39a38f138f7b65d01c67069ce8749a502"
+        },
+        {
+          "id": "knowing_look",
+          "collection": "2026-10-17",
+          "renderSha256": "0966912be335e75a105c5c7cb318fe99a7f8eb4dae0f79a2cac8a8b882f3ade3"
+        },
+        {
+          "id": "friendly_dare",
+          "collection": "2026-10-17",
+          "renderSha256": "23dad6823ba54fc59be5752d186b5d426cc4f5a7b597ea73f4998358d676d7a0"
+        },
+        {
+          "id": "innocent_act",
+          "collection": "2026-10-17",
+          "renderSha256": "d3b67773fa72b12e0901494423bccf8bd78be49d59516ef2281c99fc526e8358"
+        },
+        {
+          "id": "deadpan_pause",
+          "collection": "2026-10-17",
+          "renderSha256": "26df649e752ca73cb3b0f11d5ed304e32f612d5ca6a48aa9f65b92ff87a9d5d3"
+        },
+        {
+          "id": "nearly_laughing",
+          "collection": "2026-10-17",
+          "renderSha256": "c8a3756231e90b40ab4bf4cea91a10ad08e50597a32ba74215b2fa46d72df1a2"
+        },
+        {
+          "id": "caught_grinning",
+          "collection": "2026-10-17",
+          "renderSha256": "b1e7a7ffc1fd206045768d196dbb729c2724b7b8612238d3513d5cb024f90247"
+        },
+        {
+          "id": "you_got_me",
+          "collection": "2026-10-17",
+          "renderSha256": "05a2c4ed2df556be8a3f3902f74165a24c6c80dd81ef1994618021865b563953"
+        },
+        {
+          "id": "mock_suspicion",
+          "collection": "2026-10-17",
+          "renderSha256": "d2ed2f8ec821a203980213fbb5ed432d1abb01a426706542691b2df79b8e2c71"
+        },
+        {
+          "id": "playful_truce",
+          "collection": "2026-10-17",
+          "renderSha256": "6a8484ec04d058357cb77652d7091c79e1666428c201fc4c443cb8be4ae16594"
+        },
+        {
+          "id": "shared_smirk",
+          "collection": "2026-10-17",
+          "renderSha256": "18697a8355cd6b2c9db4a2fe5cab1799afe0324750d164d2e50823f6fec3a668"
+        },
+        {
+          "id": "quiet_empathy",
+          "collection": "2026-10-17",
+          "renderSha256": "93be2e9df21ef778e73863cf868c790eec0ba43458d15b4068fb6d82aaff3044"
+        },
+        {
+          "id": "no_pressure",
+          "collection": "2026-10-17",
+          "renderSha256": "0ddafeb8ba8e2fec2a1bf1108b9c23dd8275c482aab759d8e6c3afa392c7d698"
+        },
+        {
+          "id": "understanding_sigh",
+          "collection": "2026-10-17",
+          "renderSha256": "6716b77b0ef2ff19ddc1de7fe957a3f96be19ffda45ac65ccc200da826caeba9"
+        },
+        {
+          "id": "gentle_presence",
+          "collection": "2026-10-17",
+          "renderSha256": "2df111ecbb5681c9a5d746c0da1fb12c2ddca24020b7820804376d67885a2bc5"
+        },
+        {
+          "id": "a_bit_better",
+          "collection": "2026-10-17",
+          "renderSha256": "22c99ae4d6963436113cafd53c879beeff138223af778ee01cd42f7f088be3da"
+        },
+        {
+          "id": "respecting_space",
+          "collection": "2026-10-17",
+          "renderSha256": "bd839ffea0ef69bc68deecf7f3131b057306f0717e918d18414c5d028a881a5f"
+        },
+        {
+          "id": "warm_resolve",
+          "collection": "2026-10-17",
+          "renderSha256": "b67533f59a8a4eb8609ec1f260dc3a8278070f92e211713198d958a49f3efcf7"
+        }
+      ]
+    },
+    {
+      "file": "sheet-14.png",
+      "firstIndex": 261,
+      "lastIndex": 280,
+      "entries": [
+        {
+          "id": "gentle_honesty",
+          "collection": "2026-10-17",
+          "renderSha256": "a410df6652f9da990d024c2140de029e5459e09fd924d6bba4ee9056b24c42fc"
+        },
+        {
+          "id": "reassured",
+          "collection": "2026-10-17",
+          "renderSha256": "b892bd0fc44925ed81e9c24bd1202640d420bf23cbc3b88d9ca3db1cff9e75e3"
+        },
+        {
+          "id": "small_relief",
+          "collection": "2026-10-17",
+          "renderSha256": "20f403a8180adfda87c88649cea32fec55ca914b8c4f4fa29af0feeb9ea20a03"
+        },
+        {
+          "id": "idea_spark",
+          "collection": "2026-10-17",
+          "renderSha256": "e026f3ed5bb72f04f76c1def2977411c37a01d4b5f2a6e4b3049993951ea5630"
+        },
+        {
+          "id": "sketching_idea",
+          "collection": "2026-10-17",
+          "renderSha256": "5c44f7749d244308f02defc81ebab56be7f4aa1417edfd8b3c4e0197aab116f4"
+        },
+        {
+          "id": "bold_proposal",
+          "collection": "2026-10-17",
+          "renderSha256": "24c816aee4bf043e2c8c8a507a0c8dc388819d6a2f30b1439ac8b7089f3b0d48"
+        },
+        {
+          "id": "creative_doubt",
+          "collection": "2026-10-17",
+          "renderSha256": "cc5147094255565dc4c9ed0cc50144545f38afb6de9817b72e50af360b7ec935"
+        },
+        {
+          "id": "simplifying",
+          "collection": "2026-10-17",
+          "renderSha256": "8fef85e655629e56ec412b61a384df5313d164b31e223685a9e00857ed5aeef3"
+        },
+        {
+          "id": "design_detail",
+          "collection": "2026-10-17",
+          "renderSha256": "0661af1a3bf360236e71538d58a5100d610fcc75da722c799147f831512b8d14"
+        },
+        {
+          "id": "better_version",
+          "collection": "2026-10-17",
+          "renderSha256": "37668d6c29b298301a1287f82ce3c586238799c73bcd25424bd1d0a3a782205f"
+        },
+        {
+          "id": "creative_flow",
+          "collection": "2026-10-17",
+          "renderSha256": "043dc833b2981e7ceb83b3da419c0b76060d54b7a06526024f3d10c16ff4d1c1"
+        },
+        {
+          "id": "inviting_feedback",
+          "collection": "2026-10-17",
+          "renderSha256": "b12bdc6a84f7bbebaffc491a46e69a27d4a39330fc9a795b904ee3c7ae366863"
+        },
+        {
+          "id": "finished_draft",
+          "collection": "2026-10-17",
+          "renderSha256": "5693cdc67507b88177d1f4efa27965aa34bc04f832dd47e3f33f17107af8fb2f"
+        },
+        {
+          "id": "source_check",
+          "collection": "2026-10-17",
+          "renderSha256": "cffc98ff5d1aa7da1c9b508cbe126650055de2ac0e79a0861190faf65c6dc1d1"
+        },
+        {
+          "id": "result_relevant",
+          "collection": "2026-10-17",
+          "renderSha256": "0bc348f156db3743bc8b9b0363ef47b42aacf7593afd05a2b422d03d0e97dd06"
+        },
+        {
+          "id": "conflicting_sources",
+          "collection": "2026-10-17",
+          "renderSha256": "7d94bde3527c2d634b541f6e06237d989e767b744ec133d71c50245061be3272"
+        },
+        {
+          "id": "date_matters",
+          "collection": "2026-10-17",
+          "renderSha256": "59944917caa7aa8da8eec240303fae1f9bd8b17b9b9094cab7607911e7acc4d9"
+        },
+        {
+          "id": "reading_carefully",
+          "collection": "2026-10-17",
+          "renderSha256": "1b29f1849d83e8f3a9273f67cb22a9c4093798e3b81f6dba7df5993e6d3f3a15"
+        },
+        {
+          "id": "finding_context",
+          "collection": "2026-10-17",
+          "renderSha256": "374ac6b9640b68fb1437ad38774be20f431d20cef8f7f5a1ea24b46daf43e8ee"
+        },
+        {
+          "id": "answer_located",
+          "collection": "2026-10-17",
+          "renderSha256": "97e8929ada09052f641b3849f231b0f189cdce15d096d8fe96e674f1aaf77ea3"
+        }
+      ]
+    },
+    {
+      "file": "sheet-15.png",
+      "firstIndex": 281,
+      "lastIndex": 300,
+      "entries": [
+        {
+          "id": "not_enough_evidence",
+          "collection": "2026-10-17",
+          "renderSha256": "97359afec87ed487a38396ec8f47a2e06deaa3d24281901b7b6f1c2bd0735a2b"
+        },
+        {
+          "id": "source_resolved",
+          "collection": "2026-10-17",
+          "renderSha256": "c2efb6669d46a9d854f01b98e37d4eddc3f896cf0e204ba01a3fcaea86eadd76"
+        },
+        {
+          "id": "research_complete",
+          "collection": "2026-10-17",
+          "renderSha256": "a695e699af3ac44faa6f4ed1d2e7483d667e0010c587e42a275fa4fce1dd0077"
+        },
+        {
+          "id": "brief_pause",
+          "collection": "2026-10-17",
+          "renderSha256": "16285def72aa918639a7ae2526325b57c4f07536747548ff72e005989b54c107"
+        },
+        {
+          "id": "back_after_pause",
+          "collection": "2026-10-17",
+          "renderSha256": "c9edae4408d6d80291f15d419bea69c3fecffbcbe3a260a457fa5f59558028b2"
+        },
+        {
+          "id": "unhurried",
+          "collection": "2026-10-17",
+          "renderSha256": "c6858765a8a518f030c5218bb48364d2dacf20b8a659306135b04571eca07189"
+        },
+        {
+          "id": "ready_when_you_are",
+          "collection": "2026-10-17",
+          "renderSha256": "afd24e7668601b0217408ed3bf9b02dd99fdbee18298c756c75f9e16d6b58903"
+        },
+        {
+          "id": "late_but_attentive",
+          "collection": "2026-10-17",
+          "renderSha256": "fd97e312ef0f9a571fe12ffb4cc82c76323aa41ce84da3bd8fde416fe5c43e76"
+        },
+        {
+          "id": "winding_down",
+          "collection": "2026-10-17",
+          "renderSha256": "b3b2dff7c9a073fa1b32adf54c893e8ab68c0334ed5e6db2f73c0a097920ce8d"
+        },
+        {
+          "id": "rest_requested",
+          "collection": "2026-10-17",
+          "renderSha256": "5014b391d174235f370a1cbd8087e9e6f7b1ad77b53d1fb8c02fdc792ecca25c"
+        },
+        {
+          "id": "refreshed_attention",
+          "collection": "2026-10-17",
+          "renderSha256": "f702273301f3b1ff62e56de19a740ec36a20cacc3f43e3bc73dbc226eaddc250"
+        },
+        {
+          "id": "easy_goodnight",
+          "collection": "2026-10-17",
+          "renderSha256": "21298046684ebb9bfe520e77fca480d7ec01ca2a52e766b694d225975d972a11"
+        },
+        {
+          "id": "calm_handoff",
+          "collection": "2026-10-17",
+          "renderSha256": "3daf0bc3e061e77b8f9a22bcc3a86b7a10295014d4b1e109f1faace379e25b29"
+        },
+        {
+          "id": "my_mistake",
+          "collection": "2026-10-17",
+          "renderSha256": "f684cb292f52c7b9d211854afb2c97178c658fb5f864f26c7dfe4057d5af159f"
+        },
+        {
+          "id": "correcting_course",
+          "collection": "2026-10-17",
+          "renderSha256": "e4a71bc611b197a270fc60aa8b24198ca1ec3cbfb8943a38e128aa151166e091"
+        },
+        {
+          "id": "thanks_for_correction",
+          "collection": "2026-10-17",
+          "renderSha256": "9b70434854963cb4a0bd596f1d6e21c896f642e00f74aefedd5d27a001b4cd11"
+        },
+        {
+          "id": "checking_understanding",
+          "collection": "2026-10-17",
+          "renderSha256": "3d91c2fc54893d9a9681b5eec0cd5d9705df30c967316a3a20221e582a8849e3"
+        },
+        {
+          "id": "less_talk_more_action",
+          "collection": "2026-10-17",
+          "renderSha256": "a0bf0439b30a1ad06087a1a41d09968d11e0e9b798b5bf026458d5429fd9c772"
+        },
+        {
+          "id": "promise_kept",
+          "collection": "2026-10-17",
+          "renderSha256": "ae1e617c03ee92fd6e689cf91a74421a4dd7b390e5aa9992c015c7736af536ba"
+        },
+        {
+          "id": "limits_without_drama",
+          "collection": "2026-10-17",
+          "renderSha256": "cdc1488f2b585a570aee15672043da6f07cf8b800ffa17959d74ad64fb0c8528"
+        }
+      ]
+    },
+    {
+      "file": "sheet-16.png",
+      "firstIndex": 301,
+      "lastIndex": 320,
+      "entries": [
+        {
+          "id": "trust_restored",
+          "collection": "2026-10-17",
+          "renderSha256": "9c736485d9484564c66d48470a382cb13ea2987cabe52c46510a3dac4872b637"
+        },
+        {
+          "id": "taking_feedback",
+          "collection": "2026-10-17",
+          "renderSha256": "cd7d9a5631eb7fc3d7e7dfa59a91dc613db8370213c111ce2c941f7ed8e5069a"
+        },
+        {
+          "id": "moving_on",
+          "collection": "2026-10-17",
+          "renderSha256": "1082b100d7992801a6d9be49641cbbd1da900b93bc39e22c840991d8a5d222be"
+        },
+        {
+          "id": "music_soft_beat",
+          "collection": "2026-10-17",
+          "renderSha256": "6f79452c32bcf3d9dc0cc5849a973b28c79ffc6a1ed13cdb145b753d18501cf0"
+        },
+        {
+          "id": "music_bass_line",
+          "collection": "2026-10-17",
+          "renderSha256": "e5b4996ae4b2d772c875b5f642e3852692286b0d8b4842e387b677177ceea75e"
+        },
+        {
+          "id": "music_familiar",
+          "collection": "2026-10-17",
+          "renderSha256": "97d9e610732beabd85adb3dff14735b221018455f99b4586b29c657351ec0629"
+        },
+        {
+          "id": "music_attention_split",
+          "collection": "2026-10-17",
+          "renderSha256": "52a7da4d2f6133c069088d9cd6726e3e5e4015668e99a156dc2f8ea05c58acd0"
+        },
+        {
+          "id": "music_volume_set",
+          "collection": "2026-10-17",
+          "renderSha256": "3982a1d7de59de4e2b59c46cd8da11ac5c96611863fa85e380d77effc878e758"
+        },
+        {
+          "id": "music_next_ready",
+          "collection": "2026-10-17",
+          "renderSha256": "7152576c4b1ff07537fa6cb4af4e099396cceafb54052e435d7689836f667bb7"
+        },
+        {
+          "id": "screen_share_confirmed",
+          "collection": "2026-10-17",
+          "renderSha256": "913dfe7baa2df4406322536e681147fe0297c4e4fee4ef7312b059330d1d0339"
+        },
+        {
+          "id": "presentation_cue",
+          "collection": "2026-10-17",
+          "renderSha256": "4289ce65fa6da5eb455f6f44b3ddea8ecb5f87a340ee5271dff22c2157d1e93a"
+        },
+        {
+          "id": "sound_route_ready",
+          "collection": "2026-10-17",
+          "renderSha256": "219f4605dcc18c26457f524feb713188ea0d8f5e104c77c15420e8aac272509e"
+        },
+        {
+          "id": "connection_recovered",
+          "collection": "2026-10-17",
+          "renderSha256": "eb1bec35092d65c5fee229bb12fb214b40980e85f1fee7204aced9246ee2da52"
+        },
+        {
+          "id": "time_answer",
+          "collection": "2026-10-17",
+          "renderSha256": "8870139b4e0c8016914bce96fa3a2da3d0be040386f2b6d301438c7bdb79d664"
+        },
+        {
+          "id": "weather_context",
+          "collection": "2026-10-17",
+          "renderSha256": "e68f771a12773acd2e009e4c6187cc91eeea796bde721306a98f26cb9a08c221"
+        },
+        {
+          "id": "reminder_confirmed",
+          "collection": "2026-10-17",
+          "renderSha256": "02a7ab3183e2d86788924738fad216c1a3a0080addcd5020ba324b29ec5a70f1"
+        },
+        {
+          "id": "system_healthy",
+          "collection": "2026-10-17",
+          "renderSha256": "22bd6cac169911a85191276eb293a5b5488e6b52cdb2855e43a39ea0c6aa076e"
+        },
+        {
+          "id": "attention_needed",
+          "collection": "2026-10-17",
+          "renderSha256": "c7fc7015deb90ea78dac6b944f600d363e561bb511c7c4a9fa31ad691083c95a"
+        },
+        {
+          "id": "option_selected",
+          "collection": "2026-10-17",
+          "renderSha256": "0eda53dc2bd8da382d7827675c665e1dcfb8ab5ab87b09f9c526ec0aed662391"
+        },
+        {
+          "id": "small_favour_done",
+          "collection": "2026-10-17",
+          "renderSha256": "a35adfb1dd86cc49b938cfc3e37c9a9560d833119f62bbfdab23c24ce53a9a8d"
+        }
+      ]
+    },
+    {
+      "file": "sheet-17.png",
+      "firstIndex": 321,
+      "lastIndex": 323,
+      "entries": [
+        {
+          "id": "useful_shortcut",
+          "collection": "2026-10-17",
+          "renderSha256": "3632726652fe824966ca69f6393210af7fc7d5b1b8751f73d631e5f2bd540461"
+        },
+        {
+          "id": "next_step_clear",
+          "collection": "2026-10-17",
+          "renderSha256": "434e2a9dd1bf633fd5249213d0bf502857fa3d406477f6cf2860630695aa1fd9"
+        },
+        {
+          "id": "all_yours",
+          "collection": "2026-10-17",
+          "renderSha256": "46f7e2e563c196173b4019244d31a65a1a571e3cb3bb3ca5d76acecb265af4f1"
+        }
+      ]
+    }
+  ]
+}

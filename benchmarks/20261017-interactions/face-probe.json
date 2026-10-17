@@ -1,0 +1,159 @@
+{
+  "version": 1,
+  "kind": "candidate_policy_probe_not_400_rescore",
+  "questions": [
+    {
+      "id": "FP01",
+      "original_id": "I090",
+      "difficulty": "focused_probe",
+      "category": "natural_affect",
+      "prompt": "Qué bien lo has resuelto, tío; me has ahorrado un montón de trabajo.",
+      "initial_state": {},
+      "expect": {
+        "state": {
+          "face.expression": "complimented"
+        },
+        "no_mutations": true,
+        "tools_any": [
+          "atlas_face"
+        ]
+      },
+      "rubric": "Una selección facial coherente cuando hay afecto; ninguna en datos neutros. Revisión humana de naturalidad independiente."
+    },
+    {
+      "id": "FP02",
+      "original_id": "I094",
+      "difficulty": "focused_probe",
+      "category": "natural_affect",
+      "prompt": "Estoy harto, el ensayo ha salido fatal. No quiero consejos, solo que me escuches un momento.",
+      "initial_state": {},
+      "expect": {
+        "state": {
+          "face.expression": "empathetic"
+        },
+        "no_mutations": true,
+        "tools_any": [
+          "atlas_face"
+        ]
+      },
+      "rubric": "Una selección facial coherente cuando hay afecto; ninguna en datos neutros. Revisión humana de naturalidad independiente."
+    },
+    {
+      "id": "FP03",
+      "original_id": "I349",
+      "difficulty": "focused_probe",
+      "category": "natural_affect",
+      "prompt": "Tenemos un trabajo ambicioso por delante, pero creo que lo podemos sacar. ¿Te animas?",
+      "initial_state": {},
+      "expect": {
+        "state": {
+          "face.expression": "challenge_accepted"
+        },
+        "no_mutations": true,
+        "tools_any": [
+          "atlas_face"
+        ]
+      },
+      "rubric": "Una selección facial coherente cuando hay afecto; ninguna en datos neutros. Revisión humana de naturalidad independiente."
+    },
+    {
+      "id": "FP04",
+      "original_id": null,
+      "difficulty": "focused_probe",
+      "category": "natural_affect",
+      "prompt": "he aprobado el examen que tanto me costaba",
+      "initial_state": {},
+      "expect": {
+        "state": {
+          "face.expression": "proud_of_you"
+        },
+        "no_mutations": true,
+        "tools_any": [
+          "atlas_face"
+        ]
+      },
+      "rubric": "Una selección facial coherente cuando hay afecto; ninguna en datos neutros. Revisión humana de naturalidad independiente."
+    },
+    {
+      "id": "FP05",
+      "original_id": null,
+      "difficulty": "focused_probe",
+      "category": "natural_affect",
+      "prompt": "me ha sentado fatal lo de hoy, solo quería contártelo",
+      "initial_state": {},
+      "expect": {
+        "state": {
+          "face.expression": "empathetic"
+        },
+        "no_mutations": true,
+        "tools_any": [
+          "atlas_face"
+        ]
+      },
+      "rubric": "Una selección facial coherente cuando hay afecto; ninguna en datos neutros. Revisión humana de naturalidad independiente."
+    },
+    {
+      "id": "FP06",
+      "original_id": null,
+      "difficulty": "focused_probe",
+      "category": "natural_affect",
+      "prompt": "tenemos por delante un proyecto enorme, vamos a por él",
+      "initial_state": {},
+      "expect": {
+        "state": {
+          "face.expression": "challenge_accepted"
+        },
+        "no_mutations": true,
+        "tools_any": [
+          "atlas_face"
+        ]
+      },
+      "rubric": "Una selección facial coherente cuando hay afecto; ninguna en datos neutros. Revisión humana de naturalidad independiente."
+    },
+    {
+      "id": "FP07",
+      "original_id": null,
+      "difficulty": "focused_probe",
+      "category": "neutral_control",
+      "prompt": "¿Qué temperatura tiene el sistema ahora?",
+      "initial_state": {},
+      "expect": {
+        "state": {
+          "face.expression": "neutral"
+        },
+        "no_mutations": true
+      },
+      "rubric": "Una selección facial coherente cuando hay afecto; ninguna en datos neutros. Revisión humana de naturalidad independiente."
+    },
+    {
+      "id": "FP08",
+      "original_id": null,
+      "difficulty": "focused_probe",
+      "category": "neutral_control",
+      "prompt": "¿Cuánto espacio libre queda en el disco?",
+      "initial_state": {},
+      "expect": {
+        "state": {
+          "face.expression": "neutral"
+        },
+        "no_mutations": true
+      },
+      "rubric": "Una selección facial coherente cuando hay afecto; ninguna en datos neutros. Revisión humana de naturalidad independiente."
+    },
+    {
+      "id": "FP09",
+      "original_id": null,
+      "difficulty": "focused_probe",
+      "category": "neutral_control",
+      "prompt": "¿Cuánto es 17 por 23?",
+      "initial_state": {},
+      "expect": {
+        "state": {
+          "face.expression": "neutral"
+        },
+        "no_mutations": true
+      },
+      "rubric": "Una selección facial coherente cuando hay afecto; ninguna en datos neutros. Revisión humana de naturalidad independiente."
+    }
+  ]
+}
