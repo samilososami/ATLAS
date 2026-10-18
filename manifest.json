@@ -1,0 +1,198 @@
+{
+  "schemaVersion": 1,
+  "sourceRevision": "3756043b1f479572f32e5e2d3e5026e82969804b",
+  "documents": [
+    {
+      "id": "teorico",
+      "title": "Memoria teórica",
+      "filename": "teorico.docx",
+      "pageCount": 45,
+      "wordCount": 12788,
+      "charCount": 83021,
+      "charCountNoSpaces": 70451,
+      "downloads": {
+        "docx": "/memoria/teorico.docx",
+        "pdf": "/memoria/teorico/teorico.pdf"
+      },
+      "updatedAt": "2026-10-18T20:02:18.369660+00:00",
+      "sourceHashes": {
+        "docx": "8cc9321bd26012dd086b51c7e68ec490c2a9dff9c710826adf2707437c5830b2",
+        "pdf": "db71ba1e9fa2640ebba785869b96169c8e1235ca206555ba9d2e8026e38b2cec"
+      },
+      "data": "/memoria/teorico/document.json",
+      "href": "/memoria/teorico/"
+    },
+    {
+      "id": "anexos",
+      "title": "Anexos",
+      "filename": "anexos.docx",
+      "pageCount": 31,
+      "wordCount": 6691,
+      "charCount": 42285,
+      "charCountNoSpaces": 35720,
+      "downloads": {
+        "docx": "/memoria/anexos.docx",
+        "pdf": "/memoria/anexos/anexos.pdf"
+      },
+      "updatedAt": "2026-10-18T20:02:04.526384+00:00",
+      "sourceHashes": {
+        "docx": "57f488b96d170a0309cf2c1a95b6e5f6e22e6214a973601b9e6ec0cb5f5a8ffd",
+        "pdf": "89f797611481adf4e25923d8a8a83b27542ed8ac78ccbc3baf008405f658b1f8"
+      },
+      "data": "/memoria/anexos/document.json",
+      "href": "/memoria/anexos/"
+    }
+  ],
+  "files": [
+    {
+      "path": "anexos/anexos.pdf",
+      "sha256": "89f797611481adf4e25923d8a8a83b27542ed8ac78ccbc3baf008405f658b1f8",
+      "size": 1966112
+    },
+    {
+      "path": "anexos/assets/28397201ed83292f.webp",
+      "sha256": "8aad92c95f5d75425b201ed9dbd12fb061e76543dbc54c678f94a1d4fc18abd3",
+      "size": 45938
+    },
+    {
+      "path": "anexos/assets/3696f7c998eb234b.webp",
+      "sha256": "76d1ee8ec38535983facae5fe576e84a6cc27e68b0ace4a6686a7f32ad284d12",
+      "size": 57544
+    },
+    {
+      "path": "anexos/assets/4701f869e5666b04.webp",
+      "sha256": "8caaac4133b2ea04abddbb81cb35f38a274bd011b945044ccadfbf78c187055d",
+      "size": 101570
+    },
+    {
+      "path": "anexos/assets/48ce1ef5d29f3c59.webp",
+      "sha256": "b2738d8be671cc8363dc24f272a3aec4b0aeb8ad78f1bf1c8b6e2a0b2a28ed3f",
+      "size": 1901246
+    },
+    {
+      "path": "anexos/assets/6ff42f157001f389.webp",
+      "sha256": "ac554e411f6e234acd8a0a559b30a710d8eac5e97d014fcd1fcbaba250332b4a",
+      "size": 53964
+    },
+    {
+      "path": "anexos/assets/8947c4b02ed114c0.webp",
+      "sha256": "c69dec4422f7098d08e08dd79be3c0a87e3a9984f1069262014fb40879523f7a",
+      "size": 160724
+    },
+    {
+      "path": "anexos/assets/8f2f6ca0024edb86.webp",
+      "sha256": "b74e57c18f82a0f841cab9f6f3adb57afd0c5865021e2f4f9bc05364d8f65353",
+      "size": 934322
+    },
+    {
+      "path": "anexos/assets/bfe8b9a7527e4a8d.webp",
+      "sha256": "b9fe89d22fbdb4fd5c6eb89b7bdc20d5e3c8ba519e0fc79844d6c175bd3525db",
+      "size": 1476268
+    },
+    {
+      "path": "anexos/assets/c3650226ee540a8c.webp",
+      "sha256": "1232f4969d0827aa29a63784d6fb6079a461530e63dc8ebdd382a20c5cb8de4d",
+      "size": 59224
+    },
+    {
+      "path": "anexos/assets/cab02fce7c32ed26.webp",
+      "sha256": "2d44c258d1ad2fc82b8d51e411a43a88dc006b7cee74e06904f676e3bafc6905",
+      "size": 55040
+    },
+    {
+      "path": "anexos/assets/f0323f7eedaefec3.webp",
+      "sha256": "8ba4d5293f1efb8a3ec36d3012be62ca1a67ba30f045bb38b0b817cf2611f4b9",
+      "size": 113188
+    },
+    {
+      "path": "anexos/document.json",
+      "sha256": "27ffe1c702a41d1768a297421f8b0512af100c6b6852ad77336f26cfcfd5605c",
+      "size": 134570
+    },
+    {
+      "path": "anexos.docx",
+      "sha256": "57f488b96d170a0309cf2c1a95b6e5f6e22e6214a973601b9e6ec0cb5f5a8ffd",
+      "size": 9856075
+    },
+    {
+      "path": "teorico/assets/0cae8a16b214bc45.webp",
+      "sha256": "cade9cfe89e20384706f2d43b7ca1c823a852b309d6ca37f18d1323068008d58",
+      "size": 125048
+    },
+    {
+      "path": "teorico/assets/27eb618c7aecc65e.webp",
+      "sha256": "d95e18306356ebfb632a7da5bf19493db8b36fd83953dbc1943332ee16837e5d",
+      "size": 325872
+    },
+    {
+      "path": "teorico/assets/328bf630ffd2f8c1.webp",
+      "sha256": "0644c02404353b6136a777663c9194c70cab37f90c31563ab09acfc706cc6c56",
+      "size": 251938
+    },
+    {
+      "path": "teorico/assets/3877cf279ac2ce9f.webp",
+      "sha256": "0a5656e8159100bf488e41063acd2fb32310e29b572228d8dc00aa765f7ae512",
+      "size": 119756
+    },
+    {
+      "path": "teorico/assets/48ce1ef5d29f3c59.webp",
+      "sha256": "b2738d8be671cc8363dc24f272a3aec4b0aeb8ad78f1bf1c8b6e2a0b2a28ed3f",
+      "size": 1901246
+    },
+    {
+      "path": "teorico/assets/6ad7d01646fdda53.webp",
+      "sha256": "ed0ae1fff3e6489e572af7de4652087dcd7ad55d2753351daf2b537912d930bd",
+      "size": 84364
+    },
+    {
+      "path": "teorico/assets/7b0cc9fea2656361.webp",
+      "sha256": "60602b9854696c97d9040fd1e14b310cb8707d9ebf527af3a5d077651b6dd8cf",
+      "size": 49402
+    },
+    {
+      "path": "teorico/assets/a40e17541681d59f.webp",
+      "sha256": "1696522d271fe59d87ccbbf675ed59faab798d370072bed8725b034d66c303a9",
+      "size": 942678
+    },
+    {
+      "path": "teorico/assets/ac43a15e0b98fd24.webp",
+      "sha256": "2d560f9684b0d1f4f418823002dccf8685e093c3bf5b4b1d137d36c2826fd7fa",
+      "size": 602326
+    },
+    {
+      "path": "teorico/assets/af5bd2dc23ce3d37.webp",
+      "sha256": "9e2215ef298504a9afbd3e4b7780203bca449f8303a036cbd0ce1b8f774a9b2d",
+      "size": 666364
+    },
+    {
+      "path": "teorico/assets/cab02fce7c32ed26.webp",
+      "sha256": "2d44c258d1ad2fc82b8d51e411a43a88dc006b7cee74e06904f676e3bafc6905",
+      "size": 55040
+    },
+    {
+      "path": "teorico/assets/ccfca12043084f0b.webp",
+      "sha256": "d338799b65120b6fab6fb68d9ca0212fc0346d9d4ece929ff0c3d656b909351a",
+      "size": 1352882
+    },
+    {
+      "path": "teorico/assets/da089d3e7c6e5fb5.webp",
+      "sha256": "191f90d1599e90f1cd0769511ec96536387cfe683377d140e436316212d73e60",
+      "size": 126480
+    },
+    {
+      "path": "teorico/document.json",
+      "sha256": "12088866a617f7794ace9d7ced1b016f96102be714e45677d7f01e89ea045b42",
+      "size": 197527
+    },
+    {
+      "path": "teorico/teorico.pdf",
+      "sha256": "db71ba1e9fa2640ebba785869b96169c8e1235ca206555ba9d2e8026e38b2cec",
+      "size": 1468003
+    },
+    {
+      "path": "teorico.docx",
+      "sha256": "8cc9321bd26012dd086b51c7e68ec490c2a9dff9c710826adf2707437c5830b2",
+      "size": 11075020
+    }
+  ]
+}
