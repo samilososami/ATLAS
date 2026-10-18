@@ -1,0 +1,76 @@
+name: Publicar memoria
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'memoria/**'
+      - 'scripts/memoria/**'
+      - '.github/workflows/publish-memoria.yml'
+  workflow_dispatch:
+
+# Do not interrupt a publication between its asset commit and deployment hook.
+concurrency:
+  group: public-memoria
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  render:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: scripts/memoria/requirements.txt
+      - name: Install headless renderer and fonts
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install --no-install-recommends -y libreoffice-writer fonts-liberation2 fonts-crosextra-carlito fonts-dejavu-core
+          python -m pip install -r scripts/memoria/requirements.txt
+      - name: Test publication rules
+        run: python -m unittest discover -s scripts/memoria -p 'test_*.py'
+      - name: Generate semantic reader and downloads
+        run: python scripts/memoria/build.py --source memoria --output "$RUNNER_TEMP/memoria-public"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: memoria-public
+          path: ${{ runner.temp }}/memoria-public/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: render
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: actions/download-artifact@v4
+        with:
+          name: memoria-public
+          path: ${{ runner.temp }}/memoria-public
+      - name: Publish generated branch (never main)
+        env:
+          SOURCE_REVISION: ${{ github.sha }}
+        run: python scripts/memoria/publish_branch.py --assets "$RUNNER_TEMP/memoria-public" --revision "$SOURCE_REVISION"
+      - name: Refresh website
+        env:
+          DEPLOY_HOOK: ${{ secrets.ATLAS_WEB_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$DEPLOY_HOOK" ]; then
+            echo '::notice::Generated branch published. Set ATLAS_WEB_DEPLOY_HOOK to enable automatic website deployment.'
+          else
+            # Secret URL is never printed. Do not follow redirects to another host.
+            curl --silent --show-error --fail --max-time 30 --request POST --output /dev/null "$DEPLOY_HOOK"
+          fi
