@@ -77,7 +77,10 @@ def render_pdf(docx, directory, libreoffice):
     subprocess.run([libreoffice, '-env:UserInstallation=' + profile.as_uri(),
                     '--headless', '--nologo', '--nodefault', '--norestore',
                     '--convert-to', 'pdf:writer_pdf_Export', '--outdir', str(directory), str(docx)],
-                   check=True, timeout=240, env={**os.environ, 'SAL_USE_VCLPLUGIN': 'gen'})
+                   # The generic desktop backend still needs X11 despite
+                   # --headless. Use LibreOffice's software-only backend so
+                   # conversion also works on display-less CI runners.
+                   check=True, timeout=240, env={**os.environ, 'SAL_USE_VCLPLUGIN': 'svp'})
     pdf = directory / (docx.stem + '.pdf')
     if not pdf.is_file() or pdf.stat().st_size < 100:
         raise RuntimeError(f'LibreOffice did not create a PDF for {docx.name}')

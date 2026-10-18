@@ -1,15 +1,40 @@
 import json
 import hashlib
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 from zipfile import ZipFile
 
-from build import identifier, validate_docx
+from build import identifier, render_pdf, validate_docx
 from publish_branch import validate_bundle
 
 
 class PublicationTests(unittest.TestCase):
+    def test_render_uses_display_independent_backend(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            docx = root / 'test.docx'
+            output = root / 'render'
+            output.mkdir()
+
+            def convert(command, **kwargs):
+                self.assertIn('--headless', command)
+                self.assertEqual(kwargs['env']['SAL_USE_VCLPLUGIN'], 'svp')
+                self.assertNotIn('DISPLAY', kwargs['env'])
+                self.assertNotIn('WAYLAND_DISPLAY', kwargs['env'])
+                self.assertTrue(kwargs['check'])
+                self.assertEqual(kwargs['timeout'], 240)
+                self.assertIn('-env:UserInstallation=' + (output / 'profile').as_uri(), command)
+                (output / 'test.pdf').write_bytes(b'%PDF-' + b'0' * 100)
+
+            # Even a pre-existing GUI-backend preference must not make CI need X11.
+            with patch.dict(os.environ, {'SAL_USE_VCLPLUGIN': 'gen'}, clear=True), \
+                    patch('build.subprocess.run', side_effect=convert) as run:
+                self.assertEqual(render_pdf(docx, output, 'libreoffice'), output / 'test.pdf')
+                run.assert_called_once()
+
     def test_rename_is_reader_identifier(self):
         self.assertEqual(identifier('nombrecambiado.docx'), 'nombrecambiado')
         self.assertEqual(identifier('Teórico final.docx'), 'teorico-final')

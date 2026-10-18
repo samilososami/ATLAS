@@ -76,11 +76,14 @@ def export(docx,pdf,out,id,title):
         im=Image.open(io.BytesIO(raw)); dest=out/'assets'/f'{key}.webp'
         if not dest.exists(): im.save(dest,'WEBP',lossless=True)
         imagecount+=1
+        drawing=n
+        while drawing is not None and drawing.tag not in ('{'+NS['wp']+'}inline','{'+NS['wp']+'}anchor'):
+            drawing=drawing.getparent()
         parent=n
         while parent is not None and parent.tag!=W+'p':parent=parent.getparent()
         alt=''
         if parent is not None:
-            props=parent.find('.//wp:docPr',NS)
+            props=drawing.find('wp:docPr',NS) if drawing is not None else None
             if props is not None:alt=props.get('descr','')
             if not alt:
                 following=parent.getnext()
