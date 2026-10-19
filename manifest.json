@@ -1,23 +1,23 @@
 {
   "schemaVersion": 1,
-  "sourceRevision": "3756043b1f479572f32e5e2d3e5026e82969804b",
+  "sourceRevision": "d1ba617ee75466eb9e136741a96070174373a06f",
   "documents": [
     {
       "id": "teorico",
       "title": "Memoria teórica",
       "filename": "teorico.docx",
-      "pageCount": 45,
-      "wordCount": 12788,
-      "charCount": 83021,
-      "charCountNoSpaces": 70451,
+      "pageCount": 51,
+      "wordCount": 13969,
+      "charCount": 90398,
+      "charCountNoSpaces": 76674,
       "downloads": {
         "docx": "/memoria/teorico.docx",
         "pdf": "/memoria/teorico/teorico.pdf"
       },
-      "updatedAt": "2026-10-18T20:02:18.369660+00:00",
+      "updatedAt": "2026-10-19T07:17:47.684840+00:00",
       "sourceHashes": {
-        "docx": "8cc9321bd26012dd086b51c7e68ec490c2a9dff9c710826adf2707437c5830b2",
-        "pdf": "db71ba1e9fa2640ebba785869b96169c8e1235ca206555ba9d2e8026e38b2cec"
+        "docx": "6c68b3e73d8919a2523aae98dceb05168c6da791bce7c036a5471b52ec90a7aa",
+        "pdf": "94212a3e924047c3675648d3e0327bd29702043e96134ad6b308d7269e73d6ad"
       },
       "data": "/memoria/teorico/document.json",
       "href": "/memoria/teorico/"
@@ -34,10 +34,10 @@
         "docx": "/memoria/anexos.docx",
         "pdf": "/memoria/anexos/anexos.pdf"
       },
-      "updatedAt": "2026-10-18T20:02:04.526384+00:00",
+      "updatedAt": "2026-10-19T07:17:33.820141+00:00",
       "sourceHashes": {
         "docx": "57f488b96d170a0309cf2c1a95b6e5f6e22e6214a973601b9e6ec0cb5f5a8ffd",
-        "pdf": "89f797611481adf4e25923d8a8a83b27542ed8ac78ccbc3baf008405f658b1f8"
+        "pdf": "cbf677ff884ce48ee62ef54688d73322df832aced4422ae9b78376c33941213c"
       },
       "data": "/memoria/anexos/document.json",
       "href": "/memoria/anexos/"
@@ -46,7 +46,7 @@
   "files": [
     {
       "path": "anexos/anexos.pdf",
-      "sha256": "89f797611481adf4e25923d8a8a83b27542ed8ac78ccbc3baf008405f658b1f8",
+      "sha256": "cbf677ff884ce48ee62ef54688d73322df832aced4422ae9b78376c33941213c",
       "size": 1966112
     },
     {
@@ -106,7 +106,7 @@
     },
     {
       "path": "anexos/document.json",
-      "sha256": "27ffe1c702a41d1768a297421f8b0512af100c6b6852ad77336f26cfcfd5605c",
+      "sha256": "cd0d423ca49d5523013618d2a83ada12318c1d4219f71dbe38d9d8a6f28a02d8",
       "size": 134570
     },
     {
@@ -181,18 +181,18 @@
     },
     {
       "path": "teorico/document.json",
-      "sha256": "12088866a617f7794ace9d7ced1b016f96102be714e45677d7f01e89ea045b42",
-      "size": 197527
+      "sha256": "12604b68888e903ad2e6050119246eb1ae3950ac11bb8809b765d9b4820cdbfe",
+      "size": 215179
     },
     {
       "path": "teorico/teorico.pdf",
-      "sha256": "db71ba1e9fa2640ebba785869b96169c8e1235ca206555ba9d2e8026e38b2cec",
-      "size": 1468003
+      "sha256": "94212a3e924047c3675648d3e0327bd29702043e96134ad6b308d7269e73d6ad",
+      "size": 1494767
     },
     {
       "path": "teorico.docx",
-      "sha256": "8cc9321bd26012dd086b51c7e68ec490c2a9dff9c710826adf2707437c5830b2",
-      "size": 11075020
+      "sha256": "6c68b3e73d8919a2523aae98dceb05168c6da791bce7c036a5471b52ec90a7aa",
+      "size": 11078132
     }
   ]
 }
