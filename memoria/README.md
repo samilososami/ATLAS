@@ -2,10 +2,12 @@
 
 Estos son los documentos editables que utiliza el lector público:
 
-- `teorico.docx`: memoria del proyecto.
-- `anexos.docx`: pruebas, planos y documentación complementaria.
+- `teorico-español.docx`: memoria del proyecto en castellano.
+- `anexos-español.docx`: anexos en castellano.
+- `teoric-catalan.docx`: memòria del projecte en català.
+- `anexos-catalan.docx`: annexos en català.
 
-Para actualizar la web, sustituye el DOCX aquí y guarda el cambio en la rama
+Para actualizar la web, sustituye el DOCX correspondiente aquí y guarda el cambio en la rama
 `main`. GitHub Actions lo convierte y publica el lector automáticamente cuando
 termina la reconstrucción. Editar una copia en tu ordenador no cambia la web
 hasta que la subas a este directorio.

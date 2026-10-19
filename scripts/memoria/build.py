@@ -105,7 +105,12 @@ def build(source, output, pdf_dir=None, libreoffice='libreoffice', revision=''):
     docs = []
     for docx, slug in zip(files, ids):
         validate_docx(docx)
-        title = {'teorico': 'Memoria teórica', 'anexos': 'Anexos'}.get(slug, docx.stem.replace('_', ' ').replace('-', ' '))
+        title = {
+            'teorico-espanol': 'Memoria teórica',
+            'anexos-espanol': 'Anexos',
+            'teoric-catalan': 'Memòria teòrica',
+            'anexos-catalan': 'Annexos',
+        }.get(slug, docx.stem.replace('_', ' ').replace('-', ' '))
         with tempfile.TemporaryDirectory(prefix='atlas-memoria-render-') as temporary:
             pdf = pdf_dir / (docx.stem + '.pdf') if pdf_dir else render_pdf(docx, Path(temporary), libreoffice)
             if not pdf.is_file():
