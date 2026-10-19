@@ -1,198 +1,388 @@
 {
   "schemaVersion": 1,
-  "sourceRevision": "40e4727573e5e936d43df63608b3679d3f3c7353",
+  "sourceRevision": "47023ed4d9903c15c126bf66df2cacba3f206975",
   "documents": [
     {
-      "id": "teorico",
-      "title": "Memoria teórica",
-      "filename": "teorico.docx",
-      "pageCount": 50,
-      "wordCount": 13850,
-      "charCount": 89410,
-      "charCountNoSpaces": 75795,
+      "id": "anexos-espanol",
+      "title": "Anexos",
+      "filename": "anexos-español.docx",
+      "pageCount": 31,
+      "wordCount": 6626,
+      "charCount": 41567,
+      "charCountNoSpaces": 35062,
       "downloads": {
-        "docx": "/memoria/teorico.docx",
-        "pdf": "/memoria/teorico/teorico.pdf"
+        "docx": "/memoria/anexos-espa%C3%B1ol.docx",
+        "pdf": "/memoria/anexos-espanol/anexos-espanol.pdf"
       },
-      "updatedAt": "2026-10-19T19:34:23.733166+00:00",
+      "updatedAt": "2026-10-19T20:51:48.836124+00:00",
       "sourceHashes": {
-        "docx": "deed93601a71429a181e862aa88dfaf3304e4376293f4ac94e01290e88ad84bf",
-        "pdf": "77d85633fca1c66ab3e0f15314c1c055dc7a0df1c716b0280386cbc4893c7ceb"
+        "docx": "b517a9d065f177a91be39f18f84b5581ab56f4bb6143c61b1bbdb269f406a496",
+        "pdf": "82af033ec5aa3e3385ed83b93ef9ed102b5b3f0e0e9c26c6c24ea438a21bc74d"
       },
-      "data": "/memoria/teorico/document.json",
-      "href": "/memoria/teorico/"
+      "data": "/memoria/anexos-espanol/document.json",
+      "href": "/memoria/anexos-espanol/"
     },
     {
-      "id": "anexos",
-      "title": "Anexos",
-      "filename": "anexos.docx",
+      "id": "anexos-catalan",
+      "title": "Annexos",
+      "filename": "anexos-catalan.docx",
       "pageCount": 31,
-      "wordCount": 6691,
-      "charCount": 42285,
-      "charCountNoSpaces": 35720,
+      "wordCount": 6692,
+      "charCount": 41020,
+      "charCountNoSpaces": 34441,
       "downloads": {
-        "docx": "/memoria/anexos.docx",
-        "pdf": "/memoria/anexos/anexos.pdf"
+        "docx": "/memoria/anexos-catalan.docx",
+        "pdf": "/memoria/anexos-catalan/anexos-catalan.pdf"
       },
-      "updatedAt": "2026-10-19T19:34:12.401636+00:00",
+      "updatedAt": "2026-10-19T20:51:37.058140+00:00",
       "sourceHashes": {
-        "docx": "57f488b96d170a0309cf2c1a95b6e5f6e22e6214a973601b9e6ec0cb5f5a8ffd",
-        "pdf": "62249aaa6073a5ae417a9bd591d6dc18c0d405fe319d25ca1aac5fca1465408b"
+        "docx": "ccf3e8ed408e10d06a66a0e7a2f1b37d6f1e6dd89ec7bf64c1f485c365503dbd",
+        "pdf": "f700a0d87232d194e666582188cb6365656c6331a2b0db35cbcf8772eeb702d6"
       },
-      "data": "/memoria/anexos/document.json",
-      "href": "/memoria/anexos/"
+      "data": "/memoria/anexos-catalan/document.json",
+      "href": "/memoria/anexos-catalan/"
+    },
+    {
+      "id": "teorico-espanol",
+      "title": "Memoria teórica",
+      "filename": "teorico-español.docx",
+      "pageCount": 50,
+      "wordCount": 13804,
+      "charCount": 89222,
+      "charCountNoSpaces": 75653,
+      "downloads": {
+        "docx": "/memoria/teorico-espa%C3%B1ol.docx",
+        "pdf": "/memoria/teorico-espanol/teorico-espanol.pdf"
+      },
+      "updatedAt": "2026-10-19T20:52:07.297395+00:00",
+      "sourceHashes": {
+        "docx": "4e4bbb6a1721d35a29417d2e76b3d58317d061f2460af11e29d9c00a8722d48b",
+        "pdf": "74ecbc73641a51466a0062871c66aa196f7de9272c8b638d7ba71abe1101f0bb"
+      },
+      "data": "/memoria/teorico-espanol/document.json",
+      "href": "/memoria/teorico-espanol/"
+    },
+    {
+      "id": "teoric-catalan",
+      "title": "Memòria teòrica",
+      "filename": "teoric-catalan.docx",
+      "pageCount": 50,
+      "wordCount": 13990,
+      "charCount": 89014,
+      "charCountNoSpaces": 75300,
+      "downloads": {
+        "docx": "/memoria/teoric-catalan.docx",
+        "pdf": "/memoria/teoric-catalan/teoric-catalan.pdf"
+      },
+      "updatedAt": "2026-10-19T20:51:58.050773+00:00",
+      "sourceHashes": {
+        "docx": "6588e2c19def029142b2c46aed42cb90a4158407dd089f74995f685bf8f43669",
+        "pdf": "54c08edb526c76eea1f3b486cb3d4783df4cb5bc3f2b61927c69b5bd0046e03e"
+      },
+      "data": "/memoria/teoric-catalan/document.json",
+      "href": "/memoria/teoric-catalan/"
     }
   ],
   "files": [
     {
-      "path": "anexos/anexos.pdf",
-      "sha256": "62249aaa6073a5ae417a9bd591d6dc18c0d405fe319d25ca1aac5fca1465408b",
-      "size": 1966112
+      "path": "anexos-catalan/anexos-catalan.pdf",
+      "sha256": "f700a0d87232d194e666582188cb6365656c6331a2b0db35cbcf8772eeb702d6",
+      "size": 1959124
     },
     {
-      "path": "anexos/assets/28397201ed83292f.webp",
+      "path": "anexos-catalan/assets/28397201ed83292f.webp",
       "sha256": "8aad92c95f5d75425b201ed9dbd12fb061e76543dbc54c678f94a1d4fc18abd3",
       "size": 45938
     },
     {
-      "path": "anexos/assets/3696f7c998eb234b.webp",
+      "path": "anexos-catalan/assets/3696f7c998eb234b.webp",
       "sha256": "76d1ee8ec38535983facae5fe576e84a6cc27e68b0ace4a6686a7f32ad284d12",
       "size": 57544
     },
     {
-      "path": "anexos/assets/4701f869e5666b04.webp",
+      "path": "anexos-catalan/assets/4701f869e5666b04.webp",
       "sha256": "8caaac4133b2ea04abddbb81cb35f38a274bd011b945044ccadfbf78c187055d",
       "size": 101570
     },
     {
-      "path": "anexos/assets/48ce1ef5d29f3c59.webp",
+      "path": "anexos-catalan/assets/48ce1ef5d29f3c59.webp",
       "sha256": "b2738d8be671cc8363dc24f272a3aec4b0aeb8ad78f1bf1c8b6e2a0b2a28ed3f",
       "size": 1901246
     },
     {
-      "path": "anexos/assets/6ff42f157001f389.webp",
+      "path": "anexos-catalan/assets/6ff42f157001f389.webp",
       "sha256": "ac554e411f6e234acd8a0a559b30a710d8eac5e97d014fcd1fcbaba250332b4a",
       "size": 53964
     },
     {
-      "path": "anexos/assets/8947c4b02ed114c0.webp",
+      "path": "anexos-catalan/assets/8947c4b02ed114c0.webp",
       "sha256": "c69dec4422f7098d08e08dd79be3c0a87e3a9984f1069262014fb40879523f7a",
       "size": 160724
     },
     {
-      "path": "anexos/assets/8f2f6ca0024edb86.webp",
+      "path": "anexos-catalan/assets/8f2f6ca0024edb86.webp",
       "sha256": "b74e57c18f82a0f841cab9f6f3adb57afd0c5865021e2f4f9bc05364d8f65353",
       "size": 934322
     },
     {
-      "path": "anexos/assets/bfe8b9a7527e4a8d.webp",
+      "path": "anexos-catalan/assets/bfe8b9a7527e4a8d.webp",
       "sha256": "b9fe89d22fbdb4fd5c6eb89b7bdc20d5e3c8ba519e0fc79844d6c175bd3525db",
       "size": 1476268
     },
     {
-      "path": "anexos/assets/c3650226ee540a8c.webp",
+      "path": "anexos-catalan/assets/c3650226ee540a8c.webp",
       "sha256": "1232f4969d0827aa29a63784d6fb6079a461530e63dc8ebdd382a20c5cb8de4d",
       "size": 59224
     },
     {
-      "path": "anexos/assets/cab02fce7c32ed26.webp",
+      "path": "anexos-catalan/assets/cab02fce7c32ed26.webp",
       "sha256": "2d44c258d1ad2fc82b8d51e411a43a88dc006b7cee74e06904f676e3bafc6905",
       "size": 55040
     },
     {
-      "path": "anexos/assets/f0323f7eedaefec3.webp",
+      "path": "anexos-catalan/assets/f0323f7eedaefec3.webp",
       "sha256": "8ba4d5293f1efb8a3ec36d3012be62ca1a67ba30f045bb38b0b817cf2611f4b9",
       "size": 113188
     },
     {
-      "path": "anexos/document.json",
-      "sha256": "e3378a58d986a439578d4dede6bb648c2b6df46db9b3c509e71ed5646d9c678f",
-      "size": 134570
+      "path": "anexos-catalan/document.json",
+      "sha256": "adfffc93eb39b3418c62b8c134cfb263f87dea191ec4d0561ea0044bb94dacd0",
+      "size": 133103
     },
     {
-      "path": "anexos.docx",
-      "sha256": "57f488b96d170a0309cf2c1a95b6e5f6e22e6214a973601b9e6ec0cb5f5a8ffd",
-      "size": 9856075
+      "path": "anexos-catalan.docx",
+      "sha256": "ccf3e8ed408e10d06a66a0e7a2f1b37d6f1e6dd89ec7bf64c1f485c365503dbd",
+      "size": 9855407
     },
     {
-      "path": "teorico/assets/0cae8a16b214bc45.webp",
-      "sha256": "cade9cfe89e20384706f2d43b7ca1c823a852b309d6ca37f18d1323068008d58",
-      "size": 125048
+      "path": "anexos-espanol/anexos-espanol.pdf",
+      "sha256": "82af033ec5aa3e3385ed83b93ef9ed102b5b3f0e0e9c26c6c24ea438a21bc74d",
+      "size": 1965848
     },
     {
-      "path": "teorico/assets/27eb618c7aecc65e.webp",
-      "sha256": "d95e18306356ebfb632a7da5bf19493db8b36fd83953dbc1943332ee16837e5d",
-      "size": 325872
+      "path": "anexos-espanol/assets/28397201ed83292f.webp",
+      "sha256": "8aad92c95f5d75425b201ed9dbd12fb061e76543dbc54c678f94a1d4fc18abd3",
+      "size": 45938
     },
     {
-      "path": "teorico/assets/328bf630ffd2f8c1.webp",
-      "sha256": "0644c02404353b6136a777663c9194c70cab37f90c31563ab09acfc706cc6c56",
-      "size": 251938
+      "path": "anexos-espanol/assets/3696f7c998eb234b.webp",
+      "sha256": "76d1ee8ec38535983facae5fe576e84a6cc27e68b0ace4a6686a7f32ad284d12",
+      "size": 57544
     },
     {
-      "path": "teorico/assets/3877cf279ac2ce9f.webp",
-      "sha256": "0a5656e8159100bf488e41063acd2fb32310e29b572228d8dc00aa765f7ae512",
-      "size": 119756
+      "path": "anexos-espanol/assets/4701f869e5666b04.webp",
+      "sha256": "8caaac4133b2ea04abddbb81cb35f38a274bd011b945044ccadfbf78c187055d",
+      "size": 101570
     },
     {
-      "path": "teorico/assets/48ce1ef5d29f3c59.webp",
+      "path": "anexos-espanol/assets/48ce1ef5d29f3c59.webp",
       "sha256": "b2738d8be671cc8363dc24f272a3aec4b0aeb8ad78f1bf1c8b6e2a0b2a28ed3f",
       "size": 1901246
     },
     {
-      "path": "teorico/assets/6ad7d01646fdda53.webp",
-      "sha256": "ed0ae1fff3e6489e572af7de4652087dcd7ad55d2753351daf2b537912d930bd",
-      "size": 84364
+      "path": "anexos-espanol/assets/6ff42f157001f389.webp",
+      "sha256": "ac554e411f6e234acd8a0a559b30a710d8eac5e97d014fcd1fcbaba250332b4a",
+      "size": 53964
     },
     {
-      "path": "teorico/assets/7b0cc9fea2656361.webp",
-      "sha256": "60602b9854696c97d9040fd1e14b310cb8707d9ebf527af3a5d077651b6dd8cf",
-      "size": 49402
+      "path": "anexos-espanol/assets/8947c4b02ed114c0.webp",
+      "sha256": "c69dec4422f7098d08e08dd79be3c0a87e3a9984f1069262014fb40879523f7a",
+      "size": 160724
     },
     {
-      "path": "teorico/assets/a40e17541681d59f.webp",
-      "sha256": "1696522d271fe59d87ccbbf675ed59faab798d370072bed8725b034d66c303a9",
-      "size": 942678
+      "path": "anexos-espanol/assets/8f2f6ca0024edb86.webp",
+      "sha256": "b74e57c18f82a0f841cab9f6f3adb57afd0c5865021e2f4f9bc05364d8f65353",
+      "size": 934322
     },
     {
-      "path": "teorico/assets/ac43a15e0b98fd24.webp",
-      "sha256": "2d560f9684b0d1f4f418823002dccf8685e093c3bf5b4b1d137d36c2826fd7fa",
-      "size": 602326
+      "path": "anexos-espanol/assets/bfe8b9a7527e4a8d.webp",
+      "sha256": "b9fe89d22fbdb4fd5c6eb89b7bdc20d5e3c8ba519e0fc79844d6c175bd3525db",
+      "size": 1476268
     },
     {
-      "path": "teorico/assets/af5bd2dc23ce3d37.webp",
-      "sha256": "9e2215ef298504a9afbd3e4b7780203bca449f8303a036cbd0ce1b8f774a9b2d",
-      "size": 666364
+      "path": "anexos-espanol/assets/c3650226ee540a8c.webp",
+      "sha256": "1232f4969d0827aa29a63784d6fb6079a461530e63dc8ebdd382a20c5cb8de4d",
+      "size": 59224
     },
     {
-      "path": "teorico/assets/cab02fce7c32ed26.webp",
+      "path": "anexos-espanol/assets/cab02fce7c32ed26.webp",
       "sha256": "2d44c258d1ad2fc82b8d51e411a43a88dc006b7cee74e06904f676e3bafc6905",
       "size": 55040
     },
     {
-      "path": "teorico/assets/ccfca12043084f0b.webp",
+      "path": "anexos-espanol/assets/f0323f7eedaefec3.webp",
+      "sha256": "8ba4d5293f1efb8a3ec36d3012be62ca1a67ba30f045bb38b0b817cf2611f4b9",
+      "size": 113188
+    },
+    {
+      "path": "anexos-espanol/document.json",
+      "sha256": "4da1ab4e7db575be3c5815e09d8bec89d392a07a74d40c70c35043e7f7f139dd",
+      "size": 133199
+    },
+    {
+      "path": "anexos-español.docx",
+      "sha256": "b517a9d065f177a91be39f18f84b5581ab56f4bb6143c61b1bbdb269f406a496",
+      "size": 9855187
+    },
+    {
+      "path": "teoric-catalan/assets/0cae8a16b214bc45.webp",
+      "sha256": "cade9cfe89e20384706f2d43b7ca1c823a852b309d6ca37f18d1323068008d58",
+      "size": 125048
+    },
+    {
+      "path": "teoric-catalan/assets/27eb618c7aecc65e.webp",
+      "sha256": "d95e18306356ebfb632a7da5bf19493db8b36fd83953dbc1943332ee16837e5d",
+      "size": 325872
+    },
+    {
+      "path": "teoric-catalan/assets/328bf630ffd2f8c1.webp",
+      "sha256": "0644c02404353b6136a777663c9194c70cab37f90c31563ab09acfc706cc6c56",
+      "size": 251938
+    },
+    {
+      "path": "teoric-catalan/assets/3877cf279ac2ce9f.webp",
+      "sha256": "0a5656e8159100bf488e41063acd2fb32310e29b572228d8dc00aa765f7ae512",
+      "size": 119756
+    },
+    {
+      "path": "teoric-catalan/assets/48ce1ef5d29f3c59.webp",
+      "sha256": "b2738d8be671cc8363dc24f272a3aec4b0aeb8ad78f1bf1c8b6e2a0b2a28ed3f",
+      "size": 1901246
+    },
+    {
+      "path": "teoric-catalan/assets/6ad7d01646fdda53.webp",
+      "sha256": "ed0ae1fff3e6489e572af7de4652087dcd7ad55d2753351daf2b537912d930bd",
+      "size": 84364
+    },
+    {
+      "path": "teoric-catalan/assets/7b0cc9fea2656361.webp",
+      "sha256": "60602b9854696c97d9040fd1e14b310cb8707d9ebf527af3a5d077651b6dd8cf",
+      "size": 49402
+    },
+    {
+      "path": "teoric-catalan/assets/a40e17541681d59f.webp",
+      "sha256": "1696522d271fe59d87ccbbf675ed59faab798d370072bed8725b034d66c303a9",
+      "size": 942678
+    },
+    {
+      "path": "teoric-catalan/assets/ac43a15e0b98fd24.webp",
+      "sha256": "2d560f9684b0d1f4f418823002dccf8685e093c3bf5b4b1d137d36c2826fd7fa",
+      "size": 602326
+    },
+    {
+      "path": "teoric-catalan/assets/af5bd2dc23ce3d37.webp",
+      "sha256": "9e2215ef298504a9afbd3e4b7780203bca449f8303a036cbd0ce1b8f774a9b2d",
+      "size": 666364
+    },
+    {
+      "path": "teoric-catalan/assets/cab02fce7c32ed26.webp",
+      "sha256": "2d44c258d1ad2fc82b8d51e411a43a88dc006b7cee74e06904f676e3bafc6905",
+      "size": 55040
+    },
+    {
+      "path": "teoric-catalan/assets/ccfca12043084f0b.webp",
       "sha256": "d338799b65120b6fab6fb68d9ca0212fc0346d9d4ece929ff0c3d656b909351a",
       "size": 1352882
     },
     {
-      "path": "teorico/assets/da089d3e7c6e5fb5.webp",
+      "path": "teoric-catalan/assets/da089d3e7c6e5fb5.webp",
       "sha256": "191f90d1599e90f1cd0769511ec96536387cfe683377d140e436316212d73e60",
       "size": 126480
     },
     {
-      "path": "teorico/document.json",
-      "sha256": "f826db86558b68168b32a7832b6731c6136d32da3d8f0bcfb08267dd50b53d6f",
-      "size": 213925
+      "path": "teoric-catalan/document.json",
+      "sha256": "3371b4bf4f2f15efe62fc050eab94e35497ddfabec247312515b00608861015a",
+      "size": 215677
     },
     {
-      "path": "teorico/teorico.pdf",
-      "sha256": "77d85633fca1c66ab3e0f15314c1c055dc7a0df1c716b0280386cbc4893c7ceb",
-      "size": 1489596
+      "path": "teoric-catalan/teoric-catalan.pdf",
+      "sha256": "54c08edb526c76eea1f3b486cb3d4783df4cb5bc3f2b61927c69b5bd0046e03e",
+      "size": 1471960
     },
     {
-      "path": "teorico.docx",
-      "sha256": "deed93601a71429a181e862aa88dfaf3304e4376293f4ac94e01290e88ad84bf",
-      "size": 11077632
+      "path": "teoric-catalan.docx",
+      "sha256": "6588e2c19def029142b2c46aed42cb90a4158407dd089f74995f685bf8f43669",
+      "size": 11078084
+    },
+    {
+      "path": "teorico-espanol/assets/0cae8a16b214bc45.webp",
+      "sha256": "cade9cfe89e20384706f2d43b7ca1c823a852b309d6ca37f18d1323068008d58",
+      "size": 125048
+    },
+    {
+      "path": "teorico-espanol/assets/27eb618c7aecc65e.webp",
+      "sha256": "d95e18306356ebfb632a7da5bf19493db8b36fd83953dbc1943332ee16837e5d",
+      "size": 325872
+    },
+    {
+      "path": "teorico-espanol/assets/328bf630ffd2f8c1.webp",
+      "sha256": "0644c02404353b6136a777663c9194c70cab37f90c31563ab09acfc706cc6c56",
+      "size": 251938
+    },
+    {
+      "path": "teorico-espanol/assets/3877cf279ac2ce9f.webp",
+      "sha256": "0a5656e8159100bf488e41063acd2fb32310e29b572228d8dc00aa765f7ae512",
+      "size": 119756
+    },
+    {
+      "path": "teorico-espanol/assets/48ce1ef5d29f3c59.webp",
+      "sha256": "b2738d8be671cc8363dc24f272a3aec4b0aeb8ad78f1bf1c8b6e2a0b2a28ed3f",
+      "size": 1901246
+    },
+    {
+      "path": "teorico-espanol/assets/6ad7d01646fdda53.webp",
+      "sha256": "ed0ae1fff3e6489e572af7de4652087dcd7ad55d2753351daf2b537912d930bd",
+      "size": 84364
+    },
+    {
+      "path": "teorico-espanol/assets/7b0cc9fea2656361.webp",
+      "sha256": "60602b9854696c97d9040fd1e14b310cb8707d9ebf527af3a5d077651b6dd8cf",
+      "size": 49402
+    },
+    {
+      "path": "teorico-espanol/assets/a40e17541681d59f.webp",
+      "sha256": "1696522d271fe59d87ccbbf675ed59faab798d370072bed8725b034d66c303a9",
+      "size": 942678
+    },
+    {
+      "path": "teorico-espanol/assets/ac43a15e0b98fd24.webp",
+      "sha256": "2d560f9684b0d1f4f418823002dccf8685e093c3bf5b4b1d137d36c2826fd7fa",
+      "size": 602326
+    },
+    {
+      "path": "teorico-espanol/assets/af5bd2dc23ce3d37.webp",
+      "sha256": "9e2215ef298504a9afbd3e4b7780203bca449f8303a036cbd0ce1b8f774a9b2d",
+      "size": 666364
+    },
+    {
+      "path": "teorico-espanol/assets/cab02fce7c32ed26.webp",
+      "sha256": "2d44c258d1ad2fc82b8d51e411a43a88dc006b7cee74e06904f676e3bafc6905",
+      "size": 55040
+    },
+    {
+      "path": "teorico-espanol/assets/ccfca12043084f0b.webp",
+      "sha256": "d338799b65120b6fab6fb68d9ca0212fc0346d9d4ece929ff0c3d656b909351a",
+      "size": 1352882
+    },
+    {
+      "path": "teorico-espanol/assets/da089d3e7c6e5fb5.webp",
+      "sha256": "191f90d1599e90f1cd0769511ec96536387cfe683377d140e436316212d73e60",
+      "size": 126480
+    },
+    {
+      "path": "teorico-espanol/document.json",
+      "sha256": "0b617f8c8264d86b08dcc21b4b89b2028a5559ea0534ba57425f6826388724ec",
+      "size": 213661
+    },
+    {
+      "path": "teorico-espanol/teorico-espanol.pdf",
+      "sha256": "74ecbc73641a51466a0062871c66aa196f7de9272c8b638d7ba71abe1101f0bb",
+      "size": 1488864
+    },
+    {
+      "path": "teorico-español.docx",
+      "sha256": "4e4bbb6a1721d35a29417d2e76b3d58317d061f2460af11e29d9c00a8722d48b",
+      "size": 11077548
     }
   ]
 }
