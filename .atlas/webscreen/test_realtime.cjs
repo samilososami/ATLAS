@@ -49,6 +49,48 @@ assert.equal(likelyAssistantEcho('El agente', 'Soy ATLAS, el agente físico de O
 assert.equal(likelyAssistantEcho('Espera, mira primero la memoria', 'Te estaba explicando el almacenamiento.'), false);
 assert.equal(captureConstraints().audio.echoCancellation, true);
 
+// Audio directions stay out of visible text and persistent conversation memory.
+const { withoutAudioTags, withoutIncompleteAudioTag, speechChunkLength } = window.AtlasRealtime._test;
+assert.equal(withoutAudioTags('[calmly] Hola. [warmly] Bien.'), 'Hola. Bien.');
+assert.equal(withoutAudioTags('Referencia [1] y [a, b].'), 'Referencia [1] y [a, b].');
+for (const part of ['[', '[ca', '[calmly', '[calmly]']) {
+  assert.equal(withoutAudioTags(part, false), '');
+}
+assert.equal(withoutAudioTags('[calmly] Hola [war', false), 'Hola');
+assert.equal(withoutIncompleteAudioTag('[calmly] Hola [war'), '[calmly] Hola');
+assert.equal(withoutIncompleteAudioTag('Lista [uno, dos'), 'Lista [uno, dos');
+assert.equal(withoutIncompleteAudioTag('Referencia [1]'), 'Referencia [1]');
+assert.equal(speechChunkLength('[with dry amusement] Hola. Otra', false, true), 26);
+for (const mode of ['browser', 'elevenlabs']) {
+  const visible = [], persisted = [], spoken = [];
+  const controller = window.AtlasRealtime.create({
+    fetch: async (_url, options) => { persisted.push(JSON.parse(options.body)); return { ok: true, json: async () => ({}) }; },
+    callbacks: { setResponse: value => visible.push(value) },
+  });
+  controller.session = { atlasOutput: mode, atlasAudioTags: mode === 'elevenlabs' };
+  controller.closed = false;
+  controller.postEvent = () => {};
+  controller.setPhysicalPlaybackActive = () => {};
+  controller.prepareNextExternalSpeech = () => {};
+  controller.drainExternalSpeech = async () => {
+    while (controller.externalSpeechQueue.length) spoken.push(controller.externalSpeechQueue.shift().text);
+  };
+  controller.handleAssistantText('[cal', false);
+  controller.handleAssistantText('mly] Hola. ', false);
+  controller.handleAssistantText('[warmly] ¿Qué tal?', false);
+  controller.handleAssistantText('[calmly] Hola. [warmly] ¿Qué tal?', true);
+  assert.ok(visible.every(value => !value.includes('[')));
+  assert.equal(spoken.join(' ').includes('[calmly]'), mode === 'elevenlabs');
+  controller.currentUserText = 'Hola';
+  void controller.persistCompletedTurn();
+  assert.equal(persisted[0].assistant, 'Hola. ¿Qué tal?');
+  controller.currentAssistantText = '';
+  controller.externalSpeechOffset = 0;
+  controller.externalSpeechFinal = false;
+  controller.handleAssistantText('[calmly] Hola [war', true);
+  assert.equal(spoken.at(-1), mode === 'elevenlabs' ? '[calmly] Hola' : 'Hola');
+}
+
 // response.cancel races are expected when the provider finishes between the
 // local interruption decision and delivery of the cancellation. They must not
 // tear down a healthy peer and trigger the global reconnect loop.

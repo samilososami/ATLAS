@@ -1689,12 +1689,50 @@ def convert_wake_sample(input_path: Path, wav_path: Path) -> float:
     return duration
 
 
+AUDIO_TAGS = ("calmly", "curious", "excited", "happy", "sad", "mischievously",
+              "whispers", "whispering", "shouts", "laughs", "chuckles", "sighs",
+              "clears throat", "thoughtful", "reassuringly", "serious", "softly",
+              "firmly", "with dry amusement", "warmly")
+ELEVENLABS_TAG_MODELS = frozenset(("eleven_v3", "eleven_v4", "eleven_v4_turbo"))
+AUDIO_TAG_PATTERN = re.compile(r"\[(?:" + "|".join(AUDIO_TAGS) + r")\]", re.I)
+
+
+def elevenlabs_audio_tags_enabled(output_mode: str) -> bool:
+    return output_mode == "elevenlabs" and ELEVENLABS_REALTIME_MODEL in ELEVENLABS_TAG_MODELS
+
+
+def without_incomplete_audio_tag(text: str) -> str:
+    # Final model output can be truncated inside a cue. Do not speak that
+    # fragment, and do not remove literal brackets, citations or complete tags.
+    start = text.rfind("[")
+    if start >= 0 and "]" not in text[start:]:
+        tail = text[start + 1:].lower()
+        if any(tag.startswith(tail) for tag in AUDIO_TAGS):
+            return text[:start].rstrip()
+    return text
+
+
+def voice_delivery_instructions(output_mode: str) -> str:
+    if not elevenlabs_audio_tags_enabled(output_mode):
+        return "Voice delivery: do not add bracketed emotion or audio direction tags to your answer."
+    return ("Voice delivery for this WebScreen session only: ElevenLabs supports audio tags. "
+            "Answer normally in Spanish; where a genuine change of delivery helps, optionally "
+            "insert a short English tag immediately before the affected phrase. Allowed tags: "
+            + ", ".join(f"[{tag}]" for tag in AUDIO_TAGS)
+            + ". Use sparingly, usually zero or one per answer; never force a reaction, "
+            "shout by default, narrate stage directions or put tags in tool arguments. "
+            "These are voice-only cues, not instructions for text chat or persistent memory.")
+
+
 def elevenlabs_voice_settings(natural: bool = True) -> dict[str, Any]:
+    # v4 does not accept the Flash/v3 style, speed or speaker-boost knobs.
+    if ELEVENLABS_REALTIME_MODEL in ("eleven_v4", "eleven_v4_turbo"):
+        return {"stability": 0.42 if natural else 0.48, "similarity_boost": 0.78}
     # Per-request only: no account/voice mutation. Keep Flash, style=0 and speaker
     # boost off, avoiding extra latency. A little less stability allows delivery
     # variation; the selected voice remains the main determinant of its accent.
     # False reproduces the previous settings exactly for an audible A/B test.
-    return {"stability": 0.42 if natural else 0.48, "similarity_boost": 0.78,
+    return {"stability": 0.5 if ELEVENLABS_REALTIME_MODEL == "eleven_v3" else (0.42 if natural else 0.48), "similarity_boost": 0.78,
             "style": 0.0, "use_speaker_boost": False, "speed": 1.0 if natural else 1.04}
 
 
@@ -1705,8 +1743,10 @@ def elevenlabs_speech_request(text: str) -> urllib.request.Request:
     endpoint = ("https://api.elevenlabs.io/v1/text-to-speech/"
                 f"{urllib.parse.quote(voice_id, safe='')}/stream"
                 "?output_format=mp3_44100_128")
+    text = without_incomplete_audio_tag(text)
     payload = json.dumps({
-        "text": text, "model_id": ELEVENLABS_REALTIME_MODEL, "language_code": "es",
+        "text": text if elevenlabs_audio_tags_enabled("elevenlabs") else AUDIO_TAG_PATTERN.sub("", text).strip(),
+        "model_id": ELEVENLABS_REALTIME_MODEL, "language_code": "es",
         "voice_settings": elevenlabs_voice_settings(get_webscreen_settings()["voiceNaturalness"]),
     }).encode()
     return urllib.request.Request(endpoint, data=payload, method="POST", headers={
@@ -2589,6 +2629,7 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
         except RuntimeError as error:
             self.send_json(503, {"error": str(error)[:500]})
             return
+        realtime_instructions += "\n\n" + voice_delivery_instructions(output_mode)
         context_stats = {
             **context_stats,
             "channelInstructions": {
@@ -2606,6 +2647,7 @@ class AtlasScreenHandler(SimpleHTTPRequestHandler):
             self.send_json(502, {"error": "El broker devolvió una URL WebRTC no admitida"})
             return
         session["atlasOutput"] = output_mode
+        session["atlasAudioTags"] = elevenlabs_audio_tags_enabled(output_mode)
         # Preserve the provider target as data for the fixed relay. It is
         # validated again on use; the browser is never allowed to choose an
         # arbitrary outbound destination.

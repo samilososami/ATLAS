@@ -399,15 +399,40 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
     return /(?:cancellation failed:\s*)?no active response (?:found|to cancel)/iu.test(message);
   }
 
+  const AUDIO_TAGS = ["calmly", "curious", "excited", "happy", "sad", "mischievously",
+    "whispers", "whispering", "shouts", "laughs", "chuckles", "sighs", "clears throat",
+    "thoughtful", "reassuringly", "serious", "softly", "firmly", "with dry amusement", "warmly"];
+  function withoutIncompleteAudioTag(value) {
+    let text = String(value || "");
+    // Deltas may stop inside a cue. Hide that suffix until it is resolved,
+    // without stripping literal brackets such as [1], arrays or citations.
+    const start = text.lastIndexOf("[");
+    if (start >= 0 && !text.slice(start).includes("]")) {
+      const tail = text.slice(start + 1).toLowerCase();
+      if (AUDIO_TAGS.some(tag => tag.startsWith(tail))) {
+        text = text.slice(0, start);
+      }
+    }
+    return text.trim();
+  }
+
+  function withoutAudioTags(value, final = true) {
+    return withoutIncompleteAudioTag(value)
+      .replace(new RegExp(`[ \\t]*\\[(?:${AUDIO_TAGS.join("|")})\\][ \\t]*`, "gi"), " ").trim();
+  }
+
   function speechChunkLength(text, final = false, first = false) {
     if (final) return text.length;
     // Wait for pronounceable boundaries, never arbitrary token counts. A dot
     // touching digits/a filename is not a sentence boundary (48.5, IPs, .md).
-    let inCode = false;
+    let inCode = false, inBracket = false;
     for (let i = 0; i < text.length; i += 1) {
       const char = text[i], next = text[i + 1];
       if (char === "`") { inCode = !inCode; continue; }
       if (inCode) continue;
+      if (char === "[") { inBracket = true; continue; }
+      if (char === "]") { inBracket = false; continue; }
+      if (inBracket) continue;
       if (!/[.!?…;,:\n]/u.test(char)) continue;
       if (/[.,:]/u.test(char) && (!next || !/\s/u.test(next))) continue;
       if (next && !/\s/u.test(next)) continue;
@@ -1166,7 +1191,7 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
     }
 
     rememberAssistantEcho(value) {
-      const text = String(value || "").trim();
+      const text = withoutAudioTags(value);
       if (!text) return;
       const combined = `${this.assistantEchoReference}\n${text}`.trim();
       // One answer can be split into several provider responses around tool
@@ -2108,11 +2133,11 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
       } else {
         this.currentAssistantText += text;
       }
-      this.callbacks.setResponse?.(this.currentAssistantText.trim());
+      this.callbacks.setResponse?.(withoutAudioTags(this.currentAssistantText, final));
       if (final) {
         this.rememberAssistantEcho(this.currentAssistantText);
         this.postEvent("output.transcript", "OpenAI Realtime completó la respuesta hablada",
-          { role: "assistant", text: this.currentAssistantText.trim() });
+          { role: "assistant", text: withoutAudioTags(this.currentAssistantText) });
       }
       this.playExternalTextIfNeeded(final);
     }
@@ -2131,10 +2156,12 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
       let remaining = this.currentAssistantText.slice(this.externalSpeechOffset);
       for (let length; (length = speechChunkLength(remaining, this.externalSpeechFinal,
         this.externalSpeechChunkIndex === 0)) > 0;) {
-        const text = remaining.slice(0, length).trim();
+        const rawText = remaining.slice(0, length).trim();
+        const text = this.outputMode() === "elevenlabs" && this.session?.atlasAudioTags
+          ? withoutIncompleteAudioTag(rawText) : withoutAudioTags(rawText);
         this.externalSpeechOffset += length;
         remaining = remaining.slice(length);
-        if (!text) continue;
+        if (!withoutAudioTags(text)) continue;
         this.externalSpeechQueue.push({ text, index: ++this.externalSpeechChunkIndex, queuedAt: performance.now() });
         this.externalPlaybackActive = true;
         // Own the whole queue, including generation gaps, not each utterance.
@@ -2885,7 +2912,7 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
 
     async persistCompletedTurn() {
       const user = this.currentUserText.trim();
-      const assistant = this.currentAssistantText.trim();
+      const assistant = withoutAudioTags(this.currentAssistantText);
       const key = `${user}\u0000${assistant}`;
       if (!user || !assistant || this.persistedTurnKey === key) return;
       this.persistedTurnKey = key;
@@ -3422,13 +3449,14 @@ Usa atlas_actions también para dos o más acciones relacionadas del A1, por eje
   }
 
   window.AtlasRealtime = {
+    withoutAudioTags,
     create(options) { return new RealtimeController(options); },
     sendAcknowledgement,
     model: MODEL,
     voice: DEFAULT_VOICE,
     _test: { normalized, wakeInvocation, wakeHasRequest, silenceInvocation, withTurnSeparator,
       commandLabel, responseExpectsReply, benignRealtimeError, likelyAssistantEcho, captureConstraints, speechChunkLength,
-      usageTelemetry,
+      usageTelemetry, withoutAudioTags, withoutIncompleteAudioTag,
       persistentAndroidControlInvocation,
       conversationExpressionCue,
       realtimeTools: REALTIME_TOOLS, faceTool: FACE_TOOL, displayModeTool: DISPLAY_MODE_TOOL, faceInstructions: FACE_INSTRUCTIONS,
