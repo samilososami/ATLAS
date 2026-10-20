@@ -1,23 +1,23 @@
 {
   "schemaVersion": 1,
-  "sourceRevision": "da543f9303e932bdc2bce88fd9b56a34af1fbfc9",
+  "sourceRevision": "c22829b300206063e0a449c7cede692be165f16b",
   "documents": [
     {
       "id": "anexos-espanol",
       "title": "Anexos",
       "filename": "anexos-español.docx",
-      "pageCount": 31,
-      "wordCount": 6630,
-      "charCount": 41601,
-      "charCountNoSpaces": 35092,
+      "pageCount": 34,
+      "wordCount": 7654,
+      "charCount": 48289,
+      "charCountNoSpaces": 40757,
       "downloads": {
         "docx": "/memoria/anexos-espa%C3%B1ol.docx",
         "pdf": "/memoria/anexos-espanol/anexos-espanol.pdf"
       },
-      "updatedAt": "2026-10-20T14:45:36.302027+00:00",
+      "updatedAt": "2026-10-20T16:22:17.198502+00:00",
       "sourceHashes": {
-        "docx": "f429373c4d832c44628dd73a860277e3bc902cb74ff74f83eceea23548d3fba7",
-        "pdf": "857b311a59d62ef6d94c3efe42d5febbc99e34abf0594f2b2d6428d26ada85f7"
+        "docx": "23e8625e4c64be4ec8d00f453d8051471ba1806976b1b3d8b733cdd628c43d20",
+        "pdf": "6ebfb75f395d45230b3b1506cd8db2bf5926be3af4895b8403750236fe510a7e"
       },
       "data": "/memoria/anexos-espanol/document.json",
       "href": "/memoria/anexos-espanol/"
@@ -26,18 +26,18 @@
       "id": "anexos-catalan",
       "title": "Annexos",
       "filename": "anexos-catalan.docx",
-      "pageCount": 31,
-      "wordCount": 6696,
-      "charCount": 41052,
-      "charCountNoSpaces": 34469,
+      "pageCount": 34,
+      "wordCount": 7703,
+      "charCount": 47504,
+      "charCountNoSpaces": 39918,
       "downloads": {
         "docx": "/memoria/anexos-catalan.docx",
         "pdf": "/memoria/anexos-catalan/anexos-catalan.pdf"
       },
-      "updatedAt": "2026-10-20T14:45:16.555374+00:00",
+      "updatedAt": "2026-10-20T16:21:57.585366+00:00",
       "sourceHashes": {
-        "docx": "55da3d16b5d126bfdc7a843542bd7e567d2a935f0f1c0e56ced728e3d4eb5ea5",
-        "pdf": "719b4ae52723be8f7cad90b280866a54fa258cf6ed4371b54fec36abe0fddae4"
+        "docx": "fae554acf21f3397f8b071f8199f23bf2bd04d61d879b8bba2682dffcfd50e7e",
+        "pdf": "a96be9526a7b047d0e799772a0624bcc06883736b8c4213674cdc454b06b0791"
       },
       "data": "/memoria/anexos-catalan/document.json",
       "href": "/memoria/anexos-catalan/"
@@ -47,17 +47,17 @@
       "title": "Memoria teórica",
       "filename": "teorico-español.docx",
       "pageCount": 50,
-      "wordCount": 13781,
-      "charCount": 89062,
-      "charCountNoSpaces": 75516,
+      "wordCount": 13801,
+      "charCount": 89164,
+      "charCountNoSpaces": 75598,
       "downloads": {
         "docx": "/memoria/teorico-espa%C3%B1ol.docx",
         "pdf": "/memoria/teorico-espanol/teorico-espanol.pdf"
       },
-      "updatedAt": "2026-10-20T14:46:06.555472+00:00",
+      "updatedAt": "2026-10-20T16:22:46.794424+00:00",
       "sourceHashes": {
-        "docx": "09efd32b2d54f85b2dfc51c372480bb4881ec71560d63e7dc996145cf2e07ba3",
-        "pdf": "659d1af465c12be39d221afaf304ddd81e1c8ede612c933c184509df60f173ec"
+        "docx": "3835bebe09deddaca988589b2171c7ba9becce835e829ed3b3ce84945eeb574b",
+        "pdf": "dbaff6ad256429c729fafe5796324f8009ecf4b3b20f67f2941ef1bc013fac0a"
       },
       "data": "/memoria/teorico-espanol/document.json",
       "href": "/memoria/teorico-espanol/"
@@ -66,18 +66,18 @@
       "id": "teoric-catalan",
       "title": "Memòria teòrica",
       "filename": "teoric-catalan.docx",
-      "pageCount": 50,
-      "wordCount": 13972,
-      "charCount": 88885,
-      "charCountNoSpaces": 75189,
+      "pageCount": 49,
+      "wordCount": 13987,
+      "charCount": 88972,
+      "charCountNoSpaces": 75261,
       "downloads": {
         "docx": "/memoria/teoric-catalan.docx",
         "pdf": "/memoria/teoric-catalan/teoric-catalan.pdf"
       },
-      "updatedAt": "2026-10-20T14:45:51.444922+00:00",
+      "updatedAt": "2026-10-20T16:22:31.969398+00:00",
       "sourceHashes": {
-        "docx": "0d4e11373ed6176ad06237fd6c3707a41ce0eb124439fb6261b7616e36d24e79",
-        "pdf": "f9a3d649a5e17ac2c1f429488221775a3206be9768e136135769f64fc1cae089"
+        "docx": "b1be83e5ed05dc17d21497478af835e2e81363bd5cf580154c3452b99d9901c1",
+        "pdf": "b0845597794996321b4b3981ee0283a8e5fe30b744e292052044d071fd7dcc4d"
       },
       "data": "/memoria/teoric-catalan/document.json",
       "href": "/memoria/teoric-catalan/"
@@ -86,8 +86,8 @@
   "files": [
     {
       "path": "anexos-catalan/anexos-catalan.pdf",
-      "sha256": "719b4ae52723be8f7cad90b280866a54fa258cf6ed4371b54fec36abe0fddae4",
-      "size": 1959091
+      "sha256": "a96be9526a7b047d0e799772a0624bcc06883736b8c4213674cdc454b06b0791",
+      "size": 2011839
     },
     {
       "path": "anexos-catalan/assets/28397201ed83292f.webp",
@@ -146,18 +146,18 @@
     },
     {
       "path": "anexos-catalan/document.json",
-      "sha256": "3143f600ef56d705f02d023f9e951692309041d41edfb18e8a97e095c051069d",
-      "size": 133164
+      "sha256": "580cbb46a1b34f39065b1a1d39d2978fedef667d75c96a53dba1237412aa54c2",
+      "size": 154224
     },
     {
       "path": "anexos-catalan.docx",
-      "sha256": "55da3d16b5d126bfdc7a843542bd7e567d2a935f0f1c0e56ced728e3d4eb5ea5",
-      "size": 9855401
+      "sha256": "fae554acf21f3397f8b071f8199f23bf2bd04d61d879b8bba2682dffcfd50e7e",
+      "size": 9859040
     },
     {
       "path": "anexos-espanol/anexos-espanol.pdf",
-      "sha256": "857b311a59d62ef6d94c3efe42d5febbc99e34abf0594f2b2d6428d26ada85f7",
-      "size": 1965893
+      "sha256": "6ebfb75f395d45230b3b1506cd8db2bf5926be3af4895b8403750236fe510a7e",
+      "size": 2018427
     },
     {
       "path": "anexos-espanol/assets/28397201ed83292f.webp",
@@ -216,13 +216,13 @@
     },
     {
       "path": "anexos-espanol/document.json",
-      "sha256": "0fca1117d8c65664a305a5e995a2f648083a9a98fc9c975e1f18fa4a9a63da01",
-      "size": 133269
+      "sha256": "01daa89bc1d94a977577fd9527ad61edf33f0672ec288a037e565f5596867d74",
+      "size": 154628
     },
     {
       "path": "anexos-español.docx",
-      "sha256": "f429373c4d832c44628dd73a860277e3bc902cb74ff74f83eceea23548d3fba7",
-      "size": 9855192
+      "sha256": "23e8625e4c64be4ec8d00f453d8051471ba1806976b1b3d8b733cdd628c43d20",
+      "size": 9858831
     },
     {
       "path": "teoric-catalan/assets/0cae8a16b214bc45.webp",
@@ -291,18 +291,18 @@
     },
     {
       "path": "teoric-catalan/document.json",
-      "sha256": "fba1682b44fd97e153d0f5b1fe3a3e5e239922a6424c0e671681b7294fd50e61",
-      "size": 215444
+      "sha256": "1db48ac0e7299b33bdec8bc536764a2f6fa3657b98fd97dcc6ed648e6dff5269",
+      "size": 215590
     },
     {
       "path": "teoric-catalan/teoric-catalan.pdf",
-      "sha256": "f9a3d649a5e17ac2c1f429488221775a3206be9768e136135769f64fc1cae089",
-      "size": 1472375
+      "sha256": "b0845597794996321b4b3981ee0283a8e5fe30b744e292052044d071fd7dcc4d",
+      "size": 1471753
     },
     {
       "path": "teoric-catalan.docx",
-      "sha256": "0d4e11373ed6176ad06237fd6c3707a41ce0eb124439fb6261b7616e36d24e79",
-      "size": 11078079
+      "sha256": "b1be83e5ed05dc17d21497478af835e2e81363bd5cf580154c3452b99d9901c1",
+      "size": 11078132
     },
     {
       "path": "teorico-espanol/assets/0cae8a16b214bc45.webp",
@@ -371,18 +371,18 @@
     },
     {
       "path": "teorico-espanol/document.json",
-      "sha256": "e74794432cf16034d0c3842fb2c2b788ebaf37e3ef36b65ff90309e976a873fa",
-      "size": 213326
+      "sha256": "02d223c8834baf34930e8bac1004092a0aad9463dd76385ac800acf91068b063",
+      "size": 213534
     },
     {
       "path": "teorico-espanol/teorico-espanol.pdf",
-      "sha256": "659d1af465c12be39d221afaf304ddd81e1c8ede612c933c184509df60f173ec",
-      "size": 1488821
+      "sha256": "dbaff6ad256429c729fafe5796324f8009ecf4b3b20f67f2941ef1bc013fac0a",
+      "size": 1488978
     },
     {
       "path": "teorico-español.docx",
-      "sha256": "09efd32b2d54f85b2dfc51c372480bb4881ec71560d63e7dc996145cf2e07ba3",
-      "size": 11077555
+      "sha256": "3835bebe09deddaca988589b2171c7ba9becce835e829ed3b3ce84945eeb574b",
+      "size": 11077610
     }
   ]
 }
